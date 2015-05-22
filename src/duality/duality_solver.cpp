@@ -3266,6 +3266,16 @@ namespace Duality {
                 std::vector<expr> to_params = from_params;
                 for(unsigned j = 0; j < to_params.size(); j++){
                     std::string key = GetKey(to_params[j]);
+                    if(is_numeric(key)){
+                        int pos = atoi(key.c_str());
+                        if (pos < 0 || pos >= (int)new_params.size()){
+                            if (!base)
+                                REPORT("unmatched positional parameter!\n");
+                            return;
+                        }
+                        to_params[j] = new_params[pos];
+                        continue;
+                    }
                     if(base)
                         key = SubsBase(key,base,new_node);
                     if(var_match.find(key) == var_match.end()){
@@ -3290,7 +3300,14 @@ namespace Duality {
                 else
                     conjectures[new_node].push_back(new_annot);
             }
-      
+                
+            bool is_numeric(const std::string &s){
+                for(unsigned i = 0; i < s.size(); i++)
+                    if(!isdigit(s[i]))
+                        return false;
+                return true;
+            }
+
             // We match names by removing suffixes beginning with double at sign
 
             std::string GetKey(Node *node){
