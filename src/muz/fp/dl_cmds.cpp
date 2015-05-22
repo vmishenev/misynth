@@ -258,8 +258,8 @@ class dl_decl_conj_cmd : public cmd {
     symbol       m_name;
     unsigned     m_num;
     symbol       m_symbol;
-    symbol const * m_symlist;
-    sort * const * m_sortlist;
+    vector<symbol> m_symlist;
+    vector<sort *> m_sortlist;
 public:
     dl_decl_conj_cmd(dl_context * dl_ctx):
         cmd("decl-conj"),
@@ -282,8 +282,12 @@ public:
     }
     virtual void set_next_arg(cmd_context & ctx, unsigned num, symbol const * symlist, sort * const * sortlist) {
         m_num = num;
-        m_symlist = symlist;
-        m_sortlist = sortlist;
+        m_symlist.reset();
+        m_sortlist.reset();
+        for(unsigned i = 0; i < num; i++){
+            m_symlist.push_back(symlist[i]);
+            m_sortlist.push_back(sortlist[i]);
+        }
         m_arg_idx++;
     }
     virtual void set_next_arg(cmd_context & ctx, expr * t) {
@@ -298,10 +302,10 @@ public:
         ast_manager &m = ctx.m();
         func_decl_ref f(m);
         
-        f = m.mk_func_decl(m_symbol, m_num, m_sortlist, m.mk_bool_sort());
+        f = m.mk_func_decl(m_symbol, m_num, m_sortlist.c_ptr(), m.mk_bool_sort());
         ctx.insert(f);
         unsigned i = m_num;
-        sort * const * sort_it = m_sortlist;
+        sort * const * sort_it = m_sortlist.c_ptr();
         expr_ref_vector args(m);
         while (i > 0) {
             --i;
@@ -311,7 +315,7 @@ public:
         }
         expr_ref ap(m.mk_app(f.get(),m_num,args.c_ptr()),m);
         expr_ref im(m.mk_implies(ap,m_t),m);
-        expr_ref qu(m_num ? m.mk_forall(m_num, m_sortlist, m_symlist, im.get()) : im.get(),m); 
+        expr_ref qu(m_num ? m.mk_forall(m_num, m_sortlist.c_ptr(), m_symlist.c_ptr(), im.get()) : im.get(),m); 
         m_dl_ctx->add_conjecture(qu.get(), m_name);
     }
 };
