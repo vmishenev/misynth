@@ -222,6 +222,7 @@ namespace datalog {
         m_transformed_rule_set(*this),
         m_rule_fmls_head(0),
         m_rule_fmls(m),
+        m_conjecture_fmls(m),
         m_background(m),
         m_mc(0),
         m_rel(0),
@@ -479,6 +480,11 @@ namespace datalog {
         m_rule_fmls.push_back(rl);
         m_rule_names.push_back(name);
         m_rule_bounds.push_back(bound);
+    }
+
+  void context::add_conjecture(expr* rl, symbol const& name) {
+        m_conjecture_fmls.push_back(rl);
+        m_conjecture_names.push_back(name);
     }
 
     void context::flush_add_rules() {
@@ -1114,6 +1120,13 @@ namespace datalog {
             //            rules.push_back(m_rule_fmls[i].get());
             names.push_back(m_rule_names[i]);
             bounds.push_back(m_rule_bounds[i]);
+        }
+    }
+
+    void context::get_conjectures(expr_ref_vector& conjectures, svector<symbol>& names){
+        for (unsigned i = 0; i < m_conjecture_fmls.size(); ++i) {
+            conjectures.push_back(m_conjecture_fmls[i].get());
+            names.push_back(m_conjecture_names[i]);
         }
     }
 

@@ -48,6 +48,7 @@ namespace smt2 {
         };
         symbol_table<local>  m_env;
         unsigned             m_num_bindings;
+        unsigned             m_ext_scopes; // KLM: number of scopes created in external command
 
         dictionary<int>      m_sort_id2param_idx;
         dictionary<int>      m_dt_name2idx;
@@ -2242,9 +2243,14 @@ namespace smt2 {
             case CPK_SORTED_VAR:
                 NOT_IMPLEMENTED_YET();
                 break;
-            case CPK_SORTED_VAR_LIST:
-                NOT_IMPLEMENTED_YET();
-                break;
+            case CPK_SORTED_VAR_LIST: {
+                unsigned sym_spos = symbol_stack().size();
+                unsigned sort_spos = sort_stack().size();
+                unsigned num = parse_sorted_vars();
+                m_curr_cmd->set_next_arg(m_ctx, num, symbol_stack().c_ptr() + sym_spos, sort_stack().c_ptr() + sort_spos);
+                m_ext_scopes++; // KLM: remember we created some bindings in the environment
+                return;
+            }
             case CPK_SEXPR:
                 parse_sexpr();
                 m_curr_cmd->set_next_arg(m_ctx, sexpr_stack().back());
@@ -2282,6 +2288,7 @@ namespace smt2 {
             unsigned expr_spos  = size(m_expr_stack);
             unsigned sexpr_spos = size(m_sexpr_stack);
             unsigned sym_spos   = m_symbol_stack.size();
+            m_ext_scopes = 0;
             m_curr_cmd->prepare(m_ctx);
             while (true) {
                 if (curr_is_rparen()) {
@@ -2294,6 +2301,10 @@ namespace smt2 {
                     shrink(m_expr_stack, expr_spos);
                     shrink(m_sexpr_stack, sexpr_spos);
                     m_symbol_stack.shrink(sym_spos);
+                    while(m_ext_scopes > 0){
+                        m_env.end_scope();
+                        m_ext_scopes--;
+                    }
                     m_num_bindings = 0;
                     // HACK for propagating the update of parser parameters
                     if (norm_param_name(s) == "set_option") {
@@ -2378,6 +2389,7 @@ namespace smt2 {
             m_curr(scanner::NULL_TOKEN),
             m_curr_cmd(0),
             m_num_bindings(0),
+            m_ext_scopes(0),
             m_let("let"),
             m_bang("!"),
             m_forall("forall"),

@@ -1005,6 +1005,8 @@ namespace Duality {
     public:
         Term UnderapproxFullFormula(const Term &f, bool extensional = true);
 
+        Term SubstBound(hash_map<int,Term> &subst, const Term &t);
+
     protected:
         Term ToRuleRec(Edge *e,  hash_map<ast,Term> &memo, const Term &t, std::vector<expr> &quants);
 
@@ -1029,8 +1031,6 @@ namespace Duality {
                           hash_set<ast> *done, bool truth);
 
         Term SubstBoundRec(hash_map<int,hash_map<ast,Term> > &memo, hash_map<int,Term> &subst, int level, const Term &t);
-
-        Term SubstBound(hash_map<int,Term> &subst, const Term &t);
 
         void ConstrainEdgeLocalized(Edge *e, const Term &t);
 
@@ -1165,6 +1165,29 @@ namespace Duality {
             solve a series of similar problems. */
 
         virtual void LearnFrom(Solver *old_solver) = 0;
+
+        /** Tell solver to use a set of conjectures. A conjecture is a
+            constraint on the interpretation of the relational symbols
+            that is conjectured to preserve satisfiability. A typical
+            example would be a conjectured invariant or procedure
+            summary that might be useful to the engine in finding a
+            relational solution or as guidence in producing a
+            counterexample. A conjecture can be any formula, but the
+            expected form of a useful conjecture is:
+
+            forall V. head[V] => body[V]
+
+            Here head gives the relation being constrained and body
+            gives the conjectured constraint. Generally, to be useful,
+            a conjecture should be at least true in a bounded sense,
+            otherwise it is overhead.
+
+            A possible extenion to this mechanism would be a
+            conjecture pattern with blanks to be filled in based on
+            matching against heads of existing rules.
+        */
+        
+        virtual void Conjecture(const std::vector<expr> &) {}
 
         /** Return true if the solution be incorrect due to recursion bounding.
             That is, the returned "solution" might contain all derivable facts up to the

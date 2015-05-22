@@ -99,6 +99,23 @@ unsigned read_smtlib_file(char const * benchmark_file) {
     return solver.get_error_code();
 }
 
+struct scoped_cmd_parser : public cmd_context::parser {
+    cmd_context &m_ctx;
+    scoped_cmd_parser(cmd_context &ctx) : m_ctx(ctx){
+        ctx.set_parser(this);
+    }
+    ~scoped_cmd_parser(){
+        m_ctx.set_parser(0);
+    }
+};
+
+struct scoped_smt2_cmd_parser : public scoped_cmd_parser {
+    scoped_smt2_cmd_parser(cmd_context &ctx) : scoped_cmd_parser(ctx) {}
+    virtual bool operator()(cmd_context &ctx, std::istream & is){
+        return parse_smt2_commands(ctx,is);
+    }
+};
+
 unsigned read_smtlib2_commands(char const * file_name) {
     g_start_time = clock();
     register_on_timeout_proc(on_timeout);
@@ -117,6 +134,7 @@ unsigned read_smtlib2_commands(char const * file_name) {
     signal(SIGINT, on_ctrl_c);
     
     bool result = true;
+    scoped_smt2_cmd_parser scp(ctx);
     if (file_name) {
         std::ifstream in(file_name);
         if (in.bad() || in.fail()) {

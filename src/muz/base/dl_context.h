@@ -195,6 +195,8 @@ namespace datalog {
         expr_ref_vector    m_rule_fmls;
         svector<symbol>    m_rule_names;
         vector<unsigned>   m_rule_bounds;
+        expr_ref_vector    m_conjecture_fmls;
+        svector<symbol>    m_conjecture_names;
         expr_ref_vector    m_background;
         model_converter_ref m_mc;
         proof_converter_ref m_pc;
@@ -368,6 +370,7 @@ namespace datalog {
 
         void get_rules_as_formulas(expr_ref_vector& fmls, svector<symbol>& names);
         void get_raw_rule_formulas(expr_ref_vector& fmls, svector<symbol>& names, vector<unsigned> &bounds);
+        void get_conjectures(expr_ref_vector& fmls, svector<symbol>& names);
 
         void add_fact(app * head);
         void add_fact(func_decl * pred, const relation_fact & fact);
@@ -386,6 +389,34 @@ namespace datalog {
         */
         void add_rule(expr* rl, symbol const& name, unsigned bound = UINT_MAX);
         
+        /** 
+            Add a conjecture. This is a constraint on the
+            interpretation of the relational symbols that is
+            conjectured to preserve satisfiability. A typical example
+            would be a conjectured invariant or procedure summary that
+            might be useful to the engine in finding a relational
+            solution (that is, refuting a query) or as guidence in
+            solving a query. A conjecture can be any formula, but the
+            expected form of a useful conjecture is:
+
+            forall V. head[V] => body[V]
+
+            Here head gives the relation being constrained and body
+            gives the conjectured constraint. The engine is free to
+            ignore conjectures (possibly with a warning) and should
+            not fail as the result of a malformed or incorrect
+            conjecture.
+
+            A possible extenion to this mechanism would be a
+            conjecture pattern with blanks to be filled in based on
+            matching against heads of existing rules.
+
+            The conjecture name can be used in diagnostics and need
+            not be present or unique.
+
+        */
+
+        void add_conjecture(expr* rl, symbol const& name);
 
         /**
            Update a named rule.

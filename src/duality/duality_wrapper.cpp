@@ -34,6 +34,7 @@
 #include "stopwatch.h"
 #include "model_smt2_pp.h"
 #include "qe_lite.h"
+#include "smt2parser.h"
 
 namespace Duality {
 
@@ -641,7 +642,6 @@ namespace Duality {
         stl_ext::hash_set<ast> memo;
         get_assumptions_rec(memo,*this,assumps);
     }
-
 
     void ast::show() const{
         std::cout << mk_pp(raw(), m()) << std::endl;

@@ -108,6 +108,7 @@ public:
     virtual void set_next_arg(cmd_context & ctx, unsigned num, expr * const * tlist) { UNREACHABLE(); }
     virtual void set_next_arg(cmd_context & ctx, sorted_var const & sv) { UNREACHABLE(); }
     virtual void set_next_arg(cmd_context & ctx, unsigned num, sorted_var const * svlist) { UNREACHABLE(); }
+    virtual void set_next_arg(cmd_context & ctx, unsigned num, symbol const * symlist, sort * const * sortlist) { UNREACHABLE(); }
     virtual void set_next_arg(cmd_context & ctx, func_decl * f) { UNREACHABLE(); }
     virtual void set_next_arg(cmd_context & ctx, unsigned num, func_decl * const * flist) { UNREACHABLE(); }
     virtual void set_next_arg(cmd_context & ctx, sexpr * n) { UNREACHABLE(); }

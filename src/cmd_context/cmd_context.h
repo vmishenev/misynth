@@ -130,6 +130,11 @@ public:
         ~scoped_watch() { m_ctx.m_watch.stop(); }
     };
 
+    class parser {
+    public:
+        virtual bool operator()(cmd_context &ctx, std::istream & is) = 0;
+    };
+
 protected:
     context_params               m_params;
     bool                         m_main_ctx;
@@ -210,6 +215,8 @@ protected:
 
     scoped_ptr<pp_env>            m_pp_env;
     pp_env & get_pp_env() const;
+
+    parser *m_parser;
 
     void register_builtin_sorts(decl_plugin * p);
     void register_builtin_ops(decl_plugin * p);
@@ -306,6 +313,8 @@ public:
     check_sat_result * get_check_sat_result() const { return m_check_sat_result.get(); }
     check_sat_state cs_state() const;
     void validate_model();
+    void set_parser(parser *p){m_parser = p;}
+    bool parse(std::istream & is){SASSERT(m_parser); return (*m_parser)(*this,is);}
     
     bool is_func_decl(symbol const & s) const;
     bool is_sort_decl(symbol const& s) const { return m_psort_decls.contains(s); }

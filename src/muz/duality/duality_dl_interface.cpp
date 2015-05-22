@@ -200,6 +200,19 @@ namespace Duality {
             clauses.push_back(e);
         }
   
+        // get the conjectures
+
+        std::vector<expr> conjectures;
+        {
+            expr_ref_vector conjectures_(m_ctx.get_manager());
+            svector< ::symbol> conjecture_names;
+            m_ctx.get_conjectures(conjectures_, conjecture_names);
+            for (unsigned i = 0; i < conjectures_.size(); ++i) {
+                expr e(_d->ctx,conjectures_[i].get());
+                conjectures.push_back(e);
+            }            
+        }
+        
         std::vector<sort> b_sorts;
         std::vector<symbol> b_names;
         used_vars uv;
@@ -302,6 +315,7 @@ namespace Duality {
 
         Solver *rs = Solver::Create("duality", _d->rpfp);
 
+        rs->Conjecture(conjectures);
         if(old_rs)
             rs->LearnFrom(old_rs); // new solver gets hints from old solver
   

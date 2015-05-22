@@ -227,6 +227,15 @@ UNARY_CMD(pp_cmd, "display", "<term>", "display the given term.", CPK_EXPR, expr
 
 UNARY_CMD(echo_cmd, "echo", "<string>", "display the given string", CPK_STRING, char const *, ctx.regular_stream() << arg << std::endl;);
 
+UNARY_CMD(include_cmd, "include", "<filename>","execute commands in given file", CPK_STRING, char const *, {
+    std::ifstream in(arg);
+    if (in.bad() || in.fail()) {
+        std::cerr << "(error \"failed to open file '" << arg << "'\")" << std::endl;
+        exit(ERR_OPEN_FILE);
+    }
+    ctx.parse(in);
+});
+
 class set_get_option_cmd : public cmd {
 protected:
     symbol      m_true;
@@ -756,6 +765,7 @@ void install_ext_basic_cmds(cmd_context & ctx) {
     ctx.insert(alloc(pp_cmd));
     ctx.insert(alloc(get_model_cmd));
     ctx.insert(alloc(echo_cmd));
+    ctx.insert(alloc(include_cmd));
     ctx.insert(alloc(labels_cmd));
     ctx.insert(alloc(declare_map_cmd));
     ctx.insert(alloc(builtin_cmd, "reset", 0, "reset the shell (all declarations and assertions will be erased)"));

@@ -114,6 +114,11 @@ struct dl_context {
         }
     }    
 
+    void add_conjecture(expr * conjecture, symbol const& name) {
+        init();
+        m_context->add_conjecture(conjecture, name);
+    }    
+
     bool collect_query(expr* q) {
         if (m_collected_cmds) {
             expr_ref qr = m_context->bind_variables(q, false);
@@ -188,6 +193,126 @@ public:
     }
     virtual void execute(cmd_context & ctx) {
       m_dl_ctx->add_rule(m_t, m_name, m_bound);
+    }
+};
+
+/**
+   \brief conjecture command
+*/
+class dl_conjecture_cmd : public cmd {
+    ref<dl_context> m_dl_ctx;
+    mutable unsigned     m_arg_idx;
+    expr*        m_t;
+    symbol       m_name;
+public:
+    dl_conjecture_cmd(dl_context * dl_ctx):
+        cmd("conjecture"),
+        m_dl_ctx(dl_ctx),       
+        m_arg_idx(0),
+        m_t(0) {}
+    virtual char const * get_usage() const { return "(forall (q) (=> head (and body) )) :optional-name "; }
+    virtual char const * get_descr(cmd_context & ctx) const { return "add a conjecture on the solutions of Horn formulas."; }
+    virtual unsigned get_arity() const { return VAR_ARITY; }
+    virtual cmd_arg_kind next_arg_kind(cmd_context & ctx) const { 
+        switch(m_arg_idx) {
+        case 0: return CPK_EXPR;
+        case 1: return CPK_SYMBOL;
+        default: return CPK_SYMBOL;
+        }
+    }
+    virtual void set_next_arg(cmd_context & ctx, expr * t) {
+        m_t = t;
+        m_arg_idx++;
+    }
+    virtual void set_next_arg(cmd_context & ctx, symbol const & s) {
+        m_name = s;
+        m_arg_idx++;
+    }
+    virtual void reset(cmd_context & ctx) { m_dl_ctx->reset(); prepare(ctx); }
+    virtual void prepare(cmd_context& ctx) { m_arg_idx = 0; m_name = symbol::null; }
+    virtual void finalize(cmd_context & ctx) { 
+    }
+    virtual void execute(cmd_context & ctx) {
+      m_dl_ctx->add_conjecture(m_t, m_name);
+    }
+};
+
+/**
+   \brief decl-conj command
+
+   Command syntax:
+
+   (decl-conj relname ((param sort) ...) body)
+
+   This is equivalent to the following:
+
+   (declare-fun relname ((param sort) ...) Bool)
+   (conjecture (forall ((param sort) ...) ((relname param ...) => body)))
+
+   Saves typing the parameters three times.
+*/
+class dl_decl_conj_cmd : public cmd {
+    ref<dl_context> m_dl_ctx;
+    mutable unsigned     m_arg_idx;
+    expr*        m_t;
+    symbol       m_name;
+    unsigned     m_num;
+    symbol       m_symbol;
+    symbol const * m_symlist;
+    sort * const * m_sortlist;
+public:
+    dl_decl_conj_cmd(dl_context * dl_ctx):
+        cmd("decl-conj"),
+        m_dl_ctx(dl_ctx),       
+        m_arg_idx(0),
+        m_t(0) {}
+    virtual char const * get_usage() const { return "relname ((param sort) ...) body) :optional-name "; }
+    virtual char const * get_descr(cmd_context & ctx) const { return "declare a relation and add a conjecture."; }
+    virtual unsigned get_arity() const { return VAR_ARITY; }
+    virtual cmd_arg_kind next_arg_kind(cmd_context & ctx) const { 
+        switch(m_arg_idx) {
+        case 0: return CPK_SYMBOL;
+        case 1: return CPK_SORTED_VAR_LIST;
+        default: return CPK_EXPR;
+        }
+    }
+    virtual void set_next_arg(cmd_context & ctx, symbol const & s) {
+        m_symbol = s;
+        m_arg_idx++;
+    }
+    virtual void set_next_arg(cmd_context & ctx, unsigned num, symbol const * symlist, sort * const * sortlist) {
+        m_num = num;
+        m_symlist = symlist;
+        m_sortlist = sortlist;
+        m_arg_idx++;
+    }
+    virtual void set_next_arg(cmd_context & ctx, expr * t) {
+        m_t = t;
+        m_arg_idx++;
+    }
+    virtual void reset(cmd_context & ctx) { m_dl_ctx->reset(); prepare(ctx); }
+    virtual void prepare(cmd_context& ctx) { m_arg_idx = 0; m_name = symbol::null; }
+    virtual void finalize(cmd_context & ctx) { 
+    }
+    virtual void execute(cmd_context & ctx) {
+        ast_manager &m = ctx.m();
+        func_decl_ref f(m);
+        
+        f = m.mk_func_decl(m_symbol, m_num, m_sortlist, m.mk_bool_sort());
+        ctx.insert(f);
+        unsigned i = m_num;
+        sort * const * sort_it = m_sortlist;
+        expr_ref_vector args(m);
+        while (i > 0) {
+            --i;
+            var * v = m.mk_var(i, *sort_it);
+            args.push_back(v);
+            ++sort_it;
+        }
+        expr_ref ap(m.mk_app(f.get(),m_num,args.c_ptr()),m);
+        expr_ref im(m.mk_implies(ap,m_t),m);
+        expr_ref qu(m_num ? m.mk_forall(m_num, m_sortlist, m_symlist, im.get()) : im.get(),m); 
+        m_dl_ctx->add_conjecture(qu.get(), m_name);
     }
 };
 
@@ -509,6 +634,8 @@ public:
 static void install_dl_cmds_aux(cmd_context& ctx, dl_collected_cmds* collected_cmds) {
     dl_context * dl_ctx = alloc(dl_context, ctx, collected_cmds);
     ctx.insert(alloc(dl_rule_cmd, dl_ctx));
+    ctx.insert(alloc(dl_conjecture_cmd, dl_ctx));
+    ctx.insert(alloc(dl_decl_conj_cmd, dl_ctx));
     ctx.insert(alloc(dl_query_cmd, dl_ctx));
     ctx.insert(alloc(dl_declare_rel_cmd, dl_ctx));
     ctx.insert(alloc(dl_declare_var_cmd, dl_ctx));
