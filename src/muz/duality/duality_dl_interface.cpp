@@ -368,7 +368,7 @@ namespace Duality {
         // but we return undef if the UNSAT result is bounded
         if(ans){
             if(rs->IsResultRecursionBounded()){
-#if 0
+#if 1
                 m_ctx.set_status(datalog::BOUNDED);
                 return l_undef;
 #else
