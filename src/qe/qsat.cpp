@@ -23,22 +23,10 @@ Revision History:
 #include "qe_mbp.h"
 #include "smt_params.h"
 #include "ast_util.h"
+#include "quant_hoist.h"
 
 using namespace qe;
 
-struct qdef_t {
-    expr_ref        m_pred;
-    expr_ref        m_expr;
-    expr_ref_vector m_vars;
-    bool            m_is_forall;
-    qdef_t(expr_ref& p, expr_ref& e, expr_ref_vector const& vars, bool is_forall):
-        m_pred(p), 
-        m_expr(e),
-        m_vars(vars),
-        m_is_forall(is_forall) {}
-};
-
-typedef vector<qdef_t> qdefs_t;
 
 struct pdef_t {
     expr_ref  m_pred;
@@ -54,20 +42,152 @@ class qsat::impl {
     qe::mbp           mbp;
     smt_params        m_smtp;
     smt::kernel       m_kernel;
-    expr_ref          m_fml_pred;  // predicate that encodes top-level formula
-    expr_ref_vector   m_atoms;     // predicates that encode atomic subformulas
+    expr_ref          m_fml_pred;   // predicate that encodes top-level formula
+    expr_ref          m_nfml_pred;  // predicate that encodes top-level formula
+    expr_ref_vector   m_atoms;      // predicates that encode atomic subformulas
+    vector<app_ref_vector> m_vars;  // variables from alternating prefixes.
+    expr_ref_vector   m_assumptions;
+    unsigned_vector   m_assumptions_lim;
+    unsigned          m_level;
+    model_ref         m_model;
 
 
-    lbool check_sat() {        
-        // TBD main procedure goes here.
+    /**
+       \brief check alternating satisfiability.
+       Even levels are existential, odd levels are universal.
+     */
+    lbool check_sat() {
+        while (true) {
+            expr_ref_vector asms(m_assumptions);
+            lbool res = check_sat(asms, get_fml());
+            switch (res) {
+            case l_true:
+                if (m_level == 0) {
+                    m_kernel.get_model(m_model);
+                }
+                project(asms);
+                push();
+                m_assumptions.append(asms);
+                break;
+            case l_false:
+                if (m_level == 0) {
+                    return l_false;
+                }
+                if (m_level == 1) {
+                    return l_true;
+                }
+                backtrack(asms);
+                break;
+            case l_undef:
+                return res;
+            }
+        }
         return l_undef;
     }
 
-    /**
-       \brief replace quantified sub-formulas by a predicate, introduce definitions for the predicate.
-     */
-    void remove_quantifiers(expr_ref_vector& fmls, qdefs_t& defs) {
+    void project(expr_ref_vector& imp) {
         
+    }
+
+    void backtrack(expr_ref_vector const& core) {
+        unsigned level = ((m_level % 2) == 0)?0:1;
+        for (unsigned i = 0; i < core.size(); ++i) {
+            level = std::max(level, get_level(core[i]));
+        }
+        SASSERT(level < m_level);
+        pop(m_level - level);
+        expr_ref ncore(m);
+        ncore = ::mk_not(m, mk_and(m, core.size(), core.c_ptr()));
+        m_kernel.assert_expr(ncore);
+    }
+
+    unsigned get_level(expr* p) const {
+        unsigned j = 0;
+        for (unsigned i = 0; i < m_assumptions_lim.size(); ++i) {
+            for (; j < m_assumptions_lim[i]; ++j) {
+                if (m_assumptions[j]  == p)
+                    return i;
+            }
+        }
+        UNREACHABLE();
+        retunn 0;
+    }
+
+    void push() {
+        m_assumptions_lim.push_back(m_assumptions.size());
+        m_level++;
+        m_kernel.push(); // tBD experiment with this.
+    }
+
+    void pop(unsinged num_scopes) {
+        SASSERT(num_scopes <= m_level);
+        m_level -= num_scopes;
+        m_assumptions.resize(m_assumptions_lim[m_level]);
+        m_assumptions_lim.resize(m_level);
+        m_kernel.pop(num_scopes);
+    }
+
+    void reset() {
+        m_level = 0;
+        m_assumptions.reset();
+        m_assumptions_lim.reset();
+    }
+
+    expr* get_fml() {
+        if ((m_level % 2) == 0) {
+            return m_fml_pred;
+        }
+        else {
+            return m_nfml_pred;
+        }
+    }
+
+    /**
+       \brief create a quantifier prefix formula.
+     */
+    void hoist(expr_ref& fml) {
+        quantifier_hoister hoist(m);
+        app_ref_vector vars(m);
+        bool is_forall = false;        
+        get_free_vars(fml, vars);
+        m_vars.push_back(vars);
+        vars.reset();
+        hoist.pull_quantifier(is_forall, fml, vars);
+        m_vars.back().append(vars);
+        do {
+            is_forall = !is_forall;
+            vars.reset();
+            hoist.pull_quantifier(is_forall, fml, vars);
+            m_vars.push_back(vars);
+        }
+        while (!vars.empty());
+        SASSERT(m_vars.back().empty()); 
+    }
+
+    void get_free_vars(expr_ref& fml, app_ref_vector& vars) {
+        ast_fast_mark1 mark;
+        ptr_vector<expr> todo;
+        todo.push_back(fml);
+        while (!todo.empty()) {
+            expr* e = todo.back();
+            todo.pop_back(e);
+            if (mark.is_marked(e) || is_var(e)) {
+                continue;
+            }
+            mark.mark(e);
+            is (is_quantifier(e)) {
+                todo.push_back(to_quantifier(e)->get_expr());
+                continue;
+            }
+            SASSERT(is_app(e));
+            app* a = to_app(e);
+            if (is_uninterp_const(a)) { // TBD generalize for uninterpreted functions.
+                vars.push_back(a);
+            }
+            for (unsigned i = 0; i < a->get_num_args(); ++i) {
+                todo.push_back(a->get_arg(i));
+            }
+        }
     }
 
     /** 
@@ -129,7 +249,7 @@ class qsat::impl {
     bool minimize_assignment(expr_ref_vector& assignment, expr* not_fml) {        
         bool result = false;
         assignment.push_back(not_fml);
-        lbool res = m_kernel.check(assignment.size(), assignment.c_ptr());
+        lbool res = m_kernel.check(assignment);
         switch (res) {
         case l_true:
             UNREACHABLE();
@@ -146,30 +266,13 @@ class qsat::impl {
 
     lbool check_sat(expr_ref_vector& assignment, expr* fml) {
         assignment.push_back(fml);
-        lbool res = m_kernel.check(assignment.size(), assignment.c_ptr());
+        lbool res = m_kernel.check(assignment);
         switch (res) {
-        case l_true: {
-            model_ref mdl;
-            expr_ref tmp(m);
-            assignment.reset();
-            m_kernel.get_model(mdl);
-            for (unsigned i = 0; i < m_atoms.size(); ++i) {
-                expr* p = m_atoms[i].get();
-                if (mdl->eval(p, tmp)) {
-                    if (m.is_true(tmp)) {
-                        assignment.push_back(p);
-                    }
-                    else if (m.is_false(tmp)) {
-                        assignment.push_back(m.mk_not(p));
-                    }
-                }                
-            }
-            expr_ref not_fml = mk_not(fml);
-            if (!minimize_assignment(assignment, not_fml)) {
+        case l_true: 
+            if (!get_implicant(assignment, not_fml)) {
                 res = l_undef;
             }
             break;
-        }
         case l_undef:            
             break;
         case l_false:
@@ -177,6 +280,26 @@ class qsat::impl {
             break;
         }
         return res;
+    }
+
+    void get_implicant(expr_ref_vector& impl, expr* fml) {
+        model_ref mdl;
+        expr_ref tmp(m);
+        assignment.reset();
+        m_kernel.get_model(mdl);
+        for (unsigned i = 0; i < m_atoms.size(); ++i) {
+            expr* p = m_atoms[i].get();
+            if (mdl->eval(p, tmp)) {
+                if (m.is_true(tmp)) {
+                    assignment.push_back(p);
+                }
+                else if (m.is_false(tmp)) {
+                    assignment.push_back(m.mk_not(p));
+                }
+            }                
+        }
+        expr_ref not_fml = mk_not(fml);
+        return minimize_assignment(imp, not_fml);
     }
 
     void get_core(expr_ref_vector& core, expr* exclude) {
@@ -199,8 +322,12 @@ public:
         m(m),
         mbp(m),
         m_kernel(m, m_smtp),
-        m_fml_pred(m), 
-        m_atoms(m) {}
+        m_fml_pred(m),
+        m_nfml_pred(m),
+        m_atoms(m),
+        m_assumptions(m),
+        m_level(0)
+    {}
     
     void updt_params(params_ref const & p) {
     }
