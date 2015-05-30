@@ -30,15 +30,6 @@ Revision History:
 using namespace qe;
 
 
-struct pdef_t {
-    expr_ref  m_pred;
-    expr_ref  m_atom;
-    pdef_t(expr_ref& p, expr* a):
-        m_pred(p),
-        m_atom(a, p.get_manager())
-    {}
-};
-
 class qsat::impl {
     ast_manager&      m;
     qe::mbp           mbp;
@@ -55,6 +46,7 @@ class qsat::impl {
     unsigned                m_level;
     model_ref               m_model;
     obj_map<app, expr*>     m_pred2lit;  // maintain definitions of predicates.
+    obj_map<expr, app*>     m_lit2pred;  // maintain reverse mapping to predicates
 
 
     void display(std::ostream& out) const {
@@ -84,15 +76,16 @@ class qsat::impl {
     lbool check_sat() {
         while (true) {
             expr_ref_vector asms(m_assumptions);
+            model_ref mdl;
             lbool res = check_sat(asms, get_fml());
             switch (res) {
             case l_true:
+                m_kernel.get_model(mdl);
                 if (m_level == 0) {
-                    m_kernel.get_model(m_model);
+                    m_model = mdl;
                 }
-                project(asms);
                 push();
-                m_assumptions.append(asms);
+                project(asms, mdl);
                 break;
             case l_false:
                 if (m_level == 0) {
@@ -110,32 +103,47 @@ class qsat::impl {
         return l_undef;
     }
 
-    void project(expr_ref_vector& imp) {
+    void project(expr_ref_vector& imp, model_ref& mdl) {
         app_ref_vector vars(m);
-        model_ref mdl;
-        m_kernel.get_model(mdl);
+        app_ref p(m);
+        app* pr = 0;
+        expr_ref fml(m);
+
         for (unsigned i = m_level+1; i < m_vars.size(); ++i) {
             vars.append(m_vars[i]);
         }
-        expr_ref fml(m);
+        for (unsigned i = 0; i < imp.size(); ++i) {
+            imp[i] = to_app(m_pred2lit.find(to_app(imp[i].get())));
+        }
         fml = mk_and(m, imp.size(), imp.c_ptr());
         mbp(vars, mdl, fml);
         imp.reset();
-        flatten_and(fml, imp);
-        app_ref p(m);
+        flatten_and(fml, imp);        
         for (unsigned i = 0; i < imp.size(); ++i) {
-            p = m.mk_fresh_const("p", m.mk_bool_sort());
-            m_kernel.assert_expr(m.mk_eq(p, imp[i].get()));
-            m_assumptions.push_back(p);
-            m_pred2lit.insert(p, imp[i].get());
-            m_atoms.push_back(p);
-        }
+            if (m_lit2pred.find(imp[i].get(), pr)) {
+                m_assumptions.push_back(pr);
+            }
+            else {
+                p = m.mk_fresh_const("p", m.mk_bool_sort());
+                m_kernel.assert_expr(m.mk_eq(p, imp[i].get()));
+                m_assumptions.push_back(p);
+                m_pred2lit.insert(p, imp[i].get());
+                m_lit2pred.insert(imp[i].get(), p);
+                m_atoms.push_back(p);  
+            }
+        }      
     }
 
-    void backtrack(expr_ref_vector const& core) {
+    void backtrack(expr_ref_vector& core) {
         unsigned level = ((m_level % 2) == 0)?0:1;
         for (unsigned i = 0; i < core.size(); ++i) {
-            level = std::max(level, get_level(core[i]));
+            unsigned lvl = get_level(core[i].get());
+            if (lvl + 1 < m_level) {
+                level = std::max(level, lvl);                
+            }
+            else {
+                core[i] = m.mk_true();                
+            }
         }
         SASSERT(level < m_level);
         pop(m_level - level);
@@ -168,13 +176,15 @@ class qsat::impl {
     void pop(unsigned num_scopes) {
         SASSERT(num_scopes <= m_level);
         expr_ref_vector replay(m);
-        while (num_scopes > 0) {
+        m_level -= num_scopes;
+        for (unsigned i = 0; i < num_scopes; ++i) {
             replay.append(m_replay.back());
             m_replay.pop_back();
-            --num_scopes;
         }
         for (unsigned i = m_assumptions_lim[m_level]; i < m_assumptions.size(); ++i) {
-            m_pred2lit.remove(to_app(m_assumptions[i].get()));
+            app* a = to_app(m_assumptions[i].get());
+            m_lit2pred.remove(m_pred2lit.find(a));
+            m_pred2lit.remove(a);
         }
         m_atoms.resize(m_atoms_lim[m_level]);
         m_assumptions.resize(m_assumptions_lim[m_level]);
@@ -252,15 +262,15 @@ class qsat::impl {
     }
 
     /** 
-        \brief create propositional abstration of formula by replacing atomic sub-formulas by fresh 
+        \brief create propositional abstraction of formula by replacing atomic sub-formulas by fresh 
         propositional variables, and adding definitions for each propositional formula on the side.
         Assumption is that the formula is quantifier-free.
     */
-    void mk_abstract(expr_ref& fml, vector<pdef_t>& pdefs) {
+    void mk_abstract(expr* fml) {
         expr_ref_vector todo(m), trail(m);
         obj_map<expr,expr*> cache;
         ptr_vector<expr> args;
-        expr_ref r(m);
+        app_ref r(m);
         todo.push_back(fml);
         while (!todo.empty()) {
             expr* e = todo.back();
@@ -273,17 +283,24 @@ class qsat::impl {
             if (a->get_family_id() == m.get_basic_family_id()) {
                 unsigned sz = a->get_num_args();
                 args.reset();
+                bool diff = false;
                 for (unsigned i = 0; i < sz; ++i) {
-                    expr* f = a->get_arg(i);
-                    if (cache.find(f, f)) {
-                        args.push_back(f);
+                    expr* f = a->get_arg(i), *f1;
+                    if (cache.find(f, f1)) {
+                        args.push_back(f1);
+                        diff |= f != f1;
                     }
                     else {
                         todo.push_back(f);
                     }
                 } 
                 if (args.size() == sz) {
-                    r = m.mk_app(a->get_decl(), sz, args.c_ptr());
+                    if (diff) {
+                        r = m.mk_app(a->get_decl(), sz, args.c_ptr());
+                    }
+                    else {
+                        r = to_app(e);
+                    }
                     cache.insert(e, r);
                     trail.push_back(r);
                     todo.pop_back();
@@ -291,17 +308,23 @@ class qsat::impl {
             }
             else if (is_uninterp_const(a)) {
                 cache.insert(e, e);
+                m_atoms.push_back(e);
             }
             else {
                 // TBD: nested Booleans.    
 
-                r = m.mk_fresh_const("p",m.mk_bool_sort());
+                r = m.mk_fresh_const("p", m.mk_bool_sort());
                 trail.push_back(r);
                 cache.insert(e, r);
-                pdefs.push_back(pdef_t(r, e));
+                m_atoms.push_back(r);
+                m_pred2lit.insert(r, e);
+                m_lit2pred.insert(e, r);
             }
         }
-        fml = cache.find(fml);
+        r = m.mk_fresh_const("fml", m.mk_bool_sort());
+        m_fml_pred  = r;
+        m_nfml_pred = m.mk_not(r);
+        m_kernel.assert_expr(m.mk_eq(r, cache.find(fml)));
     }
 
     /** 

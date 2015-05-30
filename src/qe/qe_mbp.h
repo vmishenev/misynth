@@ -23,6 +23,7 @@ Revision History:
 
 #include "ast.h"
 #include "params.h"
+#include "model.h"
 
 namespace qe {
     class mbp {
@@ -36,12 +37,9 @@ namespace qe {
         /**
            \brief
            Apply model-based qe on constants provided as vector of variables. 
-           Return the updated formula and updated set of variables that were not eliminated.
-           
+           Return the updated formula and updated set of variables that were not eliminated.           
         */
-        void operator()(app_ref_vector& vars, model_ref& mdl, expr_ref& fml);
-        
-        void set_cancel(bool f);
+        void operator()(app_ref_vector const& vars, model_ref& mdl, expr_ref& fml);
     };
 }
 
