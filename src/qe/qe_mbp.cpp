@@ -48,10 +48,11 @@ public:
     }   
 private:
     void project(app* var, model_ref& mdl, expr_ref& fml) {
-        
+        // TBD
     }
 
     lra_category categorize_lra(app* var, expr* fml, expr_ref& t) {
+        // TBD
         return lra_unknown;
     }
 
@@ -86,7 +87,6 @@ private:
                 break;
             }
         }
-        expr_ref_vector tmps(m);
         rational glb;
         unsigned ltle = le.size() + lt.size();
         unsigned gtge = ge.size() + gt.size();
@@ -94,10 +94,8 @@ private:
         bool is_lower = (ltle <= gtge);
         if (is_lower) {
             is_strict = !lt.empty();
-            tmps.append(gt); gt.reset(); gt.append(ge);
-            ge.reset(); ge.append(tmps); tmps.reset();
-            tmps.append(lt); lt.reset(); lt.append(le);
-            le.reset(); le.append(tmps); tmps.reset();
+            gt.swap(lt);
+            ge.swap(le);
         }
         for (unsigned i = 0; i < gt.size(); ++i) {
             update_bound(gt[i].get(), mdl, is_lower, i == 0, glb);
