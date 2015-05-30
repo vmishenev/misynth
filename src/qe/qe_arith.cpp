@@ -1,5 +1,5 @@
 /*++
-Copyright (c) 2010 Microsoft Corporation
+Copyright (c) 2015 Microsoft Corporation
 
 Module Name:
 
@@ -67,7 +67,7 @@ namespace qe {
                 ts.push_back(a.mk_numeral(mul*mul1, m.get_sort(t)));
             }
             else if ((*m_var)(t)) {
-                IF_VERBOSE(1, verbose_stream() << "can't project:" << mk_pp(t, m) << "\n";);
+                TRACE("qe", tout << "can't project:" << mk_pp(t, m) << "\n";);
                 throw cant_project();
             }
             else if (mul.is_one()) {
@@ -93,12 +93,18 @@ namespace qe {
             }
             SASSERT(!m.is_not(lit));
             if (a.is_le(lit, e1, e2) || a.is_ge(lit, e2, e1)) {
+                if (is_not) {
+                    std::swap(e1, e2);
+                }
                 is_linear( mul, e1, c, ts);
                 is_linear(-mul, e2, c, ts);
                 s = m.get_sort(e1);
                 is_strict = is_not;
             }
             else if (a.is_lt(lit, e1, e2) || a.is_gt(lit, e2, e1)) {
+                if (is_not) {
+                    std::swap(e1, e2);
+                }
                 is_linear( mul, e1, c, ts);
                 is_linear(-mul, e2, c, ts);
                 s = m.get_sort(e1);
@@ -111,8 +117,12 @@ namespace qe {
                 is_strict = false;
             }            
             else {
-                IF_VERBOSE(1, verbose_stream() << "can't project:" << mk_pp(lit, m) << "\n";);
+                TRACE("qe", tout << "can't project:" << mk_pp(lit, m) << "\n";);
                 throw cant_project();
+            }
+            if (is_strict && a.is_int(s)) {
+                ts.push_back(a.mk_numeral(rational(0), s));
+                is_strict = false;
             }
             if (ts.empty()) {
                 t = a.mk_numeral(rational(0), s);
@@ -122,6 +132,10 @@ namespace qe {
             }
             return true;
         }
+
+        expr* ineq_term(unsigned i) const { return m_ineq_terms[i]; }
+        rational const& ineq_coeff(unsigned i) const { return m_ineq_coeffs[i]; }
+        bool ineq_strict(unsigned i) const { return m_ineq_strict[i]; }
 
         void project(model& model, expr_ref_vector& lits) {
             unsigned num_pos = 0;
@@ -160,10 +174,13 @@ namespace qe {
             }
             bool use_pos = num_pos < num_neg;
             unsigned max_t = find_max(model, use_pos);
+            if (a.is_int(m_var->x()) && !ineq_coeff(max_t).is_one()) {
+                throw cant_project();
+            }
 
             for (unsigned i = 0; i < m_ineq_terms.size(); ++i) {
                 if (i != max_t) {
-                    if (m_ineq_coeffs[i].is_pos() == use_pos) {
+                    if (ineq_coeff(i).is_pos() == use_pos) {
                         lits.push_back(mk_le(i, max_t));
                     }
                     else {
@@ -175,28 +192,38 @@ namespace qe {
 
         unsigned find_max(model& mdl, bool do_pos) {
             unsigned result;
-            bool found = false;
-            rational found_val(0), r, found_c;
+            bool new_max = true;
+            rational max_r, r;
             expr_ref val(m);
+            bool is_int = a.is_int(m_var->x());
             for (unsigned i = 0; i < m_ineq_terms.size(); ++i) {
                 rational const& ac = m_ineq_coeffs[i];
+                SASSERT(!is_int || !ineq_strict(i));
+
+                //
+                // ac*x + t < 0
+                // ac > 0: x + max { t/ac | ac > 0 } < 0   <=> x < - max { t/ac | ac > 0 }
+                // ac < 0: x + t/ac > 0 <=> x > max { - t/ac | ac < 0 } = max { t/|ac| | ac < 0 } 
+                //
                 if (ac.is_pos() == do_pos) {
-                    VERIFY(mdl.eval(m_ineq_terms[i].get(), val));
+                    VERIFY(mdl.eval(ineq_term(i), val));
                     VERIFY(a.is_numeral(val, r));
                     r /= abs(ac);
-                    IF_VERBOSE(1, verbose_stream() << "max: " << mk_pp(m_ineq_terms[i].get(), m) << " " << r << " " << (!found || r > found_val) << "\n";);
-                    if (!found || r > found_val) {
+                    new_max =
+                        new_max || 
+                        (r > max_r) || 
+                        (r == max_r && ineq_strict(i)) ||
+                        (r == max_r && is_int && ac.is_one());
+                    TRACE("qe", tout << "max: "  << mk_pp(ineq_term(i), m) << "/" << abs(ac) << " := " << r << " " 
+                          << (new_max?"":"not ") << "new max\n";);
+                    if (new_max) { 
                         result = i;
-                        found_val = r;
-                        found_c = ac;
-                        found = true;
+                        max_r  = r;
                     }
+                    new_max = false;
                 }
             }
-            SASSERT(found);
-            if (a.is_int(m_var->x()) && !found_c.is_one()) {
-                throw cant_project();
-            }
+            SASSERT(!new_max);
             return result;
         }
 
@@ -206,18 +233,18 @@ namespace qe {
         // Infer: a|b|x + |b|t + |a|bx + |a|s <= 0
         // e.g.   |b|t + |a|s <= 0
         expr_ref mk_lt(unsigned i, unsigned j) {
-            rational const& ac = m_ineq_coeffs[i];
-            rational const& bc = m_ineq_coeffs[j];
+            rational const& ac = ineq_coeff(i);
+            rational const& bc = ineq_coeff(j);
             SASSERT(ac.is_pos() != bc.is_pos());
             SASSERT(ac.is_neg() != bc.is_neg());
-            expr* t = m_ineq_terms[i].get();
-            expr* s = m_ineq_terms[j].get();
+            expr* t = ineq_term(i);
+            expr* s = ineq_term(j);
             expr_ref bt = mk_mul(abs(bc), t);
             expr_ref as = mk_mul(abs(ac), s);
             expr_ref ts = mk_add(bt, as);
             expr*    z  = a.mk_numeral(rational(0), m.get_sort(t));
             expr_ref result1(m), result2(m);
-            if (m_ineq_strict[i] || m_ineq_strict[j]) {
+            if (ineq_strict(i) || ineq_strict(j)) {
                 result1 = a.mk_lt(ts, z);
             }
             else {
@@ -233,16 +260,16 @@ namespace qe {
         // encode:// t/|a| <= s/|b|
         // e.g.   |b|t <= |a|s
         expr_ref mk_le(unsigned i, unsigned j) {
-            rational const& ac = m_ineq_coeffs[i];
-            rational const& bc = m_ineq_coeffs[j];
+            rational const& ac = ineq_coeff(i);
+            rational const& bc = ineq_coeff(j);
             SASSERT(ac.is_pos() == bc.is_pos());
             SASSERT(ac.is_neg() == bc.is_neg());
-            expr* t = m_ineq_terms[i].get();
-            expr* s = m_ineq_terms[j].get();
+            expr* t = ineq_term(i);
+            expr* s = ineq_term(j);
             expr_ref bt = mk_mul(abs(bc), t);
             expr_ref as = mk_mul(abs(ac), s);
             expr_ref result1(m), result2(m);
-            if (m_ineq_strict[j] && !m_ineq_strict[i]) {
+            if (ineq_strict(j) && !ineq_strict(i)) {
                 result1 = a.mk_lt(bt, as);
             }
             else {
@@ -251,7 +278,6 @@ namespace qe {
             m_rw(result1, result2);
             return result2;
         }
-
 
         expr_ref mk_add(expr* t1, expr* t2) {
             return expr_ref(a.mk_add(t1, t2), m);
@@ -270,16 +296,21 @@ namespace qe {
             expr_ref_vector result(lits);
             for (unsigned i = 0; i < vars.size(); ++i) {
                 app* v = vars[i].get();
-                m_var = alloc(contains_app, m, v);
-                try {
-                    project(model, result);
-                    TRACE("qe", tout << "projected: " << mk_pp(v, m) << " ";
-                          for (unsigned i = 0; i < result.size(); ++i) {
-                              tout << mk_pp(result[i].get(), m) << "\n";
-                          });
+                if (a.is_real(v) || a.is_int(v)) {
+                    m_var = alloc(contains_app, m, v);
+                    try {
+                        project(model, result);
+                        TRACE("qe", tout << "projected: " << mk_pp(v, m) << " ";
+                              for (unsigned i = 0; i < result.size(); ++i) {
+                                  tout << mk_pp(result[i].get(), m) << "\n";
+                              });
+                    }
+                    catch (cant_project) {
+                        TRACE("qe", tout << "can't project:" << mk_pp(v, m) << "\n";);
+                        new_vars.push_back(v);
+                    }
                 }
-                catch (cant_project) {
-                    IF_VERBOSE(1, verbose_stream() << "can't project:" << mk_pp(v, m) << "\n";);
+                else {
                     new_vars.push_back(v);
                 }
             }
