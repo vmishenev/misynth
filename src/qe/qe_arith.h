@@ -3,6 +3,7 @@
 #define __QE_ARITH_H_
 
 #include "model.h"
+#include "arith_decl_plugin.h"
 
 namespace qe {
     /**
@@ -13,6 +14,10 @@ namespace qe {
     expr_ref arith_project(model& model, app_ref_vector& vars, expr_ref_vector const& lits);
 
     expr_ref arith_project(model& model, app_ref_vector& vars, expr* fml);
+
+    // match e := t mod k = 0.
+    bool is_divides(arith_util& a, expr* e, rational& k, expr_ref& t);
+
 };
 
 #endif

@@ -2,6 +2,7 @@
 #include "bool_rewriter.h"
 
 namespace qe {
+
     void flatten_and(expr_ref_vector& result) {
         ast_manager& m = result.get_manager();
         expr* e1, *e2, *e3;

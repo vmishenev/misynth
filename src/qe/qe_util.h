@@ -37,5 +37,6 @@ namespace qe {
 
     expr_ref mk_or(expr_ref_vector const& fmls);
 
+
 }
 #endif
