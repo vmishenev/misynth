@@ -566,6 +566,7 @@ func_decl * bv_decl_plugin::mk_func_decl(decl_kind k, unsigned num_parameters, p
 
 func_decl * bv_decl_plugin::mk_func_decl(decl_kind k, unsigned num_parameters, parameter const * parameters, 
                                          unsigned num_args, expr * const * args, sort * range) {
+    ast_manager& m = *m_manager;
     int bv_size;
     if (k == OP_INT2BV && get_int2bv_size(num_parameters, parameters, bv_size)) {
         // bv_size is filled in.
@@ -589,11 +590,23 @@ func_decl * bv_decl_plugin::mk_func_decl(decl_kind k, unsigned num_parameters, p
         return decl_plugin::mk_func_decl(k, num_parameters, parameters, num_args, args, range);
     }
     else if (num_args == 0 || !get_bv_size(args[0], bv_size)) {
-        m_manager->raise_exception("operator is applied to arguments of the wrong sort");
+        m.raise_exception("operator is applied to arguments of the wrong sort");
         return 0;
     }
     func_decl * r = mk_func_decl(k, bv_size);
     if (r != 0) {
+        if (num_args != r->get_arity()) {
+            m.raise_exception("declared arity mismatches supplied arity");
+            return 0;            
+        }
+        for (unsigned i = 0; i < num_args; ++i) {
+            if (m.get_sort(args[i]) != r->get_domain(i)) {
+                std::ostringstream buffer;
+                buffer << "Argument " << mk_pp(args[i], m) << " at position " << i << " does not match declaration " << mk_pp(r, m);
+                m.raise_exception(buffer.str().c_str());
+                return 0;            
+            }
+        }
         return r;
     }
     return decl_plugin::mk_func_decl(k, num_parameters, parameters, num_args, args, range);
