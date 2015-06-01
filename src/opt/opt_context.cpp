@@ -890,7 +890,7 @@ namespace opt {
        - filter "obj" from generated model.
      */
     void context::mk_atomic(expr_ref_vector& terms) {
-        ref<filter_model_converter> fm;
+        filter_model_converter_ref fm;
         for (unsigned i = 0; i < terms.size(); ++i) {
             expr_ref p(terms[i].get(), m);
             app_ref q(m);

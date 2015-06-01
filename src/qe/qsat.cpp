@@ -26,6 +26,8 @@ Revision History:
 #include "ast_util.h"
 #include "quant_hoist.h"
 #include "ast_pp.h"
+#include "model_v2_pp.h"
+#include "filter_model_converter.h"
 
 using namespace qe;
 
@@ -50,6 +52,7 @@ class qsat::impl {
     obj_map<app, expr*>     m_pred2lit;  // maintain definitions of predicates.
     obj_map<expr, app*>     m_lit2pred;  // maintain reverse mapping to predicates
     obj_map<app, unsigned>  m_pred2level; // maintain level of predicates.
+    filter_model_converter_ref m_fmc;
 
 
     /**
@@ -64,19 +67,21 @@ class qsat::impl {
         while (true) {
             app_ref_vector asms(m_assumptions);
             model_ref mdl;
-            assume_tail(asms);
-            res = check_sat(asms, get_fml());
+            assume_tail(m_level, asms);
+            res = check_sat(asms, get_fml());            
             switch (res) {
             case l_true:
-                m_kernel.get_model(mdl);
+                m_kernel.get_model(mdl);                
                 if (m_level == 0) {
                     m_model = mdl;
                 }
                 update_tail(*mdl.get(), m_level);
+                TRACE("qe", display(tout, *mdl.get()); display(tout, asms););
                 project(asms, mdl);
                 push();
                 break;
             case l_false:
+                TRACE("qe", display(tout); display(tout, asms););                
                 if (m_level == 0) {
                     return l_false;
                 }
@@ -134,9 +139,11 @@ class qsat::impl {
         for (unsigned i = m_level; i < m_vars.size(); ++i) {
             vars.append(m_vars[i]);
         }
+        assume_tail(m_level + 2, imp);
         for (unsigned i = 0; i < imp.size(); ++i) {
             imp[i] = to_app(m_pred2lit.find(to_app(imp[i].get())));
         }
+        
         fml = mk_and(imp);
         mbp(vars, mdl, fml);
         fml = m.mk_not(fml);
@@ -248,8 +255,8 @@ class qsat::impl {
         }
     }
 
-    void assume_tail(app_ref_vector& assumptions) {
-        unsigned start = (m_level > 0)?(m_level - 1):(m_level + 1);
+    void assume_tail(unsigned level, app_ref_vector& assumptions) {
+        unsigned start = (level > 0)?(level - 1):(m_level + 1);
         for (unsigned i = start; i < m_vars.size(); i += 2) {
             assumptions.append(m_preds[i]);
         }
@@ -489,6 +496,17 @@ class qsat::impl {
         }        
     }
 
+    void display(std::ostream& out, model& model) const {
+        display(out);
+        model_v2_pp(out, model);
+    }
+
+    void display(std::ostream& out, app_ref_vector const& asms) const {
+        for (unsigned i = 0; i < asms.size(); ++i) {
+            out << mk_pp(asms[i], m) << " - " << get_level(asms[i]) << " : " << mk_pp(m_pred2lit.find(asms[i]), m) << "\n";
+        }
+    }
+
 public:
     impl(ast_manager& m):
         m(m),
@@ -512,7 +530,41 @@ public:
                     /* out */ model_converter_ref & mc, 
                     /* out */ proof_converter_ref & pc,
                     /* out */ expr_dependency_ref & core) {
+        tactic_report report("qsat-tactic", *in);
+        ptr_vector<expr> fmls;
+        expr_ref fml(m);
+        mc = 0; pc = 0; core = 0;
+        in->get_formulas(fmls);
+        fml = mk_and(m, fmls.size(), fmls.c_ptr());
 
+        // for now:
+        // fail if cores.  (TBD)
+        // fail if proofs. (TBD)
+
+        reset();
+        hoist(fml);
+        mk_abstract(fml);
+        lbool is_sat = check_sat();
+        
+        switch (is_sat) {
+        case l_false:
+            in->reset();
+            in->assert_expr(m.mk_false());
+            result.push_back(in.get());
+            break;
+        case l_true:
+            in->reset();
+            result.push_back(in.get());
+            if (in->models_enabled()) {
+                mc = model2model_converter(m_model.get());
+                mc = concat(m_fmc.get(), mc.get());
+            }
+            break;
+        case l_undef:
+            result.push_back(in.get());
+            throw tactic_exception(m_kernel.last_failure_as_string().c_str());
+        }
+        
     }
 
     void collect_statistics(statistics & st) const {
@@ -532,6 +584,7 @@ public:
 
     tactic * translate(ast_manager & m) {
         return 0;
+        // return alloc(qsat, m);
     }
 
 };
