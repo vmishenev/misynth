@@ -122,6 +122,8 @@ namespace smt {
 
         lbool check(expr_ref_vector const& asms) { return check(asms.size(), asms.c_ptr()); }
 
+        lbool check(app_ref_vector const& asms) { return check(asms.size(), (expr* const*)asms.c_ptr()); }
+
         /**
            \brief Return the model associated with the last check command.
         */
