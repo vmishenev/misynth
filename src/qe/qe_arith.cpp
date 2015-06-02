@@ -552,7 +552,11 @@ namespace qe {
 
     public:
         arith_project_util(ast_manager& m): 
-            m(m), a(m), m_rw(m), m_ineq_terms(m), m_div_terms(m) {}
+            m(m), a(m), m_rw(m), m_ineq_terms(m), m_div_terms(m) {
+            params_ref params;
+            params.set_bool("gcd_rouding", true);
+            m_rw.updt_params(params);
+        }
 
         expr_ref operator()(model& model, app_ref_vector& vars, expr_ref_vector const& lits) {
             app_ref_vector new_vars(m);
