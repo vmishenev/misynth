@@ -1708,9 +1708,6 @@ public:
                 return res;
             }
 
-            if(dk == PR_MODUS_PONENS && expect_clause && op(con) == Or)
-                std::cout << "foo!\n";
-
             // no idea why this shows up
             if(dk == PR_MODUS_PONENS_OEQ){
                 if(conc(prem(proof,0)) == con){
