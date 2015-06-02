@@ -29,30 +29,40 @@ Revision History:
 #include "model_v2_pp.h"
 #include "filter_model_converter.h"
 
-using namespace qe;
+namespace qe {
 
 
-class qsat::impl {
-    ast_manager&      m;
-    qe::mbp           mbp;
-    smt_params        m_smtp;
-    smt::kernel       m_kernel;
-    app_ref           m_fml_pred;   // predicate that encodes top-level formula
-    app_ref           m_nfml_pred;  // predicate that encodes top-level formula
-    app_ref_vector    m_atoms;      // predicates that encode atomic subformulas
-    unsigned_vector   m_atoms_lim;
+class qsat : public tactic {
+
+    struct stats {
+        unsigned m_num_predicates;
+        stats() { reset(); }
+        void reset() { memset(this, 0, sizeof(*this)); }
+    };
+    
+    ast_manager&            m;
+    params_ref              m_params;
+    smt_params              m_smtp;
+    stats                   m_stats;
+    qe::mbp                 mbp;
+    smt::kernel             m_kernel;
+    app_ref                 m_fml_pred;   // predicate that encodes top-level formula
+    app_ref                 m_nfml_pred;  // predicate that encodes top-level formula
+    app_ref_vector          m_atoms;      // predicates that encode atomic subformulas
+    unsigned_vector         m_atoms_lim;
     vector<app_ref_vector>  m_vars;  // variables from alternating prefixes.
     vector<app_ref_vector>  m_vals;
     vector<app_ref_vector>  m_preds;
     app_ref_vector          m_assumptions;
-    vector<expr_ref_vector> m_replay;
     unsigned_vector         m_assumptions_lim;
+    vector<expr_ref_vector> m_replay;
     unsigned                m_level;
     model_ref               m_model;
     obj_map<app, expr*>     m_pred2lit;  // maintain definitions of predicates.
     obj_map<expr, app*>     m_lit2pred;  // maintain reverse mapping to predicates
     obj_map<app, unsigned>  m_pred2level; // maintain level of predicates.
     filter_model_converter_ref m_fmc;
+    volatile bool              m_cancel;
 
 
     /**
@@ -65,6 +75,7 @@ class qsat::impl {
             return res;
         }
         while (true) {
+            check_cancel();
             app_ref_vector asms(m_assumptions);
             model_ref mdl;
             assume_tail(m_level, asms);
@@ -236,6 +247,7 @@ class qsat::impl {
         m_lit2pred.insert(lit, p);
         m_pred2level.insert(p, level);        
         m_atoms.push_back(p);
+        ++m_stats.m_num_predicates;
     }
 
     void update_tail(model& mdl, unsigned start) {
@@ -248,7 +260,7 @@ class qsat::impl {
                 VERIFY (mdl.eval(var, val));
                 m_vals[i][j] = to_app(val);
                 eq = m.mk_eq(var, val);
-                pred = m.mk_fresh_const("eq", m.mk_bool_sort());
+                pred = fresh_bool("eq");
                 m_preds[i][j] = pred;
                 add_pred(pred, eq, i);
             }
@@ -262,14 +274,24 @@ class qsat::impl {
         }
     }
 
-
     void reset() {
         m_level = 0;
+        m_kernel.reset();
+        m_fml_pred = 0;
+        m_nfml_pred = 0;
+        m_atoms.reset();
+        m_atoms_lim.reset();
         m_vars.reset();
         m_vals.reset();
+        m_preds.reset();
         m_assumptions.reset();
         m_assumptions_lim.reset();
-        m_replay.push_back(expr_ref_vector(m));
+        m_model = 0;
+        m_pred2lit.reset();
+        m_lit2pred.reset();
+        m_pred2level.reset();
+        m_replay.reset();
+        m_cancel = false;
     }
 
     app* get_fml(unsigned lvl) {
@@ -278,6 +300,16 @@ class qsat::impl {
 
     app* get_fml() {
         return get_fml(m_level);
+    }
+
+    app_ref mk_not(expr* e) {
+        return app_ref(to_app(::mk_not(m, e)), m);
+    }
+
+    app_ref fresh_bool(char const* name) {
+        app_ref r(m.mk_fresh_const(name, m.mk_bool_sort()), m);
+        m_fmc->insert(r->get_decl());
+        return r;
     }
 
     /**
@@ -384,12 +416,12 @@ class qsat::impl {
             else {
                 // TBD: nested Booleans.    
                 SASSERT(m.is_bool(e));
-                r = m.mk_fresh_const("p", m.mk_bool_sort());
+                r = fresh_bool("p");
                 cache.insert(e, r);
                 add_pred(r, a, 0);
             }
         }
-        r = m.mk_fresh_const("fml", m.mk_bool_sort());
+        r = fresh_bool("fml");
         m_fml_pred  = r;
         m_nfml_pred = m.mk_not(r);
         m_kernel.assert_expr(m.mk_eq(r, cache.find(fml)));
@@ -465,8 +497,10 @@ class qsat::impl {
         }        
     }
 
-    app_ref mk_not(expr* e) {
-        return app_ref(to_app(::mk_not(m, e)), m);
+    void check_cancel() {
+        if (m_cancel) {
+            throw tactic_exception(TACTIC_CANCELED_MSG);
+        }
     }
 
     void display(std::ostream& out) const {
@@ -503,12 +537,13 @@ class qsat::impl {
 
     void display(std::ostream& out, app_ref_vector const& asms) const {
         for (unsigned i = 0; i < asms.size(); ++i) {
-            out << mk_pp(asms[i], m) << " - " << get_level(asms[i]) << " : " << mk_pp(m_pred2lit.find(asms[i]), m) << "\n";
+            out << mk_pp(asms[i], m) << " - " << get_level(asms[i]) << " : " 
+                << mk_pp(m_pred2lit.find(asms[i]), m) << "\n";
         }
     }
 
 public:
-    impl(ast_manager& m):
+    qsat(ast_manager& m, params_ref const& p):
         m(m),
         mbp(m),
         m_kernel(m, m_smtp),
@@ -516,8 +551,11 @@ public:
         m_nfml_pred(m),
         m_atoms(m),
         m_assumptions(m),
-        m_level(0)
+        m_level(0),
+        m_cancel(false)
     {}
+
+    virtual ~qsat() {}
     
     void updt_params(params_ref const & p) {
     }
@@ -541,6 +579,7 @@ public:
         // fail if cores.  (TBD)
         // fail if proofs. (TBD)
 
+        m_fmc = alloc(filter_model_converter, m);
         reset();
         hoist(fml);
         mk_abstract(fml);
@@ -568,12 +607,16 @@ public:
     }
 
     void collect_statistics(statistics & st) const {
-
+        m_kernel.collect_statistics(st);
+        st.update("num predicates", m_stats.m_num_predicates);
     }
     void reset_statistics() {
+        m_stats.reset();
     }
 
     void cleanup() {
+        reset();
+        set_cancel(false);
     }
 
     void set_logic(symbol const & l) {
@@ -583,51 +626,19 @@ public:
     }
 
     tactic * translate(ast_manager & m) {
-        return 0;
-        // return alloc(qsat, m);
+        return alloc(qsat, m, m_params);
+    }
+
+    virtual void set_cancel(bool f) {
+        m_kernel.set_cancel(f);        
+        m_cancel = f;
     }
 
 };
 
-qsat::qsat(ast_manager& m) {
-    m_impl = alloc(impl, m);
-}
+};
 
-qsat::~qsat() {
-    dealloc(m_impl);
+tactic * mk_qsat_tactic(ast_manager& m, params_ref const& p) {
+    return alloc(qe::qsat, m, p);
 }
-
-void qsat::updt_params(params_ref const & p) {
-    m_impl->updt_params(p);
-}
-void qsat::collect_param_descrs(param_descrs & r) {
-    m_impl->collect_param_descrs(r);
-}
-void qsat::operator()(/* in */  goal_ref const & in, 
-                      /* out */ goal_ref_buffer & result, 
-                      /* out */ model_converter_ref & mc, 
-                      /* out */ proof_converter_ref & pc,
-                      /* out */ expr_dependency_ref & core) {
-    (*m_impl)(in, result, mc, pc, core);
-}
-
-void qsat::collect_statistics(statistics & st) const {
-    m_impl->collect_statistics(st);
-}
-void qsat::reset_statistics() {
-    m_impl->reset_statistics();
-}
-void qsat::cleanup() {
-    m_impl->cleanup();
-}
-void qsat::set_logic(symbol const & l) {
-    m_impl->set_logic(l);
-}
-void qsat::set_progress_callback(progress_callback * callback) {
-    m_impl->set_progress_callback(callback);
-}
-tactic * qsat::translate(ast_manager & m) {
-    return m_impl->translate(m);
-}
-
 
