@@ -107,6 +107,9 @@ expr * get_clause_literal(ast_manager & m, expr * cls, unsigned idx);
    Return true                               if num_args == 0
  */
 expr * mk_and(ast_manager & m, unsigned num_args, expr * const * args);
+app  * mk_and(ast_manager & m, unsigned num_args, app * const * args);
+inline app  * mk_and(app_ref_vector const& args) { return mk_and(args.get_manager(), args.size(), args.c_ptr()); }
+inline expr * mk_and(expr_ref_vector const& args) { return mk_and(args.get_manager(), args.size(), args.c_ptr()); }
 
 /**
    Return (or args[0] ... args[num_args-1]) if num_args >= 2
@@ -114,6 +117,9 @@ expr * mk_and(ast_manager & m, unsigned num_args, expr * const * args);
    Return false                             if num_args == 0
  */
 expr * mk_or(ast_manager & m, unsigned num_args, expr * const * args);
+app  * mk_or(ast_manager & m, unsigned num_args, app * const * args);
+inline app  * mk_or(app_ref_vector const& args) { return mk_or(args.get_manager(), args.size(), args.c_ptr()); }
+inline expr * mk_or(expr_ref_vector const& args) { return mk_or(args.get_manager(), args.size(), args.c_ptr()); }
 
 /**
    Return a          if arg = (not a)

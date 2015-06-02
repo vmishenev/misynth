@@ -148,10 +148,10 @@ public:
             scoped_init_ctx  init(*this, m);
             SASSERT(m_ctx != 0);
             
-            scoped_ptr<expr2expr_map> dep2bool;
-            scoped_ptr<expr2expr_map> bool2dep; 
-            ptr_vector<expr>          assumptions;       
-            ref<filter_model_converter> fmc;
+            scoped_ptr<expr2expr_map>  dep2bool;
+            scoped_ptr<expr2expr_map>  bool2dep; 
+            ptr_vector<expr>           assumptions;       
+            filter_model_converter_ref fmc;
             if (in->unsat_core_enabled()) {
                 if (in->proofs_enabled())
                     throw tactic_exception("smt tactic does not support simultaneous generation of proofs and unsat cores");

@@ -80,40 +80,41 @@ namespace qe {
             }            
         }
 
-        void is_linear(rational const& mul, expr* t, rational& c, expr_ref_vector& ts) {
+        void is_linear(model& model, rational const& mul, expr* t, rational& c, expr_ref_vector& ts) {
             expr* t1, *t2;
             rational mul1;
+            expr_ref val(m);
             if (t == m_var->x()) {
                 c += mul;
             }
             else if (a.is_mul(t, t1, t2) && a.is_numeral(t1, mul1)) {
-                is_linear(mul* mul1, t2, c, ts);
+                is_linear(model, mul* mul1, t2, c, ts);
             }
             else if (a.is_mul(t, t1, t2) && a.is_numeral(t2, mul1)) {
-                is_linear(mul* mul1, t1, c, ts);
+                is_linear(model, mul* mul1, t1, c, ts);
             }
             else if (a.is_add(t)) {
                 app* ap = to_app(t);
                 for (unsigned i = 0; i < ap->get_num_args(); ++i) {
-                    is_linear(mul, ap->get_arg(i), c, ts);
+                    is_linear(model, mul, ap->get_arg(i), c, ts);
                 }
             }
             else if (a.is_sub(t, t1, t2)) {
-                is_linear(mul,  t1, c, ts);
-                is_linear(-mul, t2, c, ts);
+                is_linear(model, mul,  t1, c, ts);
+                is_linear(model, -mul, t2, c, ts);
             }
             else if (a.is_uminus(t, t1)) {
-                is_linear(-mul, t1, c, ts);
+                is_linear(model, -mul, t1, c, ts);
             }
             else if (a.is_numeral(t, mul1)) {
                 ts.push_back(mk_num(mul*mul1));
+            }            
+            else if (extract_mod(model, t, val)) {
+                ts.push_back(mk_mul(mul, val));
             }
             else if ((*m_var)(t)) {
                 TRACE("qe", tout << "can't project:" << mk_pp(t, m) << "\n";);
                 throw cant_project();
-            }
-            else if (mul.is_one()) {
-                ts.push_back(t);
             }
             else {
                 ts.push_back(mk_mul(mul, t));
@@ -121,7 +122,7 @@ namespace qe {
         }
 
 
-        bool is_linear(expr* lit, rational& c, expr_ref& t, bool& is_strict, bool& is_eq) {
+        bool is_linear(model& model, expr* lit, rational& c, expr_ref& t, bool& is_strict, bool& is_eq) {
             expr* e1, *e2;
             c.reset();
             expr_ref_vector ts(m);            
@@ -133,18 +134,18 @@ namespace qe {
             }
             SASSERT(!m.is_not(lit));
             if (a.is_le(lit, e1, e2) || a.is_ge(lit, e2, e1)) {
-                is_linear( mul, e1, c, ts);
-                is_linear(-mul, e2, c, ts);
+                is_linear(model,  mul, e1, c, ts);
+                is_linear(model, -mul, e2, c, ts);
                 is_strict = is_not;
             }
             else if (a.is_lt(lit, e1, e2) || a.is_gt(lit, e2, e1)) {
-                is_linear( mul, e1, c, ts);
-                is_linear(-mul, e2, c, ts);
+                is_linear(model,  mul, e1, c, ts);
+                is_linear(model, -mul, e2, c, ts);
                 is_strict = !is_not;
             }
             else if (m.is_eq(lit, e1, e2) && !is_not) {
-                is_linear( mul, e1, c, ts);
-                is_linear(-mul, e2, c, ts);
+                is_linear(model,  mul, e1, c, ts);
+                is_linear(model, -mul, e2, c, ts);
                 is_strict = false;
                 is_eq = true;
             }            
@@ -169,24 +170,36 @@ namespace qe {
             }
         }
 
-        bool is_divides(expr* e) {
-            // e := c | (d*x + t)
-            rational c, d, mul(1);
-            expr_ref t(m);
+
+        // e is of the form  (ax + t) mod k
+        bool is_mod(model& model, expr* e, rational& k, expr_ref& t, rational& c) {
+            expr* t1, *t2;
             expr_ref_vector ts(m);
-            if (qe::is_divides(a, e, c, t)) {
-                is_linear(mul, t, d, ts);
-                if (!c.is_one()) {
-                    t = add(ts);
-                    m_div_terms.push_back(t);
-                    m_div_divisors.push_back(c);
-                    m_div_coeffs.push_back(d);                
-                }
+            if (a.is_mod(e, t1, t2) &&
+                a.is_numeral(t2, k) &&
+                (*m_var)(t1)) {
+                c.reset();
+                rational mul(1);
+                is_linear(model, mul, t1, c, ts);
+                t = add(ts);
                 return true;
             }
-            else {
-                return false;
+            return false;
+        }
+
+        bool extract_mod(model& model, expr* e, expr_ref& val) {
+            rational c, k;
+            expr_ref t(m);
+            if (is_mod(model, e, k, t, c)) {
+                VERIFY (model.eval(e, val));
+                SASSERT (a.is_numeral(val));
+                t = a.mk_sub(t, val);
+                m_div_terms.push_back(t);
+                m_div_divisors.push_back(k);
+                m_div_coeffs.push_back(c);
+                return true;
             }
+            return false;
         }
 
         expr_ref mk_num(unsigned n) {
@@ -235,10 +248,7 @@ namespace qe {
                 if (!(*m_var)(e)) {
                     new_lits.push_back(e);                    
                 }
-                else if (is_divides(e)) {
-                    // pass
-                }
-                else if (is_linear(e, c, t, is_strict, is_eq)) {
+                if (is_linear(model, e, c, t, is_strict, is_eq)) {
                     m_ineq_coeffs.push_back(c);
                     m_ineq_terms.push_back(t);
                     m_ineq_strict.push_back(is_strict);
