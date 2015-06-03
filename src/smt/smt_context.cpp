@@ -3037,6 +3037,11 @@ namespace smt {
               tout << "inconsistent: " << inconsistent() << ", m_unsat_core.empty(): " << m_unsat_core.empty() << "\n";
               m_asserted_formulas.display(tout);
               tout << "-----------------------\n";
+              if (num_assumptions > 0) {
+                  tout << "assumptions\n";
+                  for (unsigned i = 0; i < num_assumptions; i++) { tout << mk_pp(assumptions[i], m_manager) << "\n"; }
+                  tout << "-----------------------\n";
+              }
               display(tout););
         if (!m_unsat_core.empty())
             m_unsat_core.reset();
@@ -3045,7 +3050,6 @@ namespace smt {
         if (!validate_assumptions(num_assumptions, assumptions))
             return l_undef;
         TRACE("check_bug", tout << "inconsistent: " << inconsistent() << ", m_unsat_core.empty(): " << m_unsat_core.empty() << "\n";);
-        TRACE("unsat_core_bug", for (unsigned i = 0; i < num_assumptions; i++) { tout << mk_pp(assumptions[i], m_manager) << "\n";});
         pop_to_base_lvl();
         TRACE("before_search", display(tout););
         SASSERT(at_base_level());

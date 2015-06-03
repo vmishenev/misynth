@@ -33,13 +33,13 @@ public:
     impl(ast_manager& m):m(m) {}
     ~impl() {}
  
-    void operator()(app_ref_vector const& vars, model_ref& mdl, expr_ref& fml) {
+    void operator()(app_ref_vector const& vars, model& mdl, expr_ref& fml) {
         expr_ref tmp(m);
         expr_safe_replace sub(m);
         app_ref_vector vars1(vars);
-        fml = arith_project(*mdl.get(), vars1, fml);
+        fml = arith_project(mdl, vars1, fml);
         for (unsigned i = 0; i < vars1.size(); ++i) {
-            VERIFY(mdl->eval(vars1[i].get(), tmp));
+            VERIFY(mdl.eval(vars1[i].get(), tmp));
             sub.insert(vars1[i].get(), tmp);
         }
         sub(fml);
@@ -54,7 +54,7 @@ mbp::~mbp() {
     dealloc(m_impl);
 }
         
-void mbp::operator()(app_ref_vector const& vars, model_ref& mdl, expr_ref& fml) {
+void mbp::operator()(app_ref_vector const& vars, model& mdl, expr_ref& fml) {
     (*m_impl)(vars, mdl, fml);
 }
         

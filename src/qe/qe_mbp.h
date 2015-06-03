@@ -39,7 +39,7 @@ namespace qe {
            Apply model-based qe on constants provided as vector of variables. 
            Return the updated formula and updated set of variables that were not eliminated.           
         */
-        void operator()(app_ref_vector const& vars, model_ref& mdl, expr_ref& fml);
+        void operator()(app_ref_vector const& vars, model& mdl, expr_ref& fml);
     };
 }
 
