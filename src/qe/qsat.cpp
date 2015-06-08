@@ -44,7 +44,6 @@ class qsat : public tactic {
         ast_manager& m;
         smt_params   m_smtp;
         smt::kernel  m_kernel;
-        vector<expr_ref_vector> m_replay;
 
     public:
         kernel(ast_manager& m):
@@ -53,36 +52,13 @@ class qsat : public tactic {
         {
             m_smtp.m_model = true;
             m_smtp.m_relevancy_lvl = 0;
-            m_replay.push_back(expr_ref_vector(m));
         }
             
         smt::kernel& k() { return m_kernel; }
         smt::kernel const& k() const { return m_kernel; }
 
-        void push() {
-            m_kernel.push();
-            m_replay.push_back(expr_ref_vector(m));            
-        }
-        void pop(unsigned num_scopes) {
-            expr_ref_vector replay(m);
-            for (unsigned i = 0; i < num_scopes; ++i) {
-                replay.append(m_replay.back());
-                m_replay.pop_back();
-            }
-            m_kernel.pop(num_scopes);
-            for (unsigned i = 0; i < replay.size(); ++i) {
-                m_kernel.assert_expr(replay[i].get());
-            }
-            m_replay.back().append(replay);
-        }
-
         void assert_expr(expr* e) {
             m_kernel.assert_expr(e);
-        }
-
-        void persist_expr(expr* e) {
-            m_kernel.assert_expr(e);
-            m_replay.back().push_back(e);
         }
 
         void get_core(app_ref_vector& core) {
@@ -219,7 +195,7 @@ class qsat : public tactic {
     kernel                  m_fa;
     kernel                  m_ex;
     move_preds              m_moves;
-    app_ref_vector          m_atoms;      // predicates that encode atomic subformulas
+    expr_ref_vector         m_trail;      // predicates that encode atomic subformulas
     vector<app_ref_vector>  m_vars;       // variables from alternating prefixes.
     unsigned                m_level;
     model_ref               m_last_model;
@@ -296,10 +272,6 @@ class qsat : public tactic {
         }
     }
 
-    void persist_expr(unsigned level, expr* fml) {
-        get_kernel(level).persist_expr(fml);
-    }
-
     bool is_exists(unsigned level) const {
         return (level % 2) == 0;
     }
@@ -310,15 +282,11 @@ class qsat : public tactic {
 
     void push() {
         m_level++;
-        m_fa.push();
-        m_ex.push();
         m_moves.push();
     }
 
     void pop(unsigned num_scopes) {
         SASSERT(num_scopes <= m_level);
-        m_fa.pop(num_scopes);
-        m_ex.pop(num_scopes);
         m_moves.pop(num_scopes);
         m_level -= num_scopes;
     }
@@ -345,7 +313,7 @@ class qsat : public tactic {
 
     void reset() {
         m_level = 0;
-        m_atoms.reset();
+        m_trail.reset();
         m_moves.reset();
         m_vars.reset();
         m_model = 0;
@@ -480,7 +448,6 @@ class qsat : public tactic {
                 cache.insert(a, a);
                 SASSERT(m_elevel.contains(a));
                 m_moves.insert(a, m_elevel.find(a));
-                m_atoms.push_back(a);
             }
             else {
                 // TBD: nested Booleans.    
@@ -489,15 +456,16 @@ class qsat : public tactic {
                 cache.insert(a, r);
                 add_pred(r, a, 0);
                 eq = m.mk_eq(r, a);
-                m_fa.persist_expr(eq);
-                m_ex.persist_expr(eq);
+                m_fa.assert_expr(eq);
+                m_ex.assert_expr(eq);
                 compute_level(a);
                 m_elevel.insert(r, m_elevel.find(a));
                 m_moves.insert(r, m_elevel.find(a));
-                m_atoms.push_back(r);
             }
         }
         r = to_app(cache.find(fml));
+        m_trail.push_back(r);
+        m_trail.push_back(fml);
         return r;
     }
 
@@ -541,10 +509,6 @@ class qsat : public tactic {
 
     void display(std::ostream& out) const {
         out << "level: " << m_level << "\n";
-        out << "atoms:\n";
-        for (unsigned i = 0; i < m_atoms.size(); ++i) {
-            out << mk_pp(m_atoms[i], m) << "\n";
-        }
         out << "pred2lit:\n";
         obj_map<app, expr*>::iterator it = m_pred2lit.begin(), end = m_pred2lit.end();
         for (; it != end; ++it) {
@@ -587,164 +551,14 @@ class qsat : public tactic {
             if (m_pred2lit.find(to_app(core[i].get()), e)) {
                 core[i] = to_app(e);
             }
-        }
-        
+        }        
         fml = mk_and(core);
         m_mbp(vars, mdl, fml);
         fml = mk_abstract(fml);
         fml1 = mk_not(fml);
         pop(2); // TBD: can compute lower level by retrieving maximal level in fml.
-        persist_expr(m_level, fml1);
+        get_kernel(m_level).assert_expr(fml1);
     }
-
-
-#if 0
-
-    void backtrack(app_ref_vector& core) {
-        unsigned level = is_exists(m_level)?0:1;
-        for (unsigned i = 0; i < core.size(); ++i) {
-            unsigned lvl = get_level(core[i].get());
-            if (lvl + 1 < m_level) {
-                level = std::max(level, lvl);                
-            }
-            else {
-                core[i] = m.mk_true();                
-            }
-        }
-        SASSERT(level < m_level);
-        pop(m_level - level);
-        expr_ref fml(::mk_not(m, ::mk_and(core)), m);
-        persist_expr(level, fml);
-    }
-
-
-    /** 
-        \brief use dual propagation to minimize model.
-    */
-    bool minimize_assignment(app_ref_vector& assignment, unsigned level) {        
-        bool result = false;
-        lbool res = get_kernel(level+1).k().check(assignment);
-        switch (res) {
-        case l_true:
-            UNREACHABLE();
-            break;
-        case l_undef:
-            break;
-        case l_false: 
-            result = true;
-            get_core(assignment, level+1);
-            break;
-        }
-        return result;
-    }
-
-
-    bool get_implicant(app_ref_vector& impl, model_ref& mdl, unsigned level) {
-        expr_ref tmp(m);
-        impl.reset();
-        get_kernel(level).k().get_model(mdl);
-        for (unsigned i = 0; i < m_atoms.size(); ++i) {
-            app* p = m_atoms[i].get();
-            if (mdl->eval(p, tmp)) {
-                if (m.is_true(tmp)) {
-                    impl.push_back(p);
-                }
-                else if (m.is_false(tmp)) {
-                    impl.push_back(mk_not(p));
-                }
-            }                
-        }
-        return minimize_assignment(impl, level);
-    }
-
-    // trail encapsulating model assignment.
-    class move_trail {
-        ast_manager& m;
-        qsat&        q;
-        vector<app_ref_vector> const& m_vars;
-        vector<app_ref_vector>  m_vals;
-        vector<app_ref_vector>  m_preds;
-
-    public:
-        move_trail(qsat& _q):
-            m(_q.m),
-            q(_q),
-            m_vars(q.m_vars)
-
-        {}
-        
-        void init() {
-            m_vals.reset();
-            m_preds.reset();
-            m_vals.append(m_vars);            
-            m_preds.append(m_vars);
-        }        
-                
-        void get_assumptions(app_ref_vector& asms) const {
-            asms.reset();
-            unsigned level = q.m_level;
-            if (level == 0) {
-                return;
-            }
-            for (unsigned i = 0; i + 2 < level; ++i) {
-                asms.append(m_preds[i]);
-            }
-            for (unsigned i = level - 1; i < m_preds.size(); i += 2) {
-                asms.append(m_preds[i]);
-            }
-        }
-
-        void reset() {
-            m_vals.reset();
-            m_preds.reset();
-        }
-        
-        void update_tail(model& mdl) {
-            SASSERT(q.m_level > 0);
-            unsigned start = q.m_level-1;
-            expr_ref val(m);
-            app_ref pred(m), eq(m);
-            for (unsigned i = start; i < m_vars.size(); i += 2) {
-                for (unsigned j = 0; j < m_vars[i].size(); ++j) {
-                    q.del_pred(m_preds[i][j].get());
-                    app* var = m_vars[i][j];
-                    VERIFY (mdl.eval(var, val));
-                    m_vals[i][j] = to_app(val);
-                    if (m.is_bool(var)) {
-                        SASSERT(m.is_true(val) || m.is_false(val));
-                        pred = m.is_true(val)?var:m.mk_not(var);
-                        eq = pred;
-                    }
-                    else {
-                        pred = q.fresh_bool("eq");
-                        eq = m.mk_eq(var, val);
-                        get_kernel(q.m_level+1).assert_expr(m.mk_eq(eq, pred));
-                    }
-                    q.add_pred(pred, eq, i);
-                    m_preds[i][j] = pred;
-                }
-            }
-        }
-
-        void display(std::ostream& out) const {
-            app_ref_vector asms(m);
-            get_assumptions(asms);
-            out << "assumptions:\n";
-            for (unsigned i = 0; i < asms.size(); ++i) {
-                out << mk_pp(asms[i].get(), m) << "\n";
-            }
-            out << "values:\n";
-            for (unsigned i = 0; i < m_vars.size(); ++i) {
-                out << (q.is_exists(i)?"E: ":"A: ");
-                for (unsigned j = 0; j < m_vars[i].size(); ++j) {
-                    out << mk_pp(m_vars[i][j], m) << " |-> " << mk_pp(m_vals[i][j], m) << " ";
-                }
-                out << "\n";
-            }                    
-        }        
-    };
-
-#endif
 
 public:
     qsat(ast_manager& m, params_ref const& p):
@@ -753,7 +567,7 @@ public:
         m_fa(m),
         m_ex(m),
         m_moves(*this),
-        m_atoms(m),
+        m_trail(m),
         m_level(0),
         m_cancel(false)
     {
