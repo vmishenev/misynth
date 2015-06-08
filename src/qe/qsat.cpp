@@ -198,6 +198,7 @@ class qsat : public tactic {
     kernel                     m_ex;
     move_preds                 m_moves;
     expr_ref_vector            m_trail;      // predicates that encode atomic subformulas
+    expr_ref_vector            m_answer;
     vector<app_ref_vector>     m_vars;       // variables from alternating prefixes.
     unsigned                   m_level;
     model_ref                  m_model;
@@ -206,6 +207,7 @@ class qsat : public tactic {
     obj_map<app, max_level>    m_elevel;
     filter_model_converter_ref m_fmc;
     volatile bool              m_cancel;
+    bool                       m_qelim;
     ptr_vector<expr>           todo;          // temporary variable for worklist
 
 
@@ -232,7 +234,12 @@ class qsat : public tactic {
                 TRACE("qe", display(tout); display(tout, asms););
                 switch (m_level) {
                 case 0: return l_false;
-                case 1: return l_true;
+                case 1: 
+                    if (m_qelim) {
+                        project_qe(asms);
+                        break;
+                    }
+                    return l_true;
                 default: project(asms); break;
                 }
                 break;
@@ -282,6 +289,7 @@ class qsat : public tactic {
     void reset() {
         m_level = 0;
         m_trail.reset();
+        m_answer.reset();
         m_moves.reset();
         m_vars.reset();
         m_model = 0;
@@ -319,8 +327,15 @@ class qsat : public tactic {
         get_free_vars(fml, vars);
         m_vars.push_back(vars);
         vars.reset();
-        hoist.pull_quantifier(is_forall, fml, vars);
-        m_vars.back().append(vars);
+        if (m_qelim) {
+            is_forall = true;
+            hoist.pull_quantifier(is_forall, fml, vars);
+            m_vars.push_back(vars);
+        }
+        else {
+            hoist.pull_quantifier(is_forall, fml, vars);
+            m_vars.back().append(vars);
+        }
         do {
             is_forall = !is_forall;
             vars.reset();
@@ -518,6 +533,14 @@ class qsat : public tactic {
         }
     }
 
+    void project_qe(app_ref_vector& core) {
+        expr_ref fml(m);
+        get_core(core, m_level);
+        fml = mk_not(::mk_and(core));
+        m_answer.push_back(fml);
+        m_ex.assert_expr(fml);
+    }
+
     void project(app_ref_vector& core) {
         get_core(core, m_level);
         SASSERT(m_level >= 2);
@@ -546,15 +569,17 @@ class qsat : public tactic {
 
 public:
 
-    qsat(ast_manager& m, params_ref const& p):
+    qsat(ast_manager& m, params_ref const& p, bool qelim):
         m(m),
         m_mbp(m),
         m_fa(m),
         m_ex(m),
         m_moves(*this),
         m_trail(m),
+        m_answer(m),
         m_level(0),
-        m_cancel(false)
+        m_cancel(false),
+        m_qelim(qelim)
     {
         reset();
     }
@@ -589,6 +614,9 @@ public:
         m_fmc = alloc(filter_model_converter, m);
         reset();
         TRACE("qe", tout << fml << "\n";);
+        if (m_qelim) {
+            fml = mk_not(fml);
+        }
         hoist(fml);
         fml = mk_abstract(fml, level);
         m_ex.assert_expr(fml);
@@ -598,7 +626,12 @@ public:
         switch (is_sat) {
         case l_false:
             in->reset();
-            in->assert_expr(m.mk_false());
+            if (m_qelim) {
+                in->assert_expr(::mk_and(m_answer));
+            }
+            else {
+                in->assert_expr(m.mk_false());
+            }
             result.push_back(in.get());
             break;
         case l_true:
@@ -639,7 +672,7 @@ public:
     }
 
     tactic * translate(ast_manager & m) {
-        return alloc(qsat, m, m_params);
+        return alloc(qsat, m, m_params, m_qelim);
     }
 
     virtual void set_cancel(bool f) {
@@ -653,6 +686,10 @@ public:
 };
 
 tactic * mk_qsat_tactic(ast_manager& m, params_ref const& p) {
-    return alloc(qe::qsat, m, p);
+    return alloc(qe::qsat, m, p, false);
+}
+
+tactic * mk_qe2_tactic(ast_manager& m, params_ref const& p) {
+    return alloc(qe::qsat, m, p, true);
 }
 
