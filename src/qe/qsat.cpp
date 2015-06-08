@@ -146,7 +146,7 @@ class qsat : public tactic {
             if (level == 0) {
                 return;
             }
-            model& mdl = *q.m_last_model.get();
+            model& mdl = *q.m_model.get();
             expr_ref val(m);
             for (unsigned j = 0; j < m_preds[level - 1].size(); ++j) {
                 app* p = m_preds[level - 1][j].get();
@@ -436,7 +436,7 @@ class qsat : public tactic {
                 eq = m.mk_eq(r, a);
                 m_fa.assert_expr(eq);
                 m_ex.assert_expr(eq);
-                level l = compute_level(a);
+                max_level l = compute_level(a);
                 m_elevel.insert(r, l);
                 m_moves.insert(r, l);
                 level.merge(l);
@@ -518,7 +518,7 @@ class qsat : public tactic {
     }
 
     void project(app_ref_vector& core) {
-        get_core(asms, m_level);
+        get_core(core, m_level);
         SASSERT(m_level >= 2);
         expr* e;
         app_ref_vector vars(m);
