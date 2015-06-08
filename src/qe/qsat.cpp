@@ -318,6 +318,11 @@ class qsat : public tactic {
         m_vars.reset();
         m_model = 0;
         m_last_model = 0;
+        obj_map<app, expr*>::iterator it = m_pred2lit.begin(), end = m_pred2lit.end();
+        for (; it != end; ++it) {
+            m.dec_ref(it->m_key);
+            m.dec_ref(it->m_value);
+        }
         m_lit2pred.reset();
         m_pred2lit.reset();
         m_elevel.reset();
@@ -574,7 +579,9 @@ public:
         reset();
     }
 
-    virtual ~qsat() {}
+    virtual ~qsat() {
+        reset();
+    }
     
     void updt_params(params_ref const & p) {
     }
