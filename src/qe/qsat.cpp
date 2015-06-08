@@ -94,6 +94,549 @@ class qsat : public tactic {
         }
     };
 
+
+    struct max_level {
+        unsigned m_ex, m_fa;
+        max_level(): m_ex(UINT_MAX), m_fa(UINT_MAX) {}
+        void merge(max_level const& other) {
+            merge(m_ex, other.m_ex);
+            merge(m_fa, other.m_fa);
+        }
+        static unsigned max(unsigned a, unsigned b) {
+            if (a == UINT_MAX) return b;
+            if (b == UINT_MAX) return a;
+            return std::max(a, b);
+        }
+        unsigned max() const {
+            return max(m_ex, m_fa);
+        }
+        void merge(unsigned& lvl, unsigned const& other) {
+            lvl = max(lvl, other);
+        }
+    };
+
+    class move_preds {
+        ast_manager& m;
+        qsat&        q;
+        vector<app_ref_vector> m_preds;
+
+    public:
+        move_preds(qsat& _q):
+            m(_q.m),
+            q(_q)
+        {}
+
+        void init() {
+            m_preds.reset();
+            for (unsigned i = 0; i < q.m_vars.size(); ++i) {
+                m_preds.push_back(app_ref_vector(m));
+            }
+        }        
+
+        void reset() {
+
+        }
+        
+        void insert(app* a, max_level const& lvl) {
+            unsigned l = lvl.max();
+            if (l != UINT_MAX) {
+                m_preds[l].push_back(a);
+            }
+        }
+
+        void get_assumptions(app_ref_vector& asms) {
+            asms.reset();
+            unsigned level = q.m_level;
+            if (level == 0) {
+                return;
+            }
+            model& mdl = *q.m_last_model.get();
+            expr_ref val(m);
+            for (unsigned i = 0; i + 1 < level; ++i) {
+                for (unsigned j = 0; j < m_preds[i].size(); ++j) {
+                    app* p = m_preds[i][j].get();
+                    VERIFY(mdl.eval(p, val));
+                    if (m.is_true(val)) {
+                        asms.push_back(p);
+                    }
+                    else if (m.is_false(val)) {
+                        asms.push_back(m.mk_not(p));
+                    }
+                }
+            }
+#if 0
+            // TODO: also include predicates by same player, whose 
+            // variables belonging to other player are below level
+
+            for (unsigned i = level - 1; i < m_preds.size(); i += 2) {
+                for (unsigned j = 0; j < m_preds[i].size(); ++j) {
+                    asms.append(m_preds[i]);
+                }
+            }
+#endif
+        }
+
+        void display(std::ostream& out) const {
+            for (unsigned i = 0; i < m_preds.size(); ++i) {
+                out << "level " << i << "\n";
+                for (unsigned j = 0; j < m_preds[i].size(); ++j) {
+                    out << mk_pp(q.m_pred2lit.find(m_preds[i][j]), m) << "\n";
+                }
+            }            
+        }
+        
+    };
+
+    ast_manager&            m;
+    params_ref              m_params;
+    stats                   m_stats;
+    qe::mbp                 m_mbp;
+    kernel                  m_fa;
+    kernel                  m_ex;
+    move_preds              m_movep;
+    app_ref_vector          m_atoms;      // predicates that encode atomic subformulas
+    vector<app_ref_vector>  m_vars;       // variables from alternating prefixes.
+    unsigned                m_level;
+    model_ref               m_last_model;
+    model_ref               m_model;
+    obj_map<app, expr*>     m_pred2lit;    // maintain definitions of predicates.
+    obj_map<expr, app*>     m_lit2pred;    // maintain reverse mapping to predicates
+    obj_map<app, unsigned>  m_pred2level;  // maintain level of predicates.
+    obj_map<app, max_level>  m_elevel;
+    filter_model_converter_ref m_fmc;
+    volatile bool              m_cancel;
+
+
+    kernel& get_kernel(unsigned j) {        
+        if (is_exists(j)) {
+            return m_ex; 
+        }
+        else {
+            return m_fa;
+        }
+    }
+    /**
+       \brief check alternating satisfiability.
+       Even levels are existential, odd levels are universal.
+     */
+    lbool check_sat() {
+        
+        m_movep.init();
+        while (true) {
+            check_cancel();
+            TRACE("qe", display(tout););
+            app_ref_vector asms(m);
+            m_movep.get_assumptions(asms);
+            lbool res = get_kernel(m_level).k().check(asms);
+            switch (res) {
+            case l_true:
+                get_kernel(m_level).k().get_model(m_last_model);
+                if (m_level == 0) {
+                    m_model = m_last_model;
+                }
+                TRACE("qe", display(tout, *m_last_model.get()); display(tout, asms););
+                push();
+                break;
+            case l_false:
+                TRACE("qe", display(tout); display(tout, asms););                
+                if (m_level == 0) {
+                    return l_false;
+                }
+                if (m_level == 1) {
+                    return l_true;
+                }
+                get_core(asms, m_level);
+                project(asms);
+                break;
+            case l_undef:
+                return res;
+            }
+        }
+        return l_undef;
+    }
+
+
+
+    void display_expr(std::ostream& out, expr* t) {
+        ptr_vector<expr> todo;
+        todo.push_back(t);
+        while (!todo.empty()) {
+            app* a = to_app(todo.back());
+            todo.pop_back();
+            out << a->get_id() << " " << a->get_decl()->get_name() << " " << a->get_num_args() << "  refs: " << a->get_ref_count() << " args: ";
+            for (unsigned i = 0; i < a->get_num_args(); ++i) {
+                out << a->get_arg(i)->get_id() << " ";
+                todo.push_back(a->get_arg(i));
+            }
+            out << "\n";
+        }
+    }
+
+    void persist_expr(unsigned level, expr* fml) {
+        get_kernel(level).persist_expr(fml);
+    }
+
+    bool is_exists(unsigned level) const {
+        return (level % 2) == 0;
+    }
+
+    bool is_forall(unsigned level) const {
+        return is_exists(level+1);
+    }
+
+    unsigned get_level(expr* p) const {
+        return m_pred2level.find(to_app(p));
+    }
+
+    void push() {
+        m_level++;
+        m_fa.push();
+        m_ex.push();
+    }
+
+    void pop(unsigned num_scopes) {
+        SASSERT(num_scopes <= m_level);
+        m_fa.pop(num_scopes);
+        m_ex.pop(num_scopes);
+        m_level -= num_scopes;
+    }
+
+    void del_pred(app* p) {
+        expr* lit;
+        if (m_pred2lit.find(p, lit)) {
+            SASSERT(m_lit2pred.find(lit) == p);
+            m_lit2pred.remove(lit);
+            m_pred2lit.remove(p);
+            m_pred2level.remove(p);
+            m.dec_ref(p);
+            m.dec_ref(lit);
+        }
+    }
+
+    void add_pred(app* p, app* lit, unsigned level) {
+        m.inc_ref(p);
+        m.inc_ref(lit);
+        del_pred(p);
+        m_pred2lit.insert(p, lit);
+        m_lit2pred.insert(lit, p);        
+        m_pred2level.insert(p, level);
+        ++m_stats.m_num_predicates;
+    }
+
+    void reset() {
+        m_level = 0;
+        m_atoms.reset();
+        m_movep.reset();
+        m_vars.reset();
+        m_model = 0;
+        m_last_model = 0;
+        m_pred2level.reset();
+        m_lit2pred.reset();
+        m_pred2lit.reset();
+        m_fa.k().reset();
+        m_ex.k().reset();
+        m_cancel = false;
+    }    
+
+    app_ref mk_not(expr* e) {
+        return app_ref(to_app(::mk_not(m, e)), m);
+    }
+
+    app_ref fresh_bool(char const* name) {
+        app_ref r(m.mk_fresh_const(name, m.mk_bool_sort()), m);
+        m_fmc->insert(r->get_decl());
+        return r;
+    }
+
+    /**
+       \brief create a quantifier prefix formula.
+     */
+    void hoist(expr_ref& fml) {
+        quantifier_hoister hoist(m);
+        app_ref_vector vars(m);
+        bool is_forall = false;        
+        get_free_vars(fml, vars);
+        m_vars.push_back(vars);
+        vars.reset();
+        hoist.pull_quantifier(is_forall, fml, vars);
+        m_vars.back().append(vars);
+        do {
+            is_forall = !is_forall;
+            vars.reset();
+            hoist.pull_quantifier(is_forall, fml, vars);
+            m_vars.push_back(vars);
+        }
+        while (!vars.empty());
+        SASSERT(m_vars.back().empty()); 
+
+        // initialize levels.
+        for (unsigned i = 0; i < m_vars.size(); ++i) {
+            max_level lvl;
+            if (is_exists(i)) {
+                lvl.m_ex = i;
+            }
+            else {
+                lvl.m_fa = i;
+            }
+            for (unsigned j = 0; j < m_vars[i].size(); ++j) {
+                m_elevel.insert(m_vars[i][j].get(), lvl);
+            }
+        }
+        TRACE("qe", tout << fml << "\n";);
+    }
+
+    void get_free_vars(expr_ref& fml, app_ref_vector& vars) {
+        ast_fast_mark1 mark;
+        ptr_vector<expr> todo;
+        todo.push_back(fml);
+        while (!todo.empty()) {
+            expr* e = todo.back();
+            todo.pop_back();
+            if (mark.is_marked(e) || is_var(e)) {
+                continue;
+            }
+            mark.mark(e);
+            if (is_quantifier(e)) {
+                todo.push_back(to_quantifier(e)->get_expr());
+                continue;
+            }
+            SASSERT(is_app(e));
+            app* a = to_app(e);
+            if (is_uninterp_const(a)) { // TBD generalize for uninterpreted functions.
+                vars.push_back(a);
+            }
+            for (unsigned i = 0; i < a->get_num_args(); ++i) {
+                todo.push_back(a->get_arg(i));
+            }
+        }
+    }
+
+    /** 
+        \brief create propositional abstraction of formula by replacing atomic sub-formulas by fresh 
+        propositional variables, and adding definitions for each propositional formula on the side.
+        Assumption is that the formula is quantifier-free.
+    */
+    app_ref mk_abstract(expr* fml) {
+        expr_ref_vector todo(m), trail(m);
+        obj_map<expr,expr*> cache;
+        ptr_vector<expr> args;
+        app_ref r(m), eq(m);
+        todo.push_back(fml);
+        while (!todo.empty()) {
+            expr* e = todo.back();
+            if (cache.contains(e)) {
+                todo.pop_back();
+                continue;
+            }
+            SASSERT(is_app(e));
+            app* a = to_app(e);
+            if (a->get_family_id() == m.get_basic_family_id()) {
+                unsigned sz = a->get_num_args();
+                args.reset();
+                bool diff = false;
+                for (unsigned i = 0; i < sz; ++i) {
+                    expr* f = a->get_arg(i), *f1;
+                    if (cache.find(f, f1)) {
+                        args.push_back(f1);
+                        diff |= f != f1;
+                    }
+                    else {
+                        todo.push_back(f);
+                    }
+                } 
+                if (args.size() == sz) {
+                    if (diff) {
+                        r = m.mk_app(a->get_decl(), sz, args.c_ptr());
+                    }
+                    else {
+                        r = to_app(e);
+                    }
+                    cache.insert(e, r);
+                    trail.push_back(r);
+                    todo.pop_back();
+                }
+            }
+            else if (is_uninterp_const(a)) {
+                cache.insert(a, a);
+                SASSERT(m_elevel.contains(a));
+                m_movep.insert(a, m_elevel.find(a));
+                m_atoms.push_back(a);
+            }
+            else {
+                // TBD: nested Booleans.    
+                SASSERT(m.is_bool(a));
+                r = fresh_bool("p");
+                cache.insert(a, r);
+                add_pred(r, a, 0);
+                eq = m.mk_eq(r, a);
+                m_fa.persist_expr(eq);
+                m_ex.persist_expr(eq);
+                compute_level(a);
+                m_elevel.insert(r, m_elevel.find(a));
+                m_movep.insert(r, m_elevel.find(a));
+                m_atoms.push_back(r);
+            }
+        }
+        r = to_app(cache.find(fml));
+        return r;
+    }
+
+    void compute_level(app* a) {
+        ptr_vector<expr> todo;
+        todo.push_back(a);
+        while (!todo.empty()) {
+            a = to_app(todo.back());
+            if (m_elevel.contains(a)) {
+                todo.pop_back();
+                continue;
+            }
+            max_level lvl, lvl0;
+            bool has_new = false;
+            for (unsigned i = 0; i < a->get_num_args(); ++i) {
+                app* arg = to_app(a->get_arg(i));
+                if (m_elevel.find(arg, lvl)) {
+                    lvl0.merge(lvl);
+                }
+                else {
+                    todo.push_back(arg);
+                    has_new = true;
+                }
+            }
+            if (!has_new) {
+                m_elevel.insert(a, lvl0);
+                todo.pop_back();
+            }
+        }
+    }
+
+    void get_core(app_ref_vector& core, unsigned level) {
+        get_kernel(level).get_core(core);
+    }
+
+    void check_cancel() {
+        if (m_cancel) {
+            throw tactic_exception(TACTIC_CANCELED_MSG);
+        }
+    }
+
+    void display(std::ostream& out) const {
+        out << "level: " << m_level << "\n";
+        out << "atoms:\n";
+        for (unsigned i = 0; i < m_atoms.size(); ++i) {
+            out << mk_pp(m_atoms[i], m) << "\n";
+        }
+        out << "pred2lit:\n";
+        obj_map<app, expr*>::iterator it = m_pred2lit.begin(), end = m_pred2lit.end();
+        for (; it != end; ++it) {
+            out << mk_pp(it->m_key, m) << " |-> " << mk_pp(it->m_value, m) << "\n";
+        }
+        m_movep.display(out);
+    }
+
+    void display(std::ostream& out, model& model) const {
+        display(out);
+        model_v2_pp(out, model);
+    }
+
+    void display(std::ostream& out, app_ref_vector const& asms) const {
+        expr* e = 0;
+        unsigned lvl = 0;
+        for (unsigned i = 0; i < asms.size(); ++i) {
+            out << mk_pp(asms[i], m);
+            if (m_pred2level.find(asms[i], lvl)) {
+                out << " - " << lvl; 
+            }
+            if (m_pred2lit.find(asms[i], e)) {
+                out << " : " << mk_pp(e, m);
+            }
+            out << "\n";
+        }
+    }
+
+    void project(app_ref_vector& core) {
+        SASSERT(m_level >= 2);
+        expr* e;
+        app_ref_vector vars(m);
+        expr_ref fml(m), fml1(m);
+        model& mdl = *m_last_model.get();
+
+        for (unsigned i = m_level-1; i < m_vars.size(); ++i) {
+            vars.append(m_vars[i]);
+        }
+        for (unsigned i = 0; i < core.size(); ++i) {
+            if (m_pred2lit.find(to_app(core[i].get()), e)) {
+                core[i] = to_app(e);
+            }
+        }
+        
+        fml = mk_and(core);
+        m_mbp(vars, mdl, fml);
+        fml = mk_abstract(fml);
+        fml1 = mk_not(fml);
+        pop(2); // TBD: can compute lower level by retrieving maximal level in fml.
+        persist_expr(m_level, fml1);
+    }
+
+
+#if 0
+
+    void backtrack(app_ref_vector& core) {
+        unsigned level = is_exists(m_level)?0:1;
+        for (unsigned i = 0; i < core.size(); ++i) {
+            unsigned lvl = get_level(core[i].get());
+            if (lvl + 1 < m_level) {
+                level = std::max(level, lvl);                
+            }
+            else {
+                core[i] = m.mk_true();                
+            }
+        }
+        SASSERT(level < m_level);
+        pop(m_level - level);
+        expr_ref fml(::mk_not(m, ::mk_and(core)), m);
+        persist_expr(level, fml);
+    }
+
+
+    /** 
+        \brief use dual propagation to minimize model.
+    */
+    bool minimize_assignment(app_ref_vector& assignment, unsigned level) {        
+        bool result = false;
+        lbool res = get_kernel(level+1).k().check(assignment);
+        switch (res) {
+        case l_true:
+            UNREACHABLE();
+            break;
+        case l_undef:
+            break;
+        case l_false: 
+            result = true;
+            get_core(assignment, level+1);
+            break;
+        }
+        return result;
+    }
+
+
+    bool get_implicant(app_ref_vector& impl, model_ref& mdl, unsigned level) {
+        expr_ref tmp(m);
+        impl.reset();
+        get_kernel(level).k().get_model(mdl);
+        for (unsigned i = 0; i < m_atoms.size(); ++i) {
+            app* p = m_atoms[i].get();
+            if (mdl->eval(p, tmp)) {
+                if (m.is_true(tmp)) {
+                    impl.push_back(p);
+                }
+                else if (m.is_false(tmp)) {
+                    impl.push_back(mk_not(p));
+                }
+            }                
+        }
+        return minimize_assignment(impl, level);
+    }
+
     // trail encapsulating model assignment.
     class move_trail {
         ast_manager& m;
@@ -155,6 +698,7 @@ class qsat : public tactic {
                     else {
                         pred = q.fresh_bool("eq");
                         eq = m.mk_eq(var, val);
+                        get_kernel(q.m_level+1).assert_expr(m.mk_eq(eq, pred));
                     }
                     q.add_pred(pred, eq, i);
                     m_preds[i][j] = pred;
@@ -180,417 +724,6 @@ class qsat : public tactic {
         }        
     };
 
-    ast_manager&            m;
-    params_ref              m_params;
-    stats                   m_stats;
-    qe::mbp                 m_mbp;
-    kernel                  m_fa;
-    kernel                  m_ex;
-    move_trail              m_moves;
-    app_ref_vector          m_atoms;      // predicates that encode atomic subformulas
-    vector<app_ref_vector>  m_vars;       // variables from alternating prefixes.
-    unsigned                m_level;
-    model_ref               m_last_model;
-    model_ref               m_model;
-    obj_map<app, expr*>     m_pred2lit;    // maintain definitions of predicates.
-    obj_map<expr, app*>     m_lit2pred;    // maintain reverse mapping to predicates
-    obj_map<app, unsigned>  m_pred2level;  // maintain level of predicates.
-    filter_model_converter_ref m_fmc;
-    volatile bool              m_cancel;
-
-
-    kernel& get_kernel(unsigned j) {        
-        if (is_exists(j)) {
-            return m_ex; 
-        }
-        else {
-            return m_fa;
-        }
-    }
-    /**
-       \brief check alternating satisfiability.
-       Even levels are existential, odd levels are universal.
-     */
-    lbool check_sat() {
-        
-        while (true) {
-            check_cancel();
-            TRACE("qe", display(tout););
-            app_ref_vector asms(m);
-            m_moves.get_assumptions(asms);
-            lbool res = get_kernel(m_level).k().check(asms);
-            switch (res) {
-            case l_true:
-                get_kernel(m_level).k().get_model(m_last_model);
-                if (m_level == 0) {
-                    m_model = m_last_model;
-                }
-                TRACE("qe", display(tout, *m_last_model.get()); display(tout, asms););
-                push();
-                break;
-            case l_false:
-                TRACE("qe", display(tout); display(tout, asms););                
-                if (m_level == 0) {
-                    return l_false;
-                }
-                if (m_level == 1) {
-                    return l_true;
-                }
-                get_core(asms, m_level);
-                backtrack(asms);
-                break;
-            case l_undef:
-                return res;
-            }
-        }
-        return l_undef;
-    }
-
-
-    void backtrack(app_ref_vector& core) {
-        unsigned level = is_exists(m_level)?0:1;
-        for (unsigned i = 0; i < core.size(); ++i) {
-            unsigned lvl = get_level(core[i].get());
-            if (lvl + 1 < m_level) {
-                level = std::max(level, lvl);                
-            }
-            else {
-                core[i] = m.mk_true();                
-            }
-        }
-        SASSERT(level < m_level);
-        pop(m_level - level);
-        expr_ref fml(::mk_not(m, ::mk_and(core)), m);
-        persist_expr(level, fml);
-    }
-
-    void display_expr(std::ostream& out, expr* t) {
-        ptr_vector<expr> todo;
-        todo.push_back(t);
-        while (!todo.empty()) {
-            app* a = to_app(todo.back());
-            todo.pop_back();
-            out << a->get_id() << " " << a->get_decl()->get_name() << " " << a->get_num_args() << "  refs: " << a->get_ref_count() << " args: ";
-            for (unsigned i = 0; i < a->get_num_args(); ++i) {
-                out << a->get_arg(i)->get_id() << " ";
-                todo.push_back(a->get_arg(i));
-            }
-            out << "\n";
-        }
-    }
-
-    void persist_expr(unsigned level, expr* fml) {
-        get_kernel(level).persist_expr(fml);
-    }
-
-    bool is_exists(unsigned level) const {
-        return (level % 2) == 0;
-    }
-
-    bool is_forall(unsigned level) const {
-        return is_exists(level+1);
-    }
-
-    unsigned get_level(expr* p) const {
-        return m_pred2level.find(to_app(p));
-    }
-
-    void push() {
-        m_level++;
-        m_fa.push();
-        m_ex.push();
-        m_moves.update_tail(*m_last_model.get());
-    }
-
-    void pop(unsigned num_scopes) {
-        SASSERT(num_scopes <= m_level);
-        m_fa.pop(num_scopes);
-        m_ex.pop(num_scopes);
-        m_level -= num_scopes;
-    }
-
-    void del_pred(app* p) {
-        expr* lit;
-        if (m_pred2lit.find(p, lit)) {
-            SASSERT(m_lit2pred.find(lit) == p);
-            m_lit2pred.remove(lit);
-            m_pred2lit.remove(p);
-            m_pred2level.remove(p);
-            m.dec_ref(p);
-            m.dec_ref(lit);
-        }
-    }
-
-    void add_pred(app* p, app* lit, unsigned level) {
-        if (p != lit) {
-            expr_ref eq(m);
-            eq = m.mk_eq(p, lit);
-            if (level == 0) {
-                m_fa.persist_expr(eq);
-                m_ex.persist_expr(eq);
-            }
-            else {
-                get_kernel(level).assert_expr(eq);
-            }
-        }
-        m.inc_ref(p);
-        m.inc_ref(lit);
-        del_pred(p);
-        m_pred2lit.insert(p, lit);
-        m_lit2pred.insert(lit, p);
-        m_pred2level.insert(p, level);
-        ++m_stats.m_num_predicates;
-    }
-
-    void reset() {
-        m_level = 0;
-        m_atoms.reset();
-        m_moves.reset();
-        m_vars.reset();
-        m_model = 0;
-        m_last_model = 0;
-        m_pred2level.reset();
-        m_lit2pred.reset();
-        m_pred2lit.reset();
-        m_fa.k().reset();
-        m_ex.k().reset();
-        m_cancel = false;
-    }
-
-    
-
-    app_ref mk_not(expr* e) {
-        return app_ref(to_app(::mk_not(m, e)), m);
-    }
-
-    app_ref fresh_bool(char const* name) {
-        app_ref r(m.mk_fresh_const(name, m.mk_bool_sort()), m);
-        m_fmc->insert(r->get_decl());
-        return r;
-    }
-
-    /**
-       \brief create a quantifier prefix formula.
-     */
-    void hoist(expr_ref& fml) {
-        quantifier_hoister hoist(m);
-        app_ref_vector vars(m);
-        bool is_forall = false;        
-        get_free_vars(fml, vars);
-        m_vars.push_back(vars);
-        vars.reset();
-        hoist.pull_quantifier(is_forall, fml, vars);
-        m_vars.back().append(vars);
-        do {
-            is_forall = !is_forall;
-            vars.reset();
-            hoist.pull_quantifier(is_forall, fml, vars);
-            m_vars.push_back(vars);
-        }
-        while (!vars.empty());
-        SASSERT(m_vars.back().empty()); 
-        TRACE("qe", tout << fml << "\n";);
-    }
-
-    void get_free_vars(expr_ref& fml, app_ref_vector& vars) {
-        ast_fast_mark1 mark;
-        ptr_vector<expr> todo;
-        todo.push_back(fml);
-        while (!todo.empty()) {
-            expr* e = todo.back();
-            todo.pop_back();
-            if (mark.is_marked(e) || is_var(e)) {
-                continue;
-            }
-            mark.mark(e);
-            if (is_quantifier(e)) {
-                todo.push_back(to_quantifier(e)->get_expr());
-                continue;
-            }
-            SASSERT(is_app(e));
-            app* a = to_app(e);
-            if (is_uninterp_const(a)) { // TBD generalize for uninterpreted functions.
-                vars.push_back(a);
-            }
-            for (unsigned i = 0; i < a->get_num_args(); ++i) {
-                todo.push_back(a->get_arg(i));
-            }
-        }
-    }
-
-    /** 
-        \brief create propositional abstraction of formula by replacing atomic sub-formulas by fresh 
-        propositional variables, and adding definitions for each propositional formula on the side.
-        Assumption is that the formula is quantifier-free.
-    */
-    app_ref mk_abstract(expr* fml) {
-        expr_ref_vector todo(m), trail(m);
-        obj_map<expr,expr*> cache;
-        ptr_vector<expr> args;
-        app_ref r(m);
-        todo.push_back(fml);
-        while (!todo.empty()) {
-            expr* e = todo.back();
-            if (cache.contains(e)) {
-                todo.pop_back();
-                continue;
-            }
-            SASSERT(is_app(e));
-            app* a = to_app(e);
-            if (a->get_family_id() == m.get_basic_family_id()) {
-                unsigned sz = a->get_num_args();
-                args.reset();
-                bool diff = false;
-                for (unsigned i = 0; i < sz; ++i) {
-                    expr* f = a->get_arg(i), *f1;
-                    if (cache.find(f, f1)) {
-                        args.push_back(f1);
-                        diff |= f != f1;
-                    }
-                    else {
-                        todo.push_back(f);
-                    }
-                } 
-                if (args.size() == sz) {
-                    if (diff) {
-                        r = m.mk_app(a->get_decl(), sz, args.c_ptr());
-                    }
-                    else {
-                        r = to_app(e);
-                    }
-                    cache.insert(e, r);
-                    trail.push_back(r);
-                    todo.pop_back();
-                }
-            }
-            else if (is_uninterp_const(a)) {
-                cache.insert(a, a);
-                m_atoms.push_back(a);
-            }
-            else {
-                // TBD: nested Booleans.    
-                SASSERT(m.is_bool(a));
-                r = fresh_bool("p");
-                cache.insert(a, r);
-                add_pred(r, a, 0);
-                m_atoms.push_back(r);
-            }
-        }
-        r = to_app(cache.find(fml));
-        return r;
-    }
-
-
-    void get_core(app_ref_vector& core, unsigned level) {
-        get_kernel(level).get_core(core);
-    }
-
-    void check_cancel() {
-        if (m_cancel) {
-            throw tactic_exception(TACTIC_CANCELED_MSG);
-        }
-    }
-
-    void display(std::ostream& out) const {
-        out << "level: " << m_level << "\n";
-        out << "atoms:\n";
-        for (unsigned i = 0; i < m_atoms.size(); ++i) {
-            out << mk_pp(m_atoms[i], m) << "\n";
-        }
-        out << "pred2lit:\n";
-        obj_map<app, expr*>::iterator it = m_pred2lit.begin(), end = m_pred2lit.end();
-        for (; it != end; ++it) {
-            out << mk_pp(it->m_key, m) << " |-> " << mk_pp(it->m_value, m) << "\n";
-        }
-        m_moves.display(out);
-    }
-
-    void display(std::ostream& out, model& model) const {
-        display(out);
-        model_v2_pp(out, model);
-    }
-
-    void display(std::ostream& out, app_ref_vector const& asms) const {
-        expr* e = 0;
-        unsigned lvl = 0;
-        for (unsigned i = 0; i < asms.size(); ++i) {
-            out << mk_pp(asms[i], m);
-            if (m_pred2level.find(asms[i], lvl)) {
-                out << " - " << lvl; 
-            }
-            if (m_pred2lit.find(asms[i], e)) {
-                out << " : " << mk_pp(e, m);
-            }
-            out << "\n";
-        }
-    }
-
-#if 0
-
-    void project(app_ref_vector& imp, model_ref& mdl) {
-        if (m_level == 0) {
-            return;
-        }
-        expr* e;
-
-        app_ref_vector vars(m);
-        expr_ref fml(m), fml1(m);
-
-        for (unsigned i = m_level; i < m_vars.size(); ++i) {
-            vars.append(m_vars[i]);
-        }
-        for (unsigned i = 0; i < imp.size(); ++i) {
-            if (m_pred2lit.find(to_app(imp[i].get()), e)) {
-                imp[i] = to_app(e);
-            }
-        }
-        
-        fml = mk_and(imp);
-        m_mbp(vars, *mdl.get(), fml);
-        fml1 = mk_not(fml);
-        fml1 = mk_abstract(fml1);
-        persist_expr(m_level - 1, fml1);
-    }
-
-    /** 
-        \brief use dual propagation to minimize model.
-    */
-    bool minimize_assignment(app_ref_vector& assignment, unsigned level) {        
-        bool result = false;
-        lbool res = get_kernel(level+1).k().check(assignment);
-        switch (res) {
-        case l_true:
-            UNREACHABLE();
-            break;
-        case l_undef:
-            break;
-        case l_false: 
-            result = true;
-            get_core(assignment, level+1);
-            break;
-        }
-        return result;
-    }
-
-
-    bool get_implicant(app_ref_vector& impl, model_ref& mdl, unsigned level) {
-        expr_ref tmp(m);
-        impl.reset();
-        get_kernel(level).k().get_model(mdl);
-        for (unsigned i = 0; i < m_atoms.size(); ++i) {
-            app* p = m_atoms[i].get();
-            if (mdl->eval(p, tmp)) {
-                if (m.is_true(tmp)) {
-                    impl.push_back(p);
-                }
-                else if (m.is_false(tmp)) {
-                    impl.push_back(mk_not(p));
-                }
-            }                
-        }
-        return minimize_assignment(impl, level);
-    }
-
 #endif
 
 public:
@@ -599,7 +732,7 @@ public:
         m_mbp(m),
         m_fa(m),
         m_ex(m),
-        m_moves(*this),
+        m_movep(*this),
         m_atoms(m),
         m_level(0),
         m_cancel(false)
