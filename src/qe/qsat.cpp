@@ -127,12 +127,16 @@ class qsat : public tactic {
 
         void pop(unsigned num_scopes) {
             unsigned l = m_asms_lim.size() - num_scopes;
-            m_asms.resize(l);
+            m_asms.resize(m_asms_lim[l]);
+            m_asms_lim.resize(l);
         }
         
         void insert(app* a, max_level const& lvl) {
             unsigned l = lvl.max();
-            if (l != UINT_MAX) {
+            if (l == UINT_MAX) {
+                m_preds[0].push_back(a);
+            }
+            else {
                 m_preds[l].push_back(a);
             }
         }
@@ -184,8 +188,7 @@ class qsat : public tactic {
                     out << mk_pp(q.m_pred2lit.find(m_preds[i][j]), m) << "\n";
                 }
             }            
-        }
-        
+        }        
     };
 
     ast_manager&            m;
@@ -215,12 +218,12 @@ class qsat : public tactic {
             return m_fa;
         }
     }
+
     /**
        \brief check alternating satisfiability.
        Even levels are existential, odd levels are universal.
      */
-    lbool check_sat() {
-        
+    lbool check_sat() {        
         m_moves.init();
         while (true) {
             check_cancel();
@@ -238,38 +241,18 @@ class qsat : public tactic {
                 push();
                 break;
             case l_false:
-                TRACE("qe", display(tout); display(tout, asms););                
-                if (m_level == 0) {
-                    return l_false;
+                TRACE("qe", display(tout); display(tout, asms););
+                switch (m_level) {
+                case 0: return l_false;
+                case 1: return l_true;
+                default: project(asms); break;
                 }
-                if (m_level == 1) {
-                    return l_true;
-                }
-                get_core(asms, m_level);
-                project(asms);
                 break;
             case l_undef:
                 return res;
             }
         }
         return l_undef;
-    }
-
-
-
-    void display_expr(std::ostream& out, expr* t) {
-        ptr_vector<expr> todo;
-        todo.push_back(t);
-        while (!todo.empty()) {
-            app* a = to_app(todo.back());
-            todo.pop_back();
-            out << a->get_id() << " " << a->get_decl()->get_name() << " " << a->get_num_args() << "  refs: " << a->get_ref_count() << " args: ";
-            for (unsigned i = 0; i < a->get_num_args(); ++i) {
-                out << a->get_arg(i)->get_id() << " ";
-                todo.push_back(a->get_arg(i));
-            }
-            out << "\n";
-        }
     }
 
     bool is_exists(unsigned level) const {
@@ -291,21 +274,9 @@ class qsat : public tactic {
         m_level -= num_scopes;
     }
 
-    void del_pred(app* p) {
-        expr* lit;
-        if (m_pred2lit.find(p, lit)) {
-            SASSERT(m_lit2pred.find(lit) == p);
-            m_lit2pred.remove(lit);
-            m_pred2lit.remove(p);
-            m.dec_ref(p);
-            m.dec_ref(lit);
-        }
-    }
-
     void add_pred(app* p, app* lit, unsigned level) {
         m.inc_ref(p);
         m.inc_ref(lit);
-        del_pred(p);
         m_pred2lit.insert(p, lit);
         m_lit2pred.insert(lit, p);        
         ++m_stats.m_num_predicates;
@@ -454,6 +425,9 @@ class qsat : public tactic {
                 SASSERT(m_elevel.contains(a));
                 m_moves.insert(a, m_elevel.find(a));
             }
+            else if (m_lit2pred.contains(a)) {
+                // no-op
+            }
             else {
                 // TBD: nested Booleans.    
                 SASSERT(m.is_bool(a));
@@ -543,6 +517,7 @@ class qsat : public tactic {
     }
 
     void project(app_ref_vector& core) {
+        get_core(asms, m_level);
         SASSERT(m_level >= 2);
         expr* e;
         app_ref_vector vars(m);
@@ -566,6 +541,7 @@ class qsat : public tactic {
     }
 
 public:
+
     qsat(ast_manager& m, params_ref const& p):
         m(m),
         m_mbp(m),
@@ -641,6 +617,7 @@ public:
         m_ex.k().collect_statistics(st);
         st.update("num predicates", m_stats.m_num_predicates);
     }
+
     void reset_statistics() {
         m_stats.reset();
     }
