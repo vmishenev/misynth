@@ -89,7 +89,6 @@ class qsat : public tactic {
         void merge(unsigned& lvl, unsigned const& other) {
             lvl = max(lvl, other);
         }
-
         std::ostream& display(std::ostream& out) const {
             if (m_ex != UINT_MAX) out << "e" << m_ex << " ";
             if (m_fa != UINT_MAX) out << "a" << m_fa << " ";
@@ -191,33 +190,25 @@ class qsat : public tactic {
         }        
     };
 
-    ast_manager&            m;
-    params_ref              m_params;
-    stats                   m_stats;
-    qe::mbp                 m_mbp;
-    kernel                  m_fa;
-    kernel                  m_ex;
-    move_preds              m_moves;
-    expr_ref_vector         m_trail;      // predicates that encode atomic subformulas
-    vector<app_ref_vector>  m_vars;       // variables from alternating prefixes.
-    unsigned                m_level;
-    model_ref               m_last_model;
-    model_ref               m_model;
-    obj_map<app, expr*>     m_pred2lit;    // maintain definitions of predicates.
-    obj_map<expr, app*>     m_lit2pred;    // maintain reverse mapping to predicates
-    obj_map<app, max_level>  m_elevel;
+    ast_manager&               m;
+    params_ref                 m_params;
+    stats                      m_stats;
+    qe::mbp                    m_mbp;
+    kernel                     m_fa;
+    kernel                     m_ex;
+    move_preds                 m_moves;
+    expr_ref_vector            m_trail;      // predicates that encode atomic subformulas
+    vector<app_ref_vector>     m_vars;       // variables from alternating prefixes.
+    unsigned                   m_level;
+    model_ref                  m_model;
+    obj_map<app, expr*>        m_pred2lit;    // maintain definitions of predicates.
+    obj_map<expr, app*>        m_lit2pred;    // maintain reverse mapping to predicates
+    obj_map<app, max_level>    m_elevel;
     filter_model_converter_ref m_fmc;
     volatile bool              m_cancel;
+    ptr_vector<expr>           todo;          // temporary variable for worklist
 
 
-    kernel& get_kernel(unsigned j) {        
-        if (is_exists(j)) {
-            return m_ex; 
-        }
-        else {
-            return m_fa;
-        }
-    }
 
     /**
        \brief check alternating satisfiability.
@@ -233,11 +224,8 @@ class qsat : public tactic {
             lbool res = get_kernel(m_level).k().check(asms);
             switch (res) {
             case l_true:
-                get_kernel(m_level).k().get_model(m_last_model);
-                if (m_level == 0) {
-                    m_model = m_last_model;
-                }
-                TRACE("qe", display(tout, *m_last_model.get()); display(tout, asms););
+                get_kernel(m_level).k().get_model(m_model);
+                TRACE("qe", display(tout, *m_model.get()); display(tout, asms););
                 push();
                 break;
             case l_false:
@@ -253,6 +241,15 @@ class qsat : public tactic {
             }
         }
         return l_undef;
+    }
+
+    kernel& get_kernel(unsigned j) {        
+        if (is_exists(j)) {
+            return m_ex; 
+        }
+        else {
+            return m_fa;
+        }
     }
 
     bool is_exists(unsigned level) const {
@@ -288,7 +285,7 @@ class qsat : public tactic {
         m_moves.reset();
         m_vars.reset();
         m_model = 0;
-        m_last_model = 0;
+        m_model = 0;
         obj_map<app, expr*>::iterator it = m_pred2lit.begin(), end = m_pred2lit.end();
         for (; it != end; ++it) {
             m.dec_ref(it->m_key);
@@ -351,7 +348,7 @@ class qsat : public tactic {
 
     void get_free_vars(expr_ref& fml, app_ref_vector& vars) {
         ast_fast_mark1 mark;
-        ptr_vector<expr> todo;
+        todo.reset();
         todo.push_back(fml);
         while (!todo.empty()) {
             expr* e = todo.back();
@@ -380,11 +377,12 @@ class qsat : public tactic {
         propositional variables, and adding definitions for each propositional formula on the side.
         Assumption is that the formula is quantifier-free.
     */
-    app_ref mk_abstract(expr* fml) {
+    app_ref mk_abstract(expr* fml, max_level& level) {
         expr_ref_vector todo(m), trail(m);
         obj_map<expr,expr*> cache;
         ptr_vector<expr> args;
         app_ref r(m), eq(m);
+        app* p;
         todo.push_back(fml);
         while (!todo.empty()) {
             expr* e = todo.back();
@@ -422,11 +420,12 @@ class qsat : public tactic {
             }
             else if (is_uninterp_const(a)) {
                 cache.insert(a, a);
-                SASSERT(m_elevel.contains(a));
-                m_moves.insert(a, m_elevel.find(a));
+                max_level l = m_elevel.find(a);
+                m_moves.insert(a, l);
+                level.merge(l);
             }
-            else if (m_lit2pred.contains(a)) {
-                // no-op
+            else if (m_lit2pred.find(a, p)) {
+                level.merge(m_elevel.find(p));
             }
             else {
                 // TBD: nested Booleans.    
@@ -437,9 +436,10 @@ class qsat : public tactic {
                 eq = m.mk_eq(r, a);
                 m_fa.assert_expr(eq);
                 m_ex.assert_expr(eq);
-                compute_level(a);
-                m_elevel.insert(r, m_elevel.find(a));
-                m_moves.insert(r, m_elevel.find(a));
+                level l = compute_level(a);
+                m_elevel.insert(r, l);
+                m_moves.insert(r, l);
+                level.merge(l);
             }
         }
         r = to_app(cache.find(fml));
@@ -448,11 +448,11 @@ class qsat : public tactic {
         return r;
     }
 
-    void compute_level(app* a) {
-        ptr_vector<expr> todo;
-        todo.push_back(a);
+    max_level compute_level(app* e) {
+        todo.reset();
+        todo.push_back(e);
         while (!todo.empty()) {
-            a = to_app(todo.back());
+            app* a = to_app(todo.back());
             if (m_elevel.contains(a)) {
                 todo.pop_back();
                 continue;
@@ -474,6 +474,7 @@ class qsat : public tactic {
                 todo.pop_back();
             }
         }
+        return m_elevel.find(e);
     }
 
     void get_core(app_ref_vector& core, unsigned level) {
@@ -522,7 +523,8 @@ class qsat : public tactic {
         expr* e;
         app_ref_vector vars(m);
         expr_ref fml(m), fml1(m);
-        model& mdl = *m_last_model.get();
+        max_level level;
+        model& mdl = *m_model.get();
 
         for (unsigned i = m_level-1; i < m_vars.size(); ++i) {
             vars.append(m_vars[i]);
@@ -534,9 +536,10 @@ class qsat : public tactic {
         }        
         fml = mk_and(core);
         m_mbp(vars, mdl, fml);
-        fml = mk_abstract(fml);
+        fml = mk_abstract(fml, level);
         fml1 = mk_not(fml);
-        pop(2); // TBD: can compute lower level by retrieving maximal level in fml.
+        SASSERT(level.max() + 2 <= m_level);
+        pop(m_level - level.max()); 
         get_kernel(m_level).assert_expr(fml1);
     }
 
@@ -573,6 +576,7 @@ public:
         tactic_report report("qsat-tactic", *in);
         ptr_vector<expr> fmls;
         expr_ref fml(m);
+        max_level level;
         mc = 0; pc = 0; core = 0;
         in->get_formulas(fmls);
         fml = mk_and(m, fmls.size(), fmls.c_ptr());
@@ -585,7 +589,7 @@ public:
         reset();
         TRACE("qe", tout << fml << "\n";);
         hoist(fml);
-        fml = mk_abstract(fml);
+        fml = mk_abstract(fml, level);
         m_ex.assert_expr(fml);
         m_fa.assert_expr(m.mk_not(fml));
         lbool is_sat = check_sat();
