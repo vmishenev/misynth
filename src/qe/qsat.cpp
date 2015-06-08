@@ -113,17 +113,26 @@ class qsat : public tactic {
         void merge(unsigned& lvl, unsigned const& other) {
             lvl = max(lvl, other);
         }
+
+        std::ostream& display(std::ostream& out) const {
+            if (m_ex != UINT_MAX) out << "e" << m_ex << " ";
+            if (m_fa != UINT_MAX) out << "a" << m_fa << " ";
+            return out;
+        }
     };
 
     class move_preds {
         ast_manager& m;
         qsat&        q;
         vector<app_ref_vector> m_preds;
+        app_ref_vector  m_asms;
+        unsigned_vector m_asms_lim;
 
     public:
         move_preds(qsat& _q):
             m(_q.m),
-            q(_q)
+            q(_q),
+            m_asms(m)
         {}
 
         void init() {
@@ -131,10 +140,18 @@ class qsat : public tactic {
             for (unsigned i = 0; i < q.m_vars.size(); ++i) {
                 m_preds.push_back(app_ref_vector(m));
             }
-        }        
+        }
 
         void reset() {
+        }
 
+        void push() {
+            m_asms_lim.push_back(m_asms.size());
+        }
+
+        void pop(unsigned num_scopes) {
+            unsigned l = m_asms_lim.size() - num_scopes;
+            m_asms.resize(l);
         }
         
         void insert(app* a, max_level const& lvl) {
@@ -152,28 +169,36 @@ class qsat : public tactic {
             }
             model& mdl = *q.m_last_model.get();
             expr_ref val(m);
-            for (unsigned i = 0; i + 1 < level; ++i) {
+            for (unsigned j = 0; j < m_preds[level - 1].size(); ++j) {
+                app* p = m_preds[level - 1][j].get();
+                VERIFY(mdl.eval(p, val));
+                if (m.is_false(val)) {
+                    m_asms.push_back(m.mk_not(p));
+                }
+                else {
+                    m_asms.push_back(p);
+                }
+            }
+            asms.append(m_asms);
+
+            for (unsigned i = level + 1; i < m_preds.size(); i += 2) {
                 for (unsigned j = 0; j < m_preds[i].size(); ++j) {
                     app* p = m_preds[i][j].get();
-                    VERIFY(mdl.eval(p, val));
-                    if (m.is_true(val)) {
-                        asms.push_back(p);
-                    }
-                    else if (m.is_false(val)) {
-                        asms.push_back(m.mk_not(p));
+                    max_level lvl = q.m_elevel.find(p);
+                    bool use = 
+                        (lvl.m_fa == i && (lvl.m_ex == UINT_MAX || lvl.m_ex < level)) ||
+                        (lvl.m_ex == i && (lvl.m_fa == UINT_MAX || lvl.m_fa < level));
+                    if (use) {
+                        VERIFY(mdl.eval(p, val));
+                        if (m.is_false(val)) {
+                            asms.push_back(m.mk_not(p));
+                        }
+                        else {
+                            asms.push_back(p);
+                        }
                     }
                 }
             }
-#if 0
-            // TODO: also include predicates by same player, whose 
-            // variables belonging to other player are below level
-
-            for (unsigned i = level - 1; i < m_preds.size(); i += 2) {
-                for (unsigned j = 0; j < m_preds[i].size(); ++j) {
-                    asms.append(m_preds[i]);
-                }
-            }
-#endif
         }
 
         void display(std::ostream& out) const {
@@ -193,7 +218,7 @@ class qsat : public tactic {
     qe::mbp                 m_mbp;
     kernel                  m_fa;
     kernel                  m_ex;
-    move_preds              m_movep;
+    move_preds              m_moves;
     app_ref_vector          m_atoms;      // predicates that encode atomic subformulas
     vector<app_ref_vector>  m_vars;       // variables from alternating prefixes.
     unsigned                m_level;
@@ -201,7 +226,6 @@ class qsat : public tactic {
     model_ref               m_model;
     obj_map<app, expr*>     m_pred2lit;    // maintain definitions of predicates.
     obj_map<expr, app*>     m_lit2pred;    // maintain reverse mapping to predicates
-    obj_map<app, unsigned>  m_pred2level;  // maintain level of predicates.
     obj_map<app, max_level>  m_elevel;
     filter_model_converter_ref m_fmc;
     volatile bool              m_cancel;
@@ -221,12 +245,12 @@ class qsat : public tactic {
      */
     lbool check_sat() {
         
-        m_movep.init();
+        m_moves.init();
         while (true) {
             check_cancel();
             TRACE("qe", display(tout););
             app_ref_vector asms(m);
-            m_movep.get_assumptions(asms);
+            m_moves.get_assumptions(asms);
             lbool res = get_kernel(m_level).k().check(asms);
             switch (res) {
             case l_true:
@@ -284,20 +308,18 @@ class qsat : public tactic {
         return is_exists(level+1);
     }
 
-    unsigned get_level(expr* p) const {
-        return m_pred2level.find(to_app(p));
-    }
-
     void push() {
         m_level++;
         m_fa.push();
         m_ex.push();
+        m_moves.push();
     }
 
     void pop(unsigned num_scopes) {
         SASSERT(num_scopes <= m_level);
         m_fa.pop(num_scopes);
         m_ex.pop(num_scopes);
+        m_moves.pop(num_scopes);
         m_level -= num_scopes;
     }
 
@@ -307,7 +329,6 @@ class qsat : public tactic {
             SASSERT(m_lit2pred.find(lit) == p);
             m_lit2pred.remove(lit);
             m_pred2lit.remove(p);
-            m_pred2level.remove(p);
             m.dec_ref(p);
             m.dec_ref(lit);
         }
@@ -319,20 +340,19 @@ class qsat : public tactic {
         del_pred(p);
         m_pred2lit.insert(p, lit);
         m_lit2pred.insert(lit, p);        
-        m_pred2level.insert(p, level);
         ++m_stats.m_num_predicates;
     }
 
     void reset() {
         m_level = 0;
         m_atoms.reset();
-        m_movep.reset();
+        m_moves.reset();
         m_vars.reset();
         m_model = 0;
         m_last_model = 0;
-        m_pred2level.reset();
         m_lit2pred.reset();
         m_pred2lit.reset();
+        m_elevel.reset();
         m_fa.k().reset();
         m_ex.k().reset();
         m_cancel = false;
@@ -459,7 +479,7 @@ class qsat : public tactic {
             else if (is_uninterp_const(a)) {
                 cache.insert(a, a);
                 SASSERT(m_elevel.contains(a));
-                m_movep.insert(a, m_elevel.find(a));
+                m_moves.insert(a, m_elevel.find(a));
                 m_atoms.push_back(a);
             }
             else {
@@ -473,7 +493,7 @@ class qsat : public tactic {
                 m_ex.persist_expr(eq);
                 compute_level(a);
                 m_elevel.insert(r, m_elevel.find(a));
-                m_movep.insert(r, m_elevel.find(a));
+                m_moves.insert(r, m_elevel.find(a));
                 m_atoms.push_back(r);
             }
         }
@@ -530,7 +550,7 @@ class qsat : public tactic {
         for (; it != end; ++it) {
             out << mk_pp(it->m_key, m) << " |-> " << mk_pp(it->m_value, m) << "\n";
         }
-        m_movep.display(out);
+        m_moves.display(out);
     }
 
     void display(std::ostream& out, model& model) const {
@@ -540,11 +560,11 @@ class qsat : public tactic {
 
     void display(std::ostream& out, app_ref_vector const& asms) const {
         expr* e = 0;
-        unsigned lvl = 0;
+        max_level lvl;
         for (unsigned i = 0; i < asms.size(); ++i) {
             out << mk_pp(asms[i], m);
-            if (m_pred2level.find(asms[i], lvl)) {
-                out << " - " << lvl; 
+            if (m_elevel.find(asms[i], lvl)) {
+                lvl.display(out << " - ");
             }
             if (m_pred2lit.find(asms[i], e)) {
                 out << " : " << mk_pp(e, m);
@@ -732,7 +752,7 @@ public:
         m_mbp(m),
         m_fa(m),
         m_ex(m),
-        m_movep(*this),
+        m_moves(*this),
         m_atoms(m),
         m_level(0),
         m_cancel(false)
