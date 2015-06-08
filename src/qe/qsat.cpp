@@ -418,14 +418,15 @@ class qsat : public tactic {
                     todo.pop_back();
                 }
             }
+            else if (m_lit2pred.find(a, p)) {
+                level.merge(m_elevel.find(p));
+                cache.insert(a, p);
+            }
             else if (is_uninterp_const(a)) {
-                cache.insert(a, a);
                 max_level l = m_elevel.find(a);
                 m_moves.insert(a, l);
                 level.merge(l);
-            }
-            else if (m_lit2pred.find(a, p)) {
-                level.merge(m_elevel.find(p));
+                cache.insert(a, a);
             }
             else {
                 // TBD: nested Booleans.    
