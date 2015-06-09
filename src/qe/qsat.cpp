@@ -110,12 +110,6 @@ class qsat : public tactic {
             m_asms(m)
         {}
 
-        void init() {
-            m_preds.reset();
-            for (unsigned i = 0; i < q.m_vars.size(); ++i) {
-                m_preds.push_back(app_ref_vector(m));
-            }
-        }
 
         void reset() {
         }
@@ -132,18 +126,17 @@ class qsat : public tactic {
         
         void insert(app* a, max_level const& lvl) {
             unsigned l = lvl.max();
-            if (l == UINT_MAX) {
-                m_preds[0].push_back(a);
+            if (l == UINT_MAX) l = 0;
+            while (m_preds.size() <= l) {
+                m_preds.push_back(app_ref_vector(m));
             }
-            else {
-                m_preds[l].push_back(a);
-            }
+            m_preds[l].push_back(a);            
         }
 
         void get_assumptions(app_ref_vector& asms) {
             asms.reset();
             unsigned level = q.m_level;
-            if (level == 0) {
+            if (level == 0 || level > m_preds.size()) {
                 return;
             }
             model& mdl = *q.m_model.get();
@@ -178,13 +171,23 @@ class qsat : public tactic {
                     }
                 }
             }
+            TRACE("qe", tout << "level: " << level << "\n";
+                  model_v2_pp(tout, mdl);
+                  q.display(tout, asms););
         }
 
         void display(std::ostream& out) const {
             for (unsigned i = 0; i < m_preds.size(); ++i) {
                 out << "level " << i << "\n";
                 for (unsigned j = 0; j < m_preds[i].size(); ++j) {
-                    out << mk_pp(q.m_pred2lit.find(m_preds[i][j]), m) << "\n";
+                    app* p = m_preds[i][j];
+                    expr* e;
+                    if (q.m_pred2lit.find(p, e)) {
+                        out << mk_pp(p, m) << " := " << mk_pp(e, m) << "\n";
+                    }
+                    else {
+                        out << mk_pp(p, m) << "\n";
+                    }
                 }
             }            
         }        
@@ -217,10 +220,8 @@ class qsat : public tactic {
        Even levels are existential, odd levels are universal.
      */
     lbool check_sat() {        
-        m_moves.init();
         while (true) {
             check_cancel();
-            TRACE("qe", display(tout););
             app_ref_vector asms(m);
             m_moves.get_assumptions(asms);
             lbool res = get_kernel(m_level).k().check(asms);
@@ -231,7 +232,6 @@ class qsat : public tactic {
                 push();
                 break;
             case l_false:
-                TRACE("qe", display(tout); display(tout, asms););
                 switch (m_level) {
                 case 0: return l_false;
                 case 1: 
@@ -278,7 +278,7 @@ class qsat : public tactic {
         m_level -= num_scopes;
     }
 
-    void add_pred(app* p, app* lit, unsigned level) {
+    void add_pred(app* p, app* lit) {
         m.inc_ref(p);
         m.inc_ref(lit);
         m_pred2lit.insert(p, lit);
@@ -442,13 +442,14 @@ class qsat : public tactic {
                 m_moves.insert(a, l);
                 level.merge(l);
                 cache.insert(a, a);
+                add_pred(a, a);
             }
             else {
                 // TBD: nested Booleans.    
                 SASSERT(m.is_bool(a));
                 r = fresh_bool("p");
                 cache.insert(a, r);
-                add_pred(r, a, 0);
+                add_pred(r, a);
                 eq = m.mk_eq(r, a);
                 m_fa.assert_expr(eq);
                 m_ex.assert_expr(eq);
@@ -539,14 +540,16 @@ class qsat : public tactic {
         fml = mk_not(::mk_and(core));
         m_answer.push_back(fml);
         m_ex.assert_expr(fml);
+        pop(1);
     }
 
     void project(app_ref_vector& core) {
         get_core(core, m_level);
+        TRACE("qe", display(tout); display(tout << "core\n", core););
         SASSERT(m_level >= 2);
         expr* e;
         app_ref_vector vars(m);
-        expr_ref fml(m), fml1(m);
+        expr_ref fml(m), fml0(m), fml1(m); 
         max_level level;
         model& mdl = *m_model.get();
 
@@ -559,11 +562,22 @@ class qsat : public tactic {
             }
         }        
         fml = mk_and(core);
+        fml0 = fml;
         m_mbp(vars, mdl, fml);
-        fml = mk_abstract(fml, level);
-        fml1 = mk_not(fml);
-        SASSERT(level.max() + 2 <= m_level);
-        pop(m_level - level.max()); 
+        fml1 = mk_abstract(fml, level);
+        fml1 = mk_not(fml1);
+        unsigned num_scopes = 0;
+        
+        if (level.max() == UINT_MAX) {
+            num_scopes = 2*(m_level/2);
+        }
+        else {
+            SASSERT(level.max() + 2 <= m_level);
+            SASSERT(0 == ((m_level - level.max()) % 2));
+            num_scopes = m_level - level.max();
+        }
+        TRACE("qe", tout << "backtrack: " << num_scopes << "\nproject:\n" << fml0 << "\n|->\n" << fml << "\n";);
+        pop(num_scopes); 
         get_kernel(m_level).assert_expr(fml1);
     }
 
