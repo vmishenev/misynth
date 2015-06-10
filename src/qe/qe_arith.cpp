@@ -540,56 +540,50 @@ namespace qe {
         }
 
         // 
-        // compute delta and u.
+        // compute D and u.
+        //
+        // D = lcm(d1, d2)
+        // u = eval(x) mod D
         // 
         //   d1 | (a1x + t1) & d2 | (a2x + t2)
-        // =>
-        //   lcm(d1,d2) | (x - u) & d1 | (a1*u + t1) & d2 | (a2*u + t2)
-        //   D | (x - u) & D | D1*(a1*u + t1) & D | D2*(a2*u + t2)
-        //   u = (t1*D1 mod D)/D1*a1
-        // 0 <= u < lcm(d1,d2))
+        // = 
+        //   D | (D/d1)(a1x + t1) & D | (D/d2)(a2x + t2)
+        // =
+        //   D | D1(a1*u + t1) & D | D2(a2*u + t2) & x = D*x' + u & 0 <= u < D
+        // =
+        //   D | D1(a1*u + t1) & D | D2(a2*u + t2) & x = D*x' + u & 0 <= u < D
         // 
         // x := D*x' + u
         // 
         void apply_divides(model& model, expr_ref_vector& lits) {
             SASSERT(m_delta.is_one());
-            for (unsigned i = 0; i < num_divs(); ++i) {
+            unsigned n = num_divs();
+            if (n == 0) {
+                return;
+            }
+            for (unsigned i = 0; i < n; ++i) {
                 m_delta = lcm(m_delta, div_divisor(i));
             }
-            for (unsigned i = 0; i < num_divs(); ++i) {
-                if (i == 0) m_u = compute_u(model, i);
-                SASSERT(i == 0 || m_u == compute_u(model,i));
+            expr_ref val(m);
+            rational r;
+            VERIFY (model.eval(m_var->x(), val) && a.is_numeral(val, r));
+            m_u = mod(r, m_delta);
+            SASSERT(m_u < m_delta && rational(0) <= m_u);
+            for (unsigned i = 0; i < n; ++i) {
                 add_lit(lits, mk_divides(div_divisor(i), 
                                          a.mk_add(mk_num(div_coeff(i) * m_u), div_term(i))));
             }
-            if (num_divs() > 0) {
-                //
-                // update inequalities such that u is added to t and
-                // D is multiplied to coefficient of x.
-                // the interpretation of the new version of x is (x-u)/D
-                //
-                for (unsigned i = 0; i < num_ineqs(); ++i) {
-                    if (!m_u.is_zero()) {
-                        m_ineq_terms[i] = a.mk_add(mk_num(m_u), ineq_term(i));
-                    }
-                    m_ineq_coeffs[i] *= m_delta;
+            //
+            // update inequalities such that u is added to t and
+            // D is multiplied to coefficient of x.
+            // the interpretation of the new version of x is (x-u)/D
+            //
+            for (unsigned i = 0; i < num_ineqs(); ++i) {
+                if (!m_u.is_zero()) {
+                    m_ineq_terms[i] = a.mk_add(mk_num(m_u), ineq_term(i));
                 }
+                m_ineq_coeffs[i] *= m_delta;
             }
-        }
-
-        rational compute_u(model& model, unsigned i) {
-            expr_ref tmp(m);
-            rational u(0), r;      
-            VERIFY (model.eval(div_term(i), tmp));
-            VERIFY (a.is_numeral(tmp, r));
-            rational D1 = m_delta/div_divisor(i);
-            r = mod(r*D1, m_delta);
-            SASSERT(!r.is_neg());
-            if (!r.is_zero()) {
-                u = (m_delta - r)/(D1*div_coeff(i));
-            }
-            SASSERT (u.is_int());
-            return u;
         }
 
     public:
