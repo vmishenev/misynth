@@ -23,6 +23,8 @@ Revision History:
 #include "arith_decl_plugin.h"
 #include "expr_safe_replace.h"
 #include "ast_pp.h"
+#include "th_rewriter.h"
+#include "model_v2_pp.h"
 
 using namespace qe;
 
@@ -34,15 +36,21 @@ public:
     ~impl() {}
  
     void operator()(app_ref_vector const& vars, model& mdl, expr_ref& fml) {
+        TRACE("qe", tout << fml << "\n";
+              model_v2_pp(tout, mdl););
         expr_ref tmp(m);
         expr_safe_replace sub(m);
         app_ref_vector vars1(vars);
         fml = arith_project(mdl, vars1, fml);
-        for (unsigned i = 0; i < vars1.size(); ++i) {
-            VERIFY(mdl.eval(vars1[i].get(), tmp));
-            sub.insert(vars1[i].get(), tmp);
+        if (!vars1.empty()) {
+            th_rewriter rw(m);
+            for (unsigned i = 0; i < vars1.size(); ++i) {
+                VERIFY(mdl.eval(vars1[i].get(), tmp));
+                sub.insert(vars1[i].get(), tmp);
+            }
+            sub(fml);
+            rw(fml);
         }
-        sub(fml);
     }   
 };
     

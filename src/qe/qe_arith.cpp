@@ -143,12 +143,25 @@ namespace qe {
                 is_linear(model, -mul, e2, c, ts);
                 is_strict = !is_not;
             }
-            else if (m.is_eq(lit, e1, e2) && !is_not) {
+            else if (m.is_eq(lit, e1, e2) && !is_not && is_arith(e1)) {
                 is_linear(model,  mul, e1, c, ts);
                 is_linear(model, -mul, e2, c, ts);
                 is_strict = false;
                 is_eq = true;
-            }            
+            }  
+            else if (m.is_eq(lit, e1, e2) && is_not && is_arith(e1)) {
+                expr_ref val1(m), val2(m);
+                rational r1, r2;
+                VERIFY(model.eval(e1, val1) && a.is_numeral(val1, r1));
+                VERIFY(model.eval(e2, val2) && a.is_numeral(val2, r2));
+                SASSERT(r1 != r2);
+                if (r1 < r2) {
+                    std::swap(e1, e2);
+                }                
+                is_strict = true;
+                is_linear(model,  mul, e1, c, ts);
+                is_linear(model, -mul, e2, c, ts);                               
+            }
             else {
                 TRACE("qe", tout << "can't project:" << mk_pp(lit, m) << "\n";);
                 throw cant_project();
@@ -159,6 +172,10 @@ namespace qe {
             }
             t = add(ts);
             return true;
+        }
+
+        bool is_arith(expr* e) {
+            return a.is_int(e) || a.is_real(e);
         }
 
         expr_ref add(expr_ref_vector const& ts) {
@@ -193,10 +210,12 @@ namespace qe {
             if (is_mod(model, e, k, t, c)) {
                 VERIFY (model.eval(e, val));
                 SASSERT (a.is_numeral(val));
-                t = a.mk_sub(t, val);
-                m_div_terms.push_back(t);
-                m_div_divisors.push_back(k);
-                m_div_coeffs.push_back(c);
+                if (!c.is_zero()) {
+                    t = a.mk_sub(t, val);
+                    m_div_terms.push_back(t);
+                    m_div_divisors.push_back(k);
+                    m_div_coeffs.push_back(c);
+                }
                 return true;
             }
             return false;
@@ -212,7 +231,7 @@ namespace qe {
         }
 
         expr_ref mk_divides(rational const& k, expr* t) {            
-            return expr_ref(m.mk_eq(a.mk_mod(t, mk_num(k)), mk_num(0)), m);
+            return expr_ref(m.mk_eq(a.mk_mod(t, mk_num(abs(k))), mk_num(0)), m);
         }
 
         void reset() {
@@ -248,30 +267,41 @@ namespace qe {
                 if (!(*m_var)(e)) {
                     new_lits.push_back(e);                    
                 }
-                if (is_linear(model, e, c, t, is_strict, is_eq)) {
-                    m_ineq_coeffs.push_back(c);
-                    m_ineq_terms.push_back(t);
-                    m_ineq_strict.push_back(is_strict);
+                else if (is_linear(model, e, c, t, is_strict, is_eq)) {
                     if (c.is_zero()) {
-                        add_lit(new_lits, e);
-                    }
-                    else if (is_eq) {
-                        found_eq = true;
-                        eq_index = i;
-                    }
-                    else if (c.is_pos()) {
-                        ++num_pos;
+                        if (is_eq) {
+                            t = a.mk_eq(t, mk_num(0));
+                        }
+                        else if (is_strict) {
+                            t = a.mk_lt(t, mk_num(0));
+                        }
+                        else {
+                            t = a.mk_le(t, mk_num(0));
+                        }
+                        add_lit(new_lits, t);
                     }
                     else {
-                        ++num_neg;
-                    }                    
+                        m_ineq_coeffs.push_back(c);
+                        m_ineq_terms.push_back(t);
+                        m_ineq_strict.push_back(is_strict);
+                        if (is_eq) {
+                            found_eq = true;
+                            eq_index = m_ineq_coeffs.size()-1;
+                        }
+                        else if (c.is_pos()) {
+                            ++num_pos;
+                        }
+                        else {
+                            ++num_neg;
+                        }            
+                    }        
                 }
                 else {
                     TRACE("qe", tout << "can't project:" << mk_pp(e, m) << "\n";);
                     throw cant_project();
                 }
             }
-            TRACE("qe", display(tout););
+            TRACE("qe", display(tout << mk_pp(m_var->x(), m) << " "););
             lits.reset();
             lits.append(new_lits);
             if (found_eq) {
@@ -283,7 +313,7 @@ namespace qe {
             }
             if (num_divs() > 0) {
                 apply_divides(model, lits);
-                TRACE("qe", display(tout << "after division"););
+                TRACE("qe", display(tout << "after division " << mk_pp(m_var->x(), m) << "\n"););
             }
             if (num_pos == 0 || num_neg == 0) {
                 return;
@@ -387,10 +417,11 @@ namespace qe {
             VERIFY (model.eval(ineq_term(j), tmp) && a.is_numeral(tmp, sval));
             bool use_case1 = ac*sval + bc*tval + slack <= rational(0);
             if (use_case1) {
+                std::cout << "slack " << slack << "\n";
                 expr_ref_vector ts(m);
                 ts.push_back(as);
                 ts.push_back(bt);
-                ts.push_back(mk_num(slack));
+                ts.push_back(mk_num(-slack));
                 add_lit(lits, a.mk_le(add(ts), mk_num(0)));
                 return;
             }
@@ -472,9 +503,10 @@ namespace qe {
             return expr_ref(a.mk_mul(mk_num(r), t), m);
         }
 
-        void add_lit(expr_ref_vector& lits, expr* e) {
+        void add_lit(expr_ref_vector& lits, expr* e) {            
             expr_ref tmp(e, m);
             m_rw(tmp);
+            TRACE("qe", tout << mk_pp(e, m) << " " << tmp << "\n";); 
             lits.push_back(tmp);
         }
 
@@ -577,7 +609,7 @@ namespace qe {
                     m_var = alloc(contains_app, m, v);
                     try {
                         project(model, result);
-                        TRACE("qe", tout << "projected: " << mk_pp(v, m) << " ";
+                        TRACE("qe", tout << "projected: " << mk_pp(v, m) << "\n";
                               for (unsigned i = 0; i < result.size(); ++i) {
                                   tout << mk_pp(result[i].get(), m) << "\n";
                               });
