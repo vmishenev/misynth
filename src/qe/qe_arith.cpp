@@ -25,6 +25,7 @@ Revision History:
 #include "ast_pp.h"
 #include "th_rewriter.h"
 #include "expr_functors.h"
+#include "model_v2_pp.h"
 
 namespace qe {
 
@@ -58,6 +59,7 @@ namespace qe {
         svector<bool>     m_ineq_strict;
         expr_ref_vector   m_div_terms;
         vector<rational>  m_div_divisors, m_div_coeffs;
+        expr_ref_vector   m_new_lits;
         rational m_delta, m_u;
         scoped_ptr<contains_app> m_var;
 
@@ -69,14 +71,10 @@ namespace qe {
 
         void display(std::ostream& out) const {
             for (unsigned i = 0; i < num_ineqs(); ++i) {
-                out << mk_pp(ineq_term(i), m) << " " << ineq_coeff(i) << "*" << mk_pp(m_var->x(), m);
-                if (ineq_strict(i)) out << " < 0";
-                else out << " <= 0";
-                out << "\n";
+                display_ineq(out, i);
             }
             for (unsigned i = 0; i < num_divs(); ++i) {
-                out << div_divisor(i) << " | ( " << mk_pp(div_term(i), m) << " " << div_coeff(i) << "*" 
-                    << mk_pp(m_var->x(), m) << ")\n";
+                display_div(out, i);
             }            
         }
 
@@ -171,6 +169,10 @@ namespace qe {
                 is_strict = false;
             }
             t = add(ts);
+            if (is_eq && c.is_neg()) {
+                t = a.mk_uminus(t);
+                c.neg();
+            }
             return true;
         }
 
@@ -207,18 +209,30 @@ namespace qe {
         bool extract_mod(model& model, expr* e, expr_ref& val) {
             rational c, k;
             expr_ref t(m);
-            if (is_mod(model, e, k, t, c)) {
+            if (is_mod(model, e, k, t, c)) {                
                 VERIFY (model.eval(e, val));
                 SASSERT (a.is_numeral(val));
+                TRACE("qe", tout << "extract: " << mk_pp(e, m) << " evals: " << val << " c: " << c << " t: " << t << "\n";);
                 if (!c.is_zero()) {
                     t = a.mk_sub(t, val);
                     m_div_terms.push_back(t);
                     m_div_divisors.push_back(k);
                     m_div_coeffs.push_back(c);
                 }
+                else {
+                    t = m.mk_eq(a.mk_mod(t, mk_num(k)), val);
+                    add_lit(model, m_new_lits, t);
+                }
                 return true;
             }
             return false;
+        }
+
+        bool lit_is_true(model& model, expr* e) {
+            expr_ref val(m);
+            VERIFY(model.eval(e, val));
+            CTRACE("qe", !m.is_true(val), tout << "eval: " << mk_pp(e, m) << " " << val << "\n";);
+            return m.is_true(val);
         }
 
         expr_ref mk_num(unsigned n) {
@@ -226,7 +240,7 @@ namespace qe {
             return mk_num(r);
         }
 
-        expr_ref mk_num(rational const& r) {
+        expr_ref mk_num(rational const& r) const {
             return expr_ref(a.mk_numeral(r, var_sort()), m);
         }
 
@@ -243,21 +257,49 @@ namespace qe {
             m_div_divisors.reset();
             m_delta = rational(1);
             m_u     = rational(0);
+            m_new_lits.reset();
         }
 
         expr* ineq_term(unsigned i) const { return m_ineq_terms[i]; }
         rational const& ineq_coeff(unsigned i) const { return m_ineq_coeffs[i]; }
         bool ineq_strict(unsigned i) const { return m_ineq_strict[i]; }
+        app_ref mk_ineq_pred(unsigned i) { 
+            app_ref result(m);
+            result = a.mk_add(a.mk_mul(mk_num(ineq_coeff(i)), m_var->x()), ineq_term(i));
+            if (ineq_strict(i)) {
+                result = a.mk_lt(result, mk_num(0));
+            }
+            else {
+                result = a.mk_le(result, mk_num(0));
+            }
+            return result;
+        }
+        void display_ineq(std::ostream& out, unsigned i) const {
+            out << mk_pp(ineq_term(i), m) << " " << ineq_coeff(i) << "*" << mk_pp(m_var->x(), m);
+            if (ineq_strict(i)) out << " < 0";
+            else out << " <= 0";
+            out << "\n";
+        }
         unsigned num_ineqs() const { return m_ineq_terms.size(); }
         expr* div_term(unsigned i) const { return m_div_terms[i]; }
         rational const& div_coeff(unsigned i) const { return m_div_coeffs[i]; }
         rational const& div_divisor(unsigned i) const { return m_div_divisors[i]; }
+        void display_div(std::ostream& out, unsigned i) const {
+            out << div_divisor(i) << " | ( " << mk_pp(div_term(i), m) << " " << div_coeff(i) << "*" 
+                << mk_pp(m_var->x(), m) << ")\n";
+        }
         unsigned num_divs() const { return m_div_terms.size(); }
 
         void project(model& model, expr_ref_vector& lits) {
+            TRACE("qe", 
+                  tout << "project: " << mk_pp(m_var->x(), m) << "\n";
+                  for (unsigned i = 0; i < lits.size(); ++i) {
+                      tout << mk_pp(lits[i].get(), m) << "\n";
+                  }
+                  model_v2_pp(tout, model); );
+                        
             unsigned num_pos = 0, num_neg = 0, eq_index = 0;
             reset();
-            expr_ref_vector new_lits(m);
             bool found_eq = false;
             for (unsigned i = 0; i < lits.size(); ++i) {
                 rational c(0);
@@ -265,7 +307,7 @@ namespace qe {
                 bool is_strict, is_eq;
                 expr* e = lits[i].get();
                 if (!(*m_var)(e)) {
-                    new_lits.push_back(e);                    
+                    m_new_lits.push_back(e);                    
                 }
                 else if (is_linear(model, e, c, t, is_strict, is_eq)) {
                     if (c.is_zero()) {
@@ -278,7 +320,7 @@ namespace qe {
                         else {
                             t = a.mk_le(t, mk_num(0));
                         }
-                        add_lit(new_lits, t);
+                        add_lit(model, m_new_lits, t);
                     }
                     else {
                         m_ineq_coeffs.push_back(c);
@@ -303,9 +345,9 @@ namespace qe {
             }
             TRACE("qe", display(tout << mk_pp(m_var->x(), m) << " "););
             lits.reset();
-            lits.append(new_lits);
+            lits.append(m_new_lits);
             if (found_eq) {
-                apply_equality(eq_index, lits);
+                apply_equality(model, eq_index, lits);
                 return;
             }
             if (num_divs() == 0 && (num_pos == 0 || num_neg == 0)) {
@@ -322,9 +364,11 @@ namespace qe {
             unsigned max_t = find_max(model, use_pos);
 
             for (unsigned i = 0; i < m_ineq_terms.size(); ++i) {
+                expr_ref t(m);
                 if (i != max_t) {
                     if (ineq_coeff(i).is_pos() == use_pos) {
-                        add_lit(lits, mk_le(i, max_t));
+                        t = mk_le(i, max_t);
+                        add_lit(model, lits, t);
                     }
                     else {
                         mk_lt(model, lits, i, max_t);
@@ -392,12 +436,14 @@ namespace qe {
             expr_ref as = mk_mul(abs(ac), s);
             expr_ref ts = mk_add(bt, as);
             expr_ref  z = mk_num(0);
+            expr_ref  fml(m);
             if (ineq_strict(i) || ineq_strict(j)) {
-                add_lit(lits, a.mk_lt(ts, z));
+                fml = a.mk_lt(ts, z);
             }
             else {
-                add_lit(lits, a.mk_le(ts, z));
+                fml = a.mk_le(ts, z);
             }
+            add_lit(model, lits, fml);
         }
 
         void mk_int_lt(model& model, expr_ref_vector& lits, unsigned i, unsigned j) {
@@ -411,6 +457,7 @@ namespace qe {
             rational abs_b = abs(bc);
             expr_ref as(mk_mul(abs_a, s), m);
             expr_ref bt(mk_mul(abs_b, t), m);
+            
             rational slack = (abs_a - rational(1))*(abs_b-rational(1));
             rational sval, tval;
             VERIFY (model.eval(ineq_term(i), tmp) && a.is_numeral(tmp, tval));
@@ -422,7 +469,8 @@ namespace qe {
                 ts.push_back(as);
                 ts.push_back(bt);
                 ts.push_back(mk_num(-slack));
-                add_lit(lits, a.mk_le(add(ts), mk_num(0)));
+                tmp = a.mk_le(add(ts), mk_num(0));
+                add_lit(model, lits, tmp);
                 return;
             }
 
@@ -457,10 +505,13 @@ namespace qe {
             rational z = mod(sval, abs_b);
             if (!z.is_zero()) z = abs_b - z;
             expr_ref s_plus_z(mk_add(z, s), m);
-           
-            add_lit(lits, mk_divides(abs_b, s_plus_z));
-            add_lit(lits, a.mk_le(mk_add(mk_mul(a1*n_sign(b1), s_plus_z),
-                                         mk_mul(abs_b, t)), mk_num(0)));
+            
+            TRACE("qe", display_ineq(tout, i); display_ineq(tout, j););
+            tmp = mk_divides(abs_b, s_plus_z);
+            add_lit(model, lits, tmp);
+            tmp = a.mk_le(mk_add(mk_mul(a1*n_sign(b1), s_plus_z),
+                                 mk_mul(abs_b, t)), mk_num(0));
+            add_lit(model, lits, tmp);
         }
 
         rational n_sign(rational const& b) {
@@ -503,37 +554,41 @@ namespace qe {
             return expr_ref(a.mk_mul(mk_num(r), t), m);
         }
 
-        void add_lit(expr_ref_vector& lits, expr* e) {            
-            expr_ref tmp(e, m);
-            m_rw(tmp);
-            TRACE("qe", tout << mk_pp(e, m) << " " << tmp << "\n";); 
-            lits.push_back(tmp);
+        void add_lit(model& model, expr_ref_vector& lits, expr* e) { 
+            expr_ref orig(e, m), result(m);
+            m_rw(orig, result);            
+            TRACE("qe", tout << mk_pp(orig, m) << " -> " << result << "\n";); 
+            SASSERT(lit_is_true(model, orig));
+            if (!m.is_true(result)) {
+                lits.push_back(result);
+            }
         }
 
 
-        // 3x = t & 7 | (c*x + s) & ax <= u 
-        // 3 | t  & 21 | (ct + 3s) & at <= 3u
+        // 3x + t = 0 & 7 | (c*x + s) & ax <= u 
+        // 3 | -t  & 21 | (-ct + 3s) & a-t <= 3u
 
-        void apply_equality(unsigned eq_index, expr_ref_vector& lits) {
+        void apply_equality(model& model, unsigned eq_index, expr_ref_vector& lits) {
             rational c = ineq_coeff(eq_index);
             expr* t = ineq_term(eq_index);
+            SASSERT(c.is_pos());
             if (is_int()) {
-                add_lit(lits, mk_divides(c, ineq_term(eq_index)));
+                add_lit(model, lits, mk_divides(c, ineq_term(eq_index)));
             }
             
             for (unsigned i = 0; i < num_divs(); ++i) {
-                add_lit(lits, mk_divides(c*div_divisor(i), a.mk_add(mk_mul(div_coeff(i), t),
-                                                                    mk_mul(c, div_term(i)))));
+                add_lit(model, lits, mk_divides(c*div_divisor(i), 
+                                                a.mk_sub(mk_mul(c, div_term(i)), mk_mul(div_coeff(i), t))));
             }
             for (unsigned i = 0; i < num_ineqs(); ++i) {
                 if (eq_index != i) {
                     expr_ref lhs(m);
-                    lhs = a.mk_add(mk_mul(ineq_coeff(i), t), mk_mul(c, ineq_term(i)));
+                    lhs = a.mk_sub(mk_mul(c, ineq_term(i)), mk_mul(ineq_coeff(i), t));
                     if (ineq_strict(i)) {
-                        add_lit(lits, a.mk_lt(lhs, mk_num(0)));
+                        add_lit(model, lits, a.mk_lt(lhs, mk_num(0)));
                     }
                     else {
-                        add_lit(lits, a.mk_le(lhs, mk_num(0)));
+                        add_lit(model, lits, a.mk_le(lhs, mk_num(0)));
                     }
                 }
             }
@@ -570,7 +625,7 @@ namespace qe {
             m_u = mod(r, m_delta);
             SASSERT(m_u < m_delta && rational(0) <= m_u);
             for (unsigned i = 0; i < n; ++i) {
-                add_lit(lits, mk_divides(div_divisor(i), 
+                add_lit(model, lits, mk_divides(div_divisor(i), 
                                          a.mk_add(mk_num(div_coeff(i) * m_u), div_term(i))));
             }
             //
@@ -580,15 +635,20 @@ namespace qe {
             //
             for (unsigned i = 0; i < num_ineqs(); ++i) {
                 if (!m_u.is_zero()) {
-                    m_ineq_terms[i] = a.mk_add(mk_num(m_u), ineq_term(i));
+                    m_ineq_terms[i] = a.mk_sub(ineq_term(i), mk_num(m_u));
                 }
                 m_ineq_coeffs[i] *= m_delta;
             }
+            r = (r - m_u) / m_delta;
+            SASSERT(r.is_int());
+            val = a.mk_numeral(r, true);
+            model.register_decl(m_var->x()->get_decl(), val);
+            TRACE("qe", model_v2_pp(tout, model););
         }
 
     public:
         arith_project_util(ast_manager& m): 
-            m(m), a(m), m_rw(m), m_ineq_terms(m), m_div_terms(m) {
+            m(m), a(m), m_rw(m), m_ineq_terms(m), m_div_terms(m), m_new_lits(m) {
             params_ref params;
             params.set_bool("gcd_rouding", true);
             m_rw.updt_params(params);
