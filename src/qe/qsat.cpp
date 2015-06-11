@@ -67,6 +67,13 @@ class qsat : public tactic {
             for (unsigned i = 0; i < sz; ++i) {
                 core.push_back(to_app(m_kernel.get_unsat_core_expr(i)));
             }
+            TRACE("qe", tout << "core: ";
+                  for (unsigned i = 0; i < sz; ++i) {
+                      tout << mk_pp(core[i].get(), m) << " ";
+                  }
+                  tout << "\n";
+                  m_kernel.display(tout);
+                  );
         }
     };
 
@@ -713,11 +720,13 @@ public:
         fml = mk_abstract(fml, level);
         m_ex.assert_expr(fml);
         m_fa.assert_expr(m.mk_not(fml));
+        TRACE("qe", tout << "ex: " << fml << "\n";);
         lbool is_sat = check_sat();
         
         switch (is_sat) {
         case l_false:
             in->reset();
+            in->inc_depth();
             if (m_qelim) {
                 fml = ::mk_and(m_answer);
                 in->assert_expr(fml);
@@ -729,6 +738,7 @@ public:
             break;
         case l_true:
             in->reset();
+            in->inc_depth();
             result.push_back(in.get());
             if (in->models_enabled()) {
                 mc = model2model_converter(m_model.get());
