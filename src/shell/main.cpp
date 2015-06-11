@@ -86,7 +86,8 @@ void display_usage() {
     std::cout << "  --"      << "          all remaining arguments are assumed to be part of the input file name. This option allows Z3 to read files with strange names such as: -foo.smt2.\n";
     std::cout << "\nResources:\n";
     // timeout and memout are now available on Linux and OSX too.
-    std::cout << "  -T:timeout  set the timeout (in seconds).\n";
+    std::cout << "  -T:timeout  set the timeout (in wall clock seconds).\n";
+    std::cout << "  -U:timeout  set the timeout (in user CPU seconds) (Windows only).\n";
     std::cout << "  -t:timeout  set the soft timeout (in milli seconds). It only kills the current query.\n";
     std::cout << "  -memory:Megabytes  set a limit for virtual memory consumption.\n";
     // 
@@ -191,6 +192,12 @@ void parse_cmd_line_args(int argc, char ** argv) {
                     error("option argument (-T:timeout) is missing.");
                 long tm = strtol(opt_arg, 0, 10);
                 set_timeout(tm * 1000);
+            }
+            else if (strcmp(opt_name, "U") == 0) {
+                if (!opt_arg)
+                    error("option argument (-U:timeout) is missing.");
+                long tm = strtol(opt_arg, 0, 10);
+                set_user_cpu_timeout(tm * 1000);
             }
             else if (strcmp(opt_name, "t") == 0) {
                 if (!opt_arg)

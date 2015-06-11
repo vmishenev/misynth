@@ -23,4 +23,7 @@ void register_on_timeout_proc(void (*proc)());
 
 void set_timeout(long ms);
 
+// same as above, but using user CPU time rather than wall clock time
+void set_user_cpu_timeout(long ms);
+
 #endif // _TIMEOUT_H_
