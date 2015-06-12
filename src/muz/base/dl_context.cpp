@@ -1050,6 +1050,16 @@ namespace datalog {
             names.push_back(m_rule_names[i]);            
         }
     }
+
+    static std::string ensure_quote(symbol const& s) {
+        std::string str;
+        if (is_smt2_quoted_symbol(s))
+            str = mk_smt2_quoted_symbol(s);
+        else
+            str = s.str();
+        return str;
+    }
+
  
     void context::display_smt2(unsigned num_queries, expr* const* qs, std::ostream& out) {
         ast_manager& m = get_manager();
@@ -1110,7 +1120,7 @@ namespace datalog {
         it = rels.begin(); end = rels.end();
         for (; it != end; ++it) {
             func_decl* f = *it;
-            out << "(declare-rel " << f->get_name() << " (";
+            out << "(declare-rel " << ensure_quote(f->get_name()) << " (";
             for (unsigned i = 0; i < f->get_arity(); ++i) {                
                 ast_smt2_pp(out, f->get_domain(i), env);
                 if (i + 1 < f->get_arity()) {
