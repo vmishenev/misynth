@@ -51,17 +51,24 @@ namespace qe {
     }
     
     class arith_project_util {
+
+        enum ineq_type {
+            t_eq,
+            t_lt,
+            t_le
+        };
         ast_manager&      m;
         arith_util        a;
         th_rewriter       m_rw;
         expr_ref_vector   m_ineq_terms;
         vector<rational>  m_ineq_coeffs;
-        svector<bool>     m_ineq_strict;
+        svector<ineq_type>  m_ineq_types;
         expr_ref_vector   m_div_terms;
         vector<rational>  m_div_divisors, m_div_coeffs;
         expr_ref_vector   m_new_lits;
         rational m_delta, m_u;
         scoped_ptr<contains_app> m_var;
+        unsigned m_num_pos, m_num_neg;
 
         struct cant_project {};
 
@@ -120,13 +127,13 @@ namespace qe {
         }
 
 
-        bool is_linear(model& model, expr* lit, rational& c, expr_ref& t, bool& is_strict, bool& is_eq) {
+        bool is_linear(model& model, expr* lit, rational& c, expr_ref& t, ineq_type& ty) {
             expr* e1, *e2;
             c.reset();
             expr_ref_vector ts(m);            
             bool is_not = m.is_not(lit, lit);
             rational mul(1);
-            is_eq = false;
+            ty = t_le;
             if (is_not) {
                 mul.neg();
             }
@@ -134,18 +141,17 @@ namespace qe {
             if (a.is_le(lit, e1, e2) || a.is_ge(lit, e2, e1)) {
                 is_linear(model,  mul, e1, c, ts);
                 is_linear(model, -mul, e2, c, ts);
-                is_strict = is_not;
+                ty = is_not?t_lt:t_le;
             }
             else if (a.is_lt(lit, e1, e2) || a.is_gt(lit, e2, e1)) {
                 is_linear(model,  mul, e1, c, ts);
                 is_linear(model, -mul, e2, c, ts);
-                is_strict = !is_not;
+                ty = is_not?t_le:t_lt;
             }
             else if (m.is_eq(lit, e1, e2) && !is_not && is_arith(e1)) {
                 is_linear(model,  mul, e1, c, ts);
                 is_linear(model, -mul, e2, c, ts);
-                is_strict = false;
-                is_eq = true;
+                ty = t_eq;
             }  
             else if (m.is_eq(lit, e1, e2) && is_not && is_arith(e1)) {
                 expr_ref val1(m), val2(m);
@@ -156,7 +162,7 @@ namespace qe {
                 if (r1 < r2) {
                     std::swap(e1, e2);
                 }                
-                is_strict = true;
+                ty = t_lt;
                 is_linear(model,  mul, e1, c, ts);
                 is_linear(model, -mul, e2, c, ts);                               
             }
@@ -164,20 +170,21 @@ namespace qe {
                 TRACE("qe", tout << "can't project:" << mk_pp(lit, m) << "\n";);
                 throw cant_project();
             }
-            if (is_strict && is_int()) {
+            if (ty == t_lt && is_int()) {
                 ts.push_back(mk_num(1));
-                is_strict = false;
+                ty = t_le;
             }
             t = add(ts);
-            if (is_eq && c.is_neg()) {
+            if (ty == t_eq && c.is_neg()) {
                 t = a.mk_uminus(t);
                 c.neg();
             }
-            if (is_eq && c > rational(1)) {
+            if (ty == t_eq && c > rational(1)) {
                 m_ineq_coeffs.push_back(-c);
                 m_ineq_terms.push_back(a.mk_uminus(t));
-                m_ineq_strict.push_back(false);
-                is_eq = false;
+                m_ineq_types.push_back(t_le);
+                m_num_neg++;
+                ty = t_le;
             }
             return true;
         }
@@ -255,36 +262,51 @@ namespace qe {
         }
 
         void reset() {
-            m_ineq_terms.reset();
-            m_ineq_coeffs.reset();
-            m_ineq_strict.reset();
-            m_div_terms.reset();
-            m_div_coeffs.reset();
-            m_div_divisors.reset();
+            reset_ineqs();
+            reset_divs();
             m_delta = rational(1);
             m_u     = rational(0);
             m_new_lits.reset();
         }
 
+        void reset_divs() {
+            m_div_terms.reset();
+            m_div_coeffs.reset();
+            m_div_divisors.reset();
+        }
+
+        void reset_ineqs() {
+            m_ineq_terms.reset();
+            m_ineq_coeffs.reset();
+            m_ineq_types.reset();
+        }
+
         expr* ineq_term(unsigned i) const { return m_ineq_terms[i]; }
         rational const& ineq_coeff(unsigned i) const { return m_ineq_coeffs[i]; }
-        bool ineq_strict(unsigned i) const { return m_ineq_strict[i]; }
+        ineq_type ineq_ty(unsigned i) const { return m_ineq_types[i]; }
         app_ref mk_ineq_pred(unsigned i) { 
             app_ref result(m);
             result = to_app(mk_add(mk_mul(ineq_coeff(i), m_var->x()), ineq_term(i)));
-            if (ineq_strict(i)) {
+            switch (ineq_ty(i)) {
+            case t_lt:
                 result = a.mk_lt(result, mk_num(0));
-            }
-            else {
+                break;
+            case t_le:
                 result = a.mk_le(result, mk_num(0));
+                break;
+            case t_eq:
+                result = m.mk_eq(result, mk_num(0));
+                break;
             }
             return result;
         }
         void display_ineq(std::ostream& out, unsigned i) const {
             out << mk_pp(ineq_term(i), m) << " " << ineq_coeff(i) << "*" << mk_pp(m_var->x(), m);
-            if (ineq_strict(i)) out << " < 0";
-            else out << " <= 0";
-            out << "\n";
+            switch (ineq_ty(i)) {
+            case t_eq: out <<  " = 0\n"; break;
+            case t_le: out << " <= 0\n"; break;
+            case t_lt: out <<  " < 0\n"; break;
+            }
         }
         unsigned num_ineqs() const { return m_ineq_terms.size(); }
         expr* div_term(unsigned i) const { return m_div_terms[i]; }
@@ -301,44 +323,47 @@ namespace qe {
                   tout << "project: " << mk_pp(m_var->x(), m) << "\n";
                   tout << lits;
                   model_v2_pp(tout, model); );
-                        
-            unsigned num_pos = 0, num_neg = 0, eq_index = 0;
+
+            m_num_pos = 0; m_num_neg = 0;
+            unsigned eq_index = 0;
             reset();
             bool found_eq = false;
             for (unsigned i = 0; i < lits.size(); ++i) {
                 rational c(0);
                 expr_ref t(m);
-                bool is_strict, is_eq;
+                ineq_type ty;
                 expr* e = lits[i].get();
                 if (!(*m_var)(e)) {
                     m_new_lits.push_back(e);                    
                 }
-                else if (is_linear(model, e, c, t, is_strict, is_eq)) {
+                else if (is_linear(model, e, c, t, ty)) {
                     if (c.is_zero()) {
-                        if (is_eq) {
+                        switch (ty) {
+                        case t_eq:
                             t = a.mk_eq(t, mk_num(0));
-                        }
-                        else if (is_strict) {
+                            break;
+                        case t_lt:
                             t = a.mk_lt(t, mk_num(0));
-                        }
-                        else {
+                            break;
+                        case t_le:
                             t = a.mk_le(t, mk_num(0));
+                            break;
                         }
                         add_lit(model, m_new_lits, t);
                     }
                     else {
                         m_ineq_coeffs.push_back(c);
                         m_ineq_terms.push_back(t);
-                        m_ineq_strict.push_back(is_strict);
-                        if (is_eq) {
+                        m_ineq_types.push_back(ty);
+                        if (ty == t_eq) {
                             found_eq = true;
                             eq_index = m_ineq_coeffs.size()-1;
                         }
                         else if (c.is_pos()) {
-                            ++num_pos;
+                            ++m_num_pos;
                         }
                         else {
-                            ++num_neg;
+                            ++m_num_neg;
                         }            
                     }        
                 }
@@ -347,24 +372,27 @@ namespace qe {
                     throw cant_project();
                 }
             }
-            TRACE("qe", display(tout << mk_pp(m_var->x(), m) << " "););
+            TRACE("qe", display(tout << mk_pp(m_var->x(), m) << ":\n");
+                  tout << "found eq: " << found_eq << "\n";
+                  tout << "num pos: " << m_num_pos << " num neg: " << m_num_neg << " num divs " << num_divs() << "\n";
+                  );
             lits.reset();
             lits.append(m_new_lits);
             if (found_eq) {
                 apply_equality(model, eq_index, lits);
                 return;
             }
-            if (num_divs() == 0 && (num_pos == 0 || num_neg == 0)) {
+            if (num_divs() == 0 && (m_num_pos == 0 || m_num_neg == 0)) {
                 return;
             }
             if (num_divs() > 0) {
                 apply_divides(model, lits);
                 TRACE("qe", display(tout << "after division " << mk_pp(m_var->x(), m) << "\n"););
             }
-            if (num_pos == 0 || num_neg == 0) {
+            if (m_num_pos == 0 || m_num_neg == 0) {
                 return;
             }
-            bool use_pos = num_pos < num_neg;
+            bool use_pos = m_num_pos < m_num_neg;
             unsigned max_t = find_max(model, use_pos);
 
             for (unsigned i = 0; i < m_ineq_terms.size(); ++i) {
@@ -390,7 +418,7 @@ namespace qe {
             bool is_int = a.is_int(m_var->x());
             for (unsigned i = 0; i < m_ineq_terms.size(); ++i) {
                 rational const& ac = m_ineq_coeffs[i];
-                SASSERT(!is_int || !ineq_strict(i));
+                SASSERT(!is_int || t_le == ineq_ty(i));
 
                 //
                 // ac*x + t < 0
@@ -404,7 +432,7 @@ namespace qe {
                     new_max =
                         new_max || 
                         (r > max_r) || 
-                        (r == max_r && ineq_strict(i)) ||
+                        (r == max_r && t_lt == ineq_ty(i)) ||
                         (r == max_r && is_int && ac.is_one());
                     TRACE("qe", tout << "max: "  << mk_pp(ineq_term(i), m) << "/" << abs(ac) << " := " << r << " " 
                           << (new_max?"":"not ") << "new max\n";);
@@ -429,6 +457,9 @@ namespace qe {
             rational const& bc = ineq_coeff(j);
             SASSERT(ac.is_pos() != bc.is_pos());
             SASSERT(ac.is_neg() != bc.is_neg());
+            
+            TRACE("qe", display_ineq(tout, i); display_ineq(tout, j););
+
             if (is_int() && !abs(ac).is_one() && !abs(bc).is_one()) {
                 return mk_int_lt(model, lits, i, j);
             }
@@ -439,7 +470,7 @@ namespace qe {
             expr_ref ts = mk_add(bt, as);
             expr_ref  z = mk_num(0);
             expr_ref  fml(m);
-            if (ineq_strict(i) || ineq_strict(j)) {
+            if (t_lt == ineq_ty(i) || t_lt == ineq_ty(j)) {
                 fml = a.mk_lt(ts, z);
             }
             else {
@@ -456,7 +487,8 @@ namespace qe {
             rational ac = ineq_coeff(i);
             rational bc = ineq_coeff(j);
             expr_ref tmp(m);
-            SASSERT(!ineq_strict(i) && !ineq_strict(j));
+            SASSERT(t_le == ineq_ty(i) && t_le == ineq_ty(j));
+            SASSERT(ac.is_pos() == bc.is_neg());
             rational abs_a = abs(ac);
             rational abs_b = abs(bc);
             expr_ref as(mk_mul(abs_a, s), m);
@@ -534,7 +566,7 @@ namespace qe {
             expr* s = ineq_term(j);
             expr_ref bt = mk_mul(abs(bc), t);
             expr_ref as = mk_mul(abs(ac), s);
-            if (ineq_strict(i) && !ineq_strict(j)) {
+            if (t_lt == ineq_ty(i) && t_le == ineq_ty(j)) {
                 return expr_ref(a.mk_lt(bt, as), m);
             }
             else {
@@ -588,12 +620,12 @@ namespace qe {
                 if (eq_index != i) {
                     expr_ref lhs(m);
                     lhs = a.mk_sub(mk_mul(c, ineq_term(i)), mk_mul(ineq_coeff(i), t));
-                    if (ineq_strict(i)) {
-                        add_lit(model, lits, a.mk_lt(lhs, mk_num(0)));
+                    switch (ineq_ty(i)) {
+                    case t_lt: lhs = a.mk_lt(lhs, mk_num(0)); break;
+                    case t_le: lhs = a.mk_le(lhs, mk_num(0)); break;
+                    case t_eq: lhs = m.mk_eq(lhs, mk_num(0)); break;
                     }
-                    else {
-                        add_lit(model, lits, a.mk_le(lhs, mk_num(0)));
-                    }
+                    add_lit(model, lits, lhs);
                 }
             }
         }
@@ -632,14 +664,18 @@ namespace qe {
                 add_lit(model, lits, mk_divides(div_divisor(i), 
                                          mk_add(mk_num(div_coeff(i) * m_u), div_term(i))));
             }
+            reset_divs();
             //
             // update inequalities such that u is added to t and
             // D is multiplied to coefficient of x.
             // the interpretation of the new version of x is (x-u)/D
             //
+            // a*x + t <= 0
+            // a*(D*x' + u) + t <= 0
+            // a*D*x' + a*u + t <= 0
             for (unsigned i = 0; i < num_ineqs(); ++i) {
                 if (!m_u.is_zero()) {
-                    m_ineq_terms[i] = a.mk_sub(ineq_term(i), mk_num(m_u));
+                    m_ineq_terms[i] = a.mk_add(ineq_term(i), mk_num(m_ineq_coeffs[i]*m_u));
                 }
                 m_ineq_coeffs[i] *= m_delta;
             }

@@ -227,10 +227,10 @@ private:
                 negate(qt);
                 result = m.mk_not(tmp);
             }
-            else if (m.is_implies(fml)) {
-                pull_quantifier(to_app(fml)->get_arg(0), negate(qt), vars, tmp);
+            else if (m.is_implies(fml, t1, t2)) {
+                pull_quantifier(t1, negate(qt), vars, tmp);
                 negate(qt);
-                pull_quantifier(to_app(fml)->get_arg(1), qt, vars, result);
+                pull_quantifier(t2, qt, vars, result);
                 result = m.mk_implies(tmp, result);
             }
             else if (m.is_ite(fml, t1, t2, t3)) {
@@ -239,7 +239,6 @@ private:
                 pull_quantifier(t3, qt, vars, tt3);
                 if (has_quantifiers(t1)) {
                     pull_quantifier(t1, qt, vars, tt1);
-                    negate(qt);                   
                     nt1 = m.mk_not(t1);
                     pull_quantifier(nt1, qt, vars, ntt1);
                     result = m.mk_and(m.mk_or(ntt1, tt2), m.mk_or(tt1, tt3));
@@ -252,7 +251,6 @@ private:
                 expr_ref tt1(m), tt2(m), ntt1(m), ntt2(m), nt1(m), nt2(m);
                 pull_quantifier(t1, qt, vars, tt1);
                 pull_quantifier(t2, qt, vars, tt2);
-                negate(qt);
                 nt1 = m.mk_not(t1);
                 nt2 = m.mk_not(t2);
                 pull_quantifier(nt1, qt, vars, ntt1);
