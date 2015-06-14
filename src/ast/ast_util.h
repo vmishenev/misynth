@@ -108,8 +108,8 @@ expr * get_clause_literal(ast_manager & m, expr * cls, unsigned idx);
  */
 expr * mk_and(ast_manager & m, unsigned num_args, expr * const * args);
 app  * mk_and(ast_manager & m, unsigned num_args, app * const * args);
-inline app  * mk_and(app_ref_vector const& args) { return mk_and(args.get_manager(), args.size(), args.c_ptr()); }
-inline expr * mk_and(expr_ref_vector const& args) { return mk_and(args.get_manager(), args.size(), args.c_ptr()); }
+inline app_ref mk_and(app_ref_vector const& args) { return app_ref(mk_and(args.get_manager(), args.size(), args.c_ptr()), args.get_manager()); }
+inline expr_ref mk_and(expr_ref_vector const& args) { return expr_ref(mk_and(args.get_manager(), args.size(), args.c_ptr()), args.get_manager()); }
 
 /**
    Return (or args[0] ... args[num_args-1]) if num_args >= 2
@@ -118,8 +118,8 @@ inline expr * mk_and(expr_ref_vector const& args) { return mk_and(args.get_manag
  */
 expr * mk_or(ast_manager & m, unsigned num_args, expr * const * args);
 app  * mk_or(ast_manager & m, unsigned num_args, app * const * args);
-inline app  * mk_or(app_ref_vector const& args) { return mk_or(args.get_manager(), args.size(), args.c_ptr()); }
-inline expr * mk_or(expr_ref_vector const& args) { return mk_or(args.get_manager(), args.size(), args.c_ptr()); }
+inline app_ref mk_or(app_ref_vector const& args) { return app_ref(mk_or(args.get_manager(), args.size(), args.c_ptr()), args.get_manager()); }
+inline expr_ref mk_or(expr_ref_vector const& args) { return expr_ref(mk_or(args.get_manager(), args.size(), args.c_ptr()), args.get_manager()); }
 
 /**
    Return a          if arg = (not a)

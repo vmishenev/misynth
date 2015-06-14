@@ -70,9 +70,7 @@ static void test(app* var, expr_ref& fml) {
     symbol x_name(var->get_decl()->get_name());   
     sort* x_sort = m.get_sort(var);
 
-    app_ref_vector vars(m);
     expr_ref_vector lits(m);
-    vars.push_back(var);
     qe::flatten_and(fml, lits);
 
     model_ref md;
@@ -83,7 +81,8 @@ static void test(app* var, expr_ref& fml) {
         if (result != l_true) return;
         ctx.get_model(md);
     }    
-    expr_ref pr = qe::arith_project(*md, vars, lits);
+    VERIFY(qe::arith_project(*md, var, lits));
+    pr = mk_and(lits);
    
     std::cout << "original:  " << mk_pp(fml, m) << "\n";
     std::cout << "projected: " << mk_pp(pr,  m) << "\n";
@@ -255,7 +254,7 @@ static void test2(char const *ex) {
     
     std::cout << mk_pp(fml, m) << "\n";
 
-    expr_ref pr2(m), fml2(m);
+    expr_ref pr1(m), pr2(m), fml2(m);
     expr_ref_vector bound(m);
     ptr_vector<sort> sorts;
     svector<symbol> names;
@@ -267,7 +266,10 @@ static void test2(char const *ex) {
     expr_abstract(m, 0, bound.size(), bound.c_ptr(), fml, fml2);
     fml2 = m.mk_exists(bound.size(), sorts.c_ptr(), names.c_ptr(), fml2);
     qe::expr_quant_elim qe(m, params);
-    expr_ref pr1 = qe::arith_project(*md, vars, lits);
+    for (unsigned i = 0; i < vars.size(); ++i) {
+        VERIFY(qe::arith_project(*md, vars[i].get(), lits));
+    }
+    pr1 = mk_and(lits);
     qe(m.mk_true(), fml2, pr2);
     std::cout << mk_pp(pr1, m) << "\n";
     std::cout << mk_pp(pr2, m) << "\n";

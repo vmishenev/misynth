@@ -20,7 +20,8 @@ Revision History:
 
 #include "qe_mbp.h"
 #include "qe_arith.h"
-#include "arith_decl_plugin.h"
+//#include "qe_datatypes.h"
+#include "qe_util.h"
 #include "expr_safe_replace.h"
 #include "ast_pp.h"
 #include "th_rewriter.h"
@@ -31,27 +32,50 @@ using namespace qe;
 
 class mbp::impl {
     ast_manager& m;
+    ptr_vector<project_plugin> m_plugins;
+
+    void add_plugin(project_plugin* p) {
+        family_id fid = p->get_family_id();
+        SASSERT(!m_plugins.get(fid, 0));
+        m_plugins.setx(fid, p, 0);
+    }
+
+    project_plugin* get_plugin(app* var) {
+        family_id fid = m.get_sort(var)->get_family_id();
+        return m_plugins.get(fid, 0);
+    }
+
 public:
-    impl(ast_manager& m):m(m) {}
-    ~impl() {}
- 
-    void operator()(app_ref_vector const& vars, model& mdl, expr_ref& fml) {
-        TRACE("qe", tout << fml << "\n";
-              model_v2_pp(tout, mdl););
-        expr_ref tmp(m);
-        expr_safe_replace sub(m);
-        app_ref_vector vars1(vars);
-        fml = arith_project(mdl, vars1, fml);
-        if (!vars1.empty()) {
-            th_rewriter rw(m);
-            for (unsigned i = 0; i < vars1.size(); ++i) {
-                VERIFY(mdl.eval(vars1[i].get(), tmp));
-                sub.insert(vars1[i].get(), tmp);
+    impl(ast_manager& m):m(m) {
+        add_plugin(alloc(arith_project_plugin, m));
+        //add_plugin(alloc(dt_project_plugin, m));
+    }
+
+    ~impl() {
+        std::for_each(m_plugins.begin(), m_plugins.end(), delete_proc<project_plugin>());
+    }
+
+    void operator()(app_ref_vector const& vars0, model& mdl, expr_ref_vector& fmls) {
+        expr_ref val(m), tmp(m);
+        app_ref_vector vars(vars0);
+        app_ref var(m);
+        th_rewriter rw(m);
+        while (!vars.empty()) {
+            var = vars.back();
+            vars.pop_back();
+            project_plugin* p = get_plugin(var);
+            if (!p || !(*p)(mdl, var, vars, fmls)) {
+                expr_safe_replace sub(m);
+                VERIFY(mdl.eval(var, val));
+                sub.insert(var, val);
+                for (unsigned i = 0; i < fmls.size(); ++i) {
+                    sub(fmls[i].get(), tmp);
+                    rw(tmp);
+                    fmls[i] = tmp;
+                }
             }
-            sub(fml);
-            rw(fml);
         }
-    }   
+    }
 };
     
 mbp::mbp(ast_manager& m) {
@@ -62,7 +86,7 @@ mbp::~mbp() {
     dealloc(m_impl);
 }
         
-void mbp::operator()(app_ref_vector const& vars, model& mdl, expr_ref& fml) {
-    (*m_impl)(vars, mdl, fml);
+void mbp::operator()(app_ref_vector const& vars, model& mdl, expr_ref_vector& fmls) {
+    (*m_impl)(vars, mdl, fmls);
 }
         

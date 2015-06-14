@@ -50,7 +50,7 @@ namespace qe {
         return is_divides(a, e1, e2, k, t) || is_divides(a, e2, e1, k, t);
     }
     
-    class arith_project_util {
+    struct arith_project_plugin::imp {
 
         enum ineq_type {
             t_eq,
@@ -70,8 +70,6 @@ namespace qe {
         scoped_ptr<contains_app> m_var;
         unsigned m_num_pos, m_num_neg;
 
-        struct cant_project {};
-
         sort* var_sort() const { return m.get_sort(m_var->x()); }
 
         bool is_int() const { return a.is_int(m_var->x()); }
@@ -86,7 +84,7 @@ namespace qe {
         }
 
         void is_linear(model& model, rational const& mul, expr* t, rational& c, expr_ref_vector& ts) {
-            expr* t1, *t2;
+            expr* t1, *t2, *t3;
             rational mul1;
             expr_ref val(m);
             if (t == m_var->x()) {
@@ -116,6 +114,16 @@ namespace qe {
             }            
             else if (extract_mod(model, t, val)) {
                 ts.push_back(mk_mul(mul, val));
+            }
+            else if (m.is_ite(t, t1, t2, t3)) {
+                VERIFY(model.eval(t1, val));
+                SASSERT(m.is_true(val) || m.is_false(val));
+                if (m.is_true(val)) {
+                    is_linear(model, mul, t2, c, ts); 
+                }
+                else {
+                    is_linear(model, mul, t3, c, ts); 
+                }
             }
             else if ((*m_var)(t)) {
                 TRACE("qe", tout << "can't project:" << mk_pp(t, m) << "\n";);
@@ -686,57 +694,50 @@ namespace qe {
             TRACE("qe", model_v2_pp(tout, model););
         }
 
-    public:
-        arith_project_util(ast_manager& m): 
+        imp(ast_manager& m): 
             m(m), a(m), m_rw(m), m_ineq_terms(m), m_div_terms(m), m_new_lits(m) {
             params_ref params;
             params.set_bool("gcd_rouding", true);
             m_rw.updt_params(params);
         }
 
-        expr_ref operator()(model& model, app_ref_vector& vars, expr_ref_vector const& lits) {
-            app_ref_vector new_vars(m);
-            expr_ref_vector result(lits), tmp(lits);
-            for (unsigned i = 0; i < vars.size(); ++i) {
-                app* v = vars[i].get();
-                if (a.is_real(v) || a.is_int(v)) {
-                    m_var = alloc(contains_app, m, v);
-                    try {
-                        project(model, result);
-                        TRACE("qe", tout << "projected: " << mk_pp(v, m) << "\n";
-                              tout << tmp;
-                              tout << "->\n";
-                              tout << result;
-                              tmp.reset();
-                              tmp.append(result););
-                    }
-                    catch (cant_project) {
-                        TRACE("qe", tout << "can't project:" << mk_pp(v, m) << "\n";);
-                        new_vars.push_back(v);
-                    }
-                }
-                else {
-                    new_vars.push_back(v);
-                }
+        ~imp() {
+        }
+
+        bool operator()(model& model, app* v, app_ref_vector& vars, expr_ref_vector& lits) {
+            SASSERT(a.is_real(v) || a.is_int(v));
+            m_var = alloc(contains_app, m, v);
+            try {
+                project(model, lits);
             }
-            vars.reset();
-            vars.append(new_vars);
-            return qe::mk_and(result);
-        }  
+            catch (cant_project) {
+                TRACE("qe", tout << "can't project:" << mk_pp(v, m) << "\n";);
+                return false;
+            }
+            return true;
+        }
     };
 
-    expr_ref arith_project(model& model, app_ref_vector& vars, expr_ref_vector const& lits) {
-        ast_manager& m = vars.get_manager();
-        arith_project_util ap(m);
-        return ap(model, vars, lits);
+    arith_project_plugin::arith_project_plugin(ast_manager& m) {
+        m_imp = alloc(imp, m);
     }
 
-    expr_ref arith_project(model& model, app_ref_vector& vars, expr* fml) {
-        ast_manager& m = vars.get_manager();
-        arith_project_util ap(m);
-        expr_ref_vector lits(m);
-        qe::flatten_and(fml, lits);
-        return ap(model, vars, lits);
+    arith_project_plugin::~arith_project_plugin() {
+        dealloc(m_imp);
     }
 
+    bool arith_project_plugin::operator()(model& model, app* var, app_ref_vector& vars, expr_ref_vector& lits) {
+        return (*m_imp)(model, var, vars, lits);
+    }
+
+    family_id arith_project_plugin::get_family_id() {
+        return m_imp->a.get_family_id();
+    }
+
+    bool arith_project(model& model, app* var, expr_ref_vector& lits) {
+        ast_manager& m = lits.get_manager();
+        arith_project_plugin ap(m);
+        app_ref_vector vars(m);
+        return ap(model, var, vars, lits);
+    }
 }

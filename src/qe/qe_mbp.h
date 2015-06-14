@@ -25,7 +25,18 @@ Revision History:
 #include "params.h"
 #include "model.h"
 
+
 namespace qe {
+
+    struct cant_project {};
+
+    class project_plugin {
+    public:
+        virtual ~project_plugin() {}
+        virtual bool operator()(model& model, app* var, app_ref_vector& vars, expr_ref_vector& lits) = 0;
+        virtual family_id get_family_id() = 0;
+    };
+
     class mbp {
         class impl;
         impl * m_impl;
@@ -39,7 +50,7 @@ namespace qe {
            Apply model-based qe on constants provided as vector of variables. 
            Return the updated formula and updated set of variables that were not eliminated.           
         */
-        void operator()(app_ref_vector const& vars, model& mdl, expr_ref& fml);
+        void operator()(app_ref_vector const& vars, model& mdl, expr_ref_vector& fmls);
     };
 }
 

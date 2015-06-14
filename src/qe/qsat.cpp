@@ -36,6 +36,7 @@ class qsat : public tactic {
 
     struct stats {
         unsigned m_num_predicates;
+        unsigned m_num_rounds;        
         stats() { reset(); }
         void reset() { memset(this, 0, sizeof(*this)); }
     };
@@ -61,11 +62,11 @@ class qsat : public tactic {
             m_kernel.assert_expr(e);
         }
 
-        void get_core(app_ref_vector& core) {
+        void get_core(expr_ref_vector& core) {
             unsigned sz = m_kernel.get_unsat_core_size();
             core.reset();
             for (unsigned i = 0; i < sz; ++i) {
-                core.push_back(to_app(m_kernel.get_unsat_core_expr(i)));
+                core.push_back(m_kernel.get_unsat_core_expr(i));
             }
             TRACE("qe", tout << "core: ";
                   for (unsigned i = 0; i < sz; ++i) {
@@ -107,7 +108,7 @@ class qsat : public tactic {
         ast_manager& m;
         qsat&        q;
         vector<app_ref_vector> m_preds;
-        app_ref_vector  m_asms;
+        expr_ref_vector  m_asms;
         unsigned_vector m_asms_lim;
 
     public:
@@ -140,7 +141,7 @@ class qsat : public tactic {
             m_preds[l].push_back(a);            
         }
 
-        void get_assumptions(app_ref_vector& asms) {
+        void get_assumptions(expr_ref_vector& asms) {
             asms.reset();
             unsigned level = q.m_level;
             if (level == 0 || level > m_preds.size()) {
@@ -210,6 +211,7 @@ class qsat : public tactic {
     ast_manager&               m;
     params_ref                 m_params;
     stats                      m_stats;
+    statistics                 m_st;
     qe::mbp                    m_mbp;
     kernel                     m_fa;
     kernel                     m_ex;
@@ -219,9 +221,9 @@ class qsat : public tactic {
     vector<app_ref_vector>     m_vars;       // variables from alternating prefixes.
     unsigned                   m_level;
     model_ref                  m_model;
-    obj_map<app, expr*>        m_pred2lit;    // maintain definitions of predicates.
+    obj_map<expr, expr*>       m_pred2lit;    // maintain definitions of predicates.
     obj_map<expr, app*>        m_lit2pred;    // maintain reverse mapping to predicates
-    obj_map<app, max_level>    m_elevel;
+    obj_map<expr, max_level>   m_elevel;
     filter_model_converter_ref m_fmc;
     volatile bool              m_cancel;
     bool                       m_qelim;
@@ -235,8 +237,9 @@ class qsat : public tactic {
      */
     lbool check_sat() {        
         while (true) {
+            ++m_stats.m_num_rounds;
             check_cancel();
-            app_ref_vector asms(m);
+            expr_ref_vector asms(m);
             m_moves.get_assumptions(asms);
             lbool res = get_kernel(m_level).k().check(asms);
             switch (res) {
@@ -306,7 +309,7 @@ class qsat : public tactic {
         m_moves.reset();
         m_vars.reset();
         m_model = 0;
-        obj_map<app, expr*>::iterator it = m_pred2lit.begin(), end = m_pred2lit.end();
+        obj_map<expr, expr*>::iterator it = m_pred2lit.begin(), end = m_pred2lit.end();
         for (; it != end; ++it) {
             m.dec_ref(it->m_key);
             m.dec_ref(it->m_value);
@@ -314,6 +317,9 @@ class qsat : public tactic {
         m_lit2pred.reset();
         m_pred2lit.reset();
         m_elevel.reset();
+        m_st.reset();        
+        m_fa.k().collect_statistics(m_st);
+        m_ex.k().collect_statistics(m_st);
         m_fa.k().reset();
         m_ex.k().reset();        
         m_cancel = false;
@@ -388,9 +394,9 @@ class qsat : public tactic {
 
     void get_free_vars(expr_ref& fml, app_ref_vector& vars) {
         ast_fast_mark1 mark;
-        todo.reset();
+        unsigned sz0 = todo.size();
         todo.push_back(fml);
-        while (!todo.empty()) {
+        while (sz0 != todo.size()) {
             expr* e = todo.back();
             todo.pop_back();
             if (mark.is_marked(e) || is_var(e)) {
@@ -417,90 +423,121 @@ class qsat : public tactic {
         propositional variables, and adding definitions for each propositional formula on the side.
         Assumption is that the formula is quantifier-free.
     */
-    app_ref mk_abstract(expr* fml, max_level& level) {
-        expr_ref_vector trail(m), todo(m);
-        obj_map<expr,expr*> cache;
+    void abstract_atoms(expr* fml, max_level& level) {
+        expr_mark mark;
         ptr_vector<expr> args;
         app_ref r(m), eq(m);
         app* p;
+        unsigned sz0 = todo.size();
         todo.push_back(fml);
         m_trail.push_back(fml);
-        while (!todo.empty()) {
+        while (sz0 != todo.size()) {
             app* a = to_app(todo.back());
-            if (cache.contains(a)) {
-                todo.pop_back();
+            todo.pop_back();
+            if (mark.is_marked(a)) {
                 continue;
             }
-            if (a->get_family_id() == m.get_basic_family_id() &&
-                (!m.is_eq(a) || m.is_bool(a->get_arg(0)))) {
-                unsigned sz = a->get_num_args();
-                args.reset();
-                bool diff = false;
-                for (unsigned i = 0; i < sz; ++i) {
-                    expr* f = a->get_arg(i), *f1;
-                    if (cache.find(f, f1)) {
-                        args.push_back(f1);
-                        diff |= f != f1;
-                    }
-                    else {
-                        todo.push_back(f);
-                    }
-                } 
-                if (args.size() == sz) {
-                    if (diff) {
-                        r = m.mk_app(a->get_decl(), sz, args.c_ptr());
-                    }
-                    else {
-                        r = a;
-                    }
-                    cache.insert(a, r);
-                    trail.push_back(r);
-                    todo.pop_back();
-                }
-            }
-            else if (m_lit2pred.find(a, p)) {
+
+            mark.mark(a);
+            if (m_lit2pred.find(a, p)) {
                 level.merge(m_elevel.find(p));
-                cache.insert(a, p);
-                todo.pop_back();
+                continue;
             }
-            else if (is_uninterp_const(a)) {
+
+            if (is_uninterp_const(a) && m.is_bool(a)) {
                 max_level l = m_elevel.find(a);
                 m_moves.insert(a, l);
                 level.merge(l);
-                cache.insert(a, a);
                 add_pred(a, a);
-                todo.pop_back();
+                continue;
             }
-            else {
-                // TBD: nested Booleans.    
+
+            unsigned sz = a->get_num_args();
+            for (unsigned i = 0; i < sz; ++i) {
+                expr* f = a->get_arg(i);
+                if (!mark.is_marked(f)) {
+                    todo.push_back(f);
+                }
+            } 
+
+            bool is_boolop = 
+                (a->get_family_id() == m.get_basic_family_id()) &&
+                (!m.is_eq(a)       || m.is_bool(a->get_arg(0))) && 
+                (!m.is_distinct(a) || m.is_bool(a->get_arg(0)));
+
+            if (!is_boolop && m.is_bool(a)) {
                 TRACE("qe", tout << mk_pp(a, m) << "\n";);
-                SASSERT(m.is_bool(a));
                 r = fresh_bool("p");
-                cache.insert(a, r);
                 add_pred(r, a);
-                eq = m.mk_eq(r, a);
+                eq = m.mk_eq(a, r);
                 m_fa.assert_expr(eq);
                 m_ex.assert_expr(eq);
                 max_level l = compute_level(a);
                 m_elevel.insert(r, l);
                 m_moves.insert(r, l);
                 level.merge(l);
+            }
+        }
+    }
+
+    // optional pass to replace atoms by predicates 
+    // so that SMT core works on propositional
+    // abstraction only.
+    expr_ref mk_abstract(expr* fml) {
+        expr_ref_vector trail(m), args(m);
+        obj_map<expr, expr*> cache;
+        app* b;
+        expr_ref r(m);
+        unsigned sz0 = todo.size();
+        todo.push_back(fml);
+        while (sz0 != todo.size()) {
+            app* a = to_app(todo.back());
+            if (cache.contains(a)) {
+                todo.pop_back();
+                continue;
+            }
+            if (m_lit2pred.find(a, b)) {
+                cache.insert(a, b);
+                todo.pop_back();
+                continue;
+            }
+            unsigned sz = a->get_num_args();
+            bool diff = false;
+            args.reset();
+            for (unsigned i = 0; i < sz; ++i) {
+                expr* f = a->get_arg(i), *f1;
+                if (cache.find(f, f1)) {
+                    args.push_back(f1);
+                    diff |= f != f1;
+                }
+                else {
+                    todo.push_back(f);
+                }
+            } 
+            if (sz == args.size()) {
+                if (diff) {
+                    r = m.mk_app(a->get_decl(), sz, args.c_ptr());
+                    trail.push_back(r);
+                }
+                else {
+                    r = a;
+                }
+                cache.insert(a, r);
                 todo.pop_back();
             }
         }
-        r = to_app(cache.find(fml));
-        m_trail.push_back(r);
-        return r;
+        return expr_ref(cache.find(fml), m);
     }
 
-    app_ref mk_concrete(expr* fml) {
+    void mk_concrete(expr_ref_vector& fmls) {
         obj_map<expr,expr*> cache;
-        expr_ref_vector trail(m), todo(m);
+        expr_ref_vector trail(m);
         expr* p;
         app_ref r(m);
         ptr_vector<expr> args;
-        todo.push_back(fml);
-        while (!todo.empty()) {
+        unsigned sz0 = todo.size();
+        todo.append(fmls.size(), (expr*const*)fmls.c_ptr());
+        while (sz0 != todo.size()) {
             app* a = to_app(todo.back());
             if (cache.contains(a)) {
                 todo.pop_back();
@@ -536,14 +573,15 @@ class qsat : public tactic {
                 todo.pop_back();
             }
         }
-        r = to_app(cache.find(fml));
-        return r;
+        for (unsigned i = 0; i < fmls.size(); ++i) {
+            fmls[i] = to_app(cache.find(fmls[i].get()));
+        }
     }
 
     max_level compute_level(app* e) {
-        todo.reset();
-        todo.push_back(e);
-        while (!todo.empty()) {
+        unsigned sz0 = todo.size();
+        todo.push_back(e);        
+        while (sz0 != todo.size()) {
             app* a = to_app(todo.back());
             if (m_elevel.contains(a)) {
                 todo.pop_back();
@@ -569,7 +607,7 @@ class qsat : public tactic {
         return m_elevel.find(e);
     }
 
-    void get_core(app_ref_vector& core, unsigned level) {
+    void get_core(expr_ref_vector& core, unsigned level) {
         get_kernel(level).get_core(core);
     }
 
@@ -582,7 +620,7 @@ class qsat : public tactic {
     void display(std::ostream& out) const {
         out << "level: " << m_level << "\n";
         out << "pred2lit:\n";
-        obj_map<app, expr*>::iterator it = m_pred2lit.begin(), end = m_pred2lit.end();
+        obj_map<expr, expr*>::iterator it = m_pred2lit.begin(), end = m_pred2lit.end();
         for (; it != end; ++it) {
             out << mk_pp(it->m_key, m) << " |-> " << mk_pp(it->m_value, m) << "\n";
         }
@@ -594,7 +632,7 @@ class qsat : public tactic {
         model_v2_pp(out, model);
     }
 
-    void display(std::ostream& out, app_ref_vector const& asms) const {
+    void display(std::ostream& out, expr_ref_vector const& asms) const {
         expr* e = 0;
         max_level lvl;
         for (unsigned i = 0; i < asms.size(); ++i) {
@@ -609,7 +647,7 @@ class qsat : public tactic {
         }
     }
 
-    void project_qe(app_ref_vector& core) {
+    void project_qe(expr_ref_vector& core) {
         SASSERT(m_level == 1);
         expr_ref fml(m), fml0(m);
         model& mdl = *m_model.get();
@@ -621,19 +659,15 @@ class qsat : public tactic {
             vars.append(m_vars[i]);
         }
 
-        fml = mk_and(core);
-        fml = mk_concrete(fml);
-        fml0 = fml;
-        m_mbp(vars, mdl, fml);
-
-
-        fml = mk_not(fml);
+        mk_concrete(core);
+        m_mbp(vars, mdl, core);
+        fml = mk_not(mk_and(core));
         m_ex.assert_expr(fml);
         m_answer.push_back(fml);
         pop(1);
     }
 
-    void project(app_ref_vector& core) {
+    void project(expr_ref_vector& core) {
         get_core(core, m_level);
         TRACE("qe", display(tout); display(tout << "core\n", core););
         SASSERT(m_level >= 2);
@@ -645,12 +679,13 @@ class qsat : public tactic {
         for (unsigned i = m_level-1; i < m_vars.size(); ++i) {
             vars.append(m_vars[i]);
         }
+        mk_concrete(core);
+        fml0 = mk_and(core);
+        m_mbp(vars, mdl, core);
         fml = mk_and(core);
-        fml = mk_concrete(fml);
-        fml0 = fml;
-        m_mbp(vars, mdl, fml);
-        fml1 = mk_abstract(fml, level);
-        fml1 = mk_not(fml1);
+        abstract_atoms(fml, level);
+        fml = mk_abstract(fml);
+        fml1 = mk_not(fml);
         unsigned num_scopes = 0;
         
         if (level.max() == UINT_MAX) {
@@ -717,7 +752,8 @@ public:
             fml = mk_not(fml);
         }
         hoist(fml);
-        fml = mk_abstract(fml, level);
+        abstract_atoms(fml, level);
+        fml = mk_abstract(fml);
         m_ex.assert_expr(fml);
         m_fa.assert_expr(m.mk_not(fml));
         TRACE("qe", tout << "ex: " << fml << "\n";);
@@ -754,13 +790,15 @@ public:
     }
 
     void collect_statistics(statistics & st) const {
-        m_fa.k().collect_statistics(st);
-        m_ex.k().collect_statistics(st);
-        st.update("num predicates", m_stats.m_num_predicates);
+        st.copy(m_st);
+        st.update("qsat num predicates", m_stats.m_num_predicates);
+        st.update("qsat num rounds", m_stats.m_num_rounds); 
     }
 
     void reset_statistics() {
         m_stats.reset();
+        m_fa.k().reset_statistics();
+        m_ex.k().reset_statistics();        
     }
 
     void cleanup() {

@@ -33,10 +33,6 @@ namespace qe {
 
     void flatten_or(expr* fml, expr_ref_vector& result);
 
-    expr_ref mk_and(expr_ref_vector const& fmls);
-
-    expr_ref mk_or(expr_ref_vector const& fmls);
-
 
 }
 #endif
