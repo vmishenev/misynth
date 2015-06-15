@@ -20,7 +20,7 @@ Revision History:
 
 #include "qe_mbp.h"
 #include "qe_arith.h"
-//#include "qe_datatypes.h"
+#include "qe_datatypes.h"
 #include "qe_util.h"
 #include "expr_safe_replace.h"
 #include "ast_pp.h"
@@ -48,7 +48,7 @@ class mbp::impl {
 public:
     impl(ast_manager& m):m(m) {
         add_plugin(alloc(arith_project_plugin, m));
-        //add_plugin(alloc(dt_project_plugin, m));
+        add_plugin(alloc(datatype_project_plugin, m));
     }
 
     ~impl() {
