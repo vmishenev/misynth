@@ -24,6 +24,7 @@ Revision History:
 #include "expr_safe_replace.h"
 #include "lbool.h"
 #include "ast_util.h"
+#include "ast_pp.h"
 
 namespace qe {
 
@@ -82,6 +83,7 @@ namespace qe {
             }
 
             lbool compare(expr* x, expr* y) {
+                NOT_IMPLEMENTED_YET();
                 return l_undef;
             }
         };
@@ -112,15 +114,78 @@ namespace qe {
             m_var = alloc(contains_app, m, var);
 
             // reduce select-store redeces based on model.
+            // rw_cfg rw(m);
+            // rw(lits);
 
             // try first to solve for var.
             if (solve(model, vars, lits)) {
                 return true;
             } 
+
+            ptr_vector<app> selects;
+
+            // check that only non-select occurrences are in disequalities.
+            if (!check_diseqs(lits, selects)) {
+                TRACE("qe", tout << "Could not project " << mk_pp(var, m) << " for:\n" << lits << "\n";);
+                return false;
+            }
+
+            // remove disequalities.
+            elim_diseqs(lits);
+
+            // Ackerman reduction on remaining select occurrences
+            // either replace occurrences by model value or other node
+            // that is congruent to model value.
+
+            ackermanize_select(model, selects, vars, lits);
             
-            // extract disequalities. 
-            
-            return false;
+            return true;
+        }
+
+        void ackermanize_select(model& model, ptr_vector<app> const& selects, app_ref_vector& vars, expr_ref_vector& lits) {
+            app_ref_vector vals(m), reps(m);
+            expr_ref val(m);
+            expr_safe_replace sub(m);
+
+            if (selects.empty()) {
+                return;
+            }
+
+            for (unsigned i = 0; i < selects.size(); ++i) {                
+                VERIFY (model.eval(selects[i], val));
+                vals.push_back(to_app(val));
+                reps.push_back(m.mk_fresh_const("sel", m.get_sort(selects[i])));  // TODO: direct pass could handle nested selects.
+                vars.push_back(reps.back());
+                sub.insert(selects[i], reps.back());
+            }
+
+            for (unsigned i = 0; i < lits.size(); ++i) {
+                sub(lits[i].get(), val);
+                lits[i] = val;
+            }
+
+            // quadratic expansion
+            expr_ref_vector eqs(m);
+            for (unsigned i = 0; i < selects.size(); ++i) {
+                app* sel1 = selects[i];
+                for (unsigned j = i + 1; j < selects.size(); ++j) {
+                    app* sel2 = selects[j];
+                    eqs.reset();
+                    for (unsigned k = 1; k < sel1->get_num_args(); ++k) {
+                        eqs.push_back(m.mk_eq(sel1->get_arg(k), sel2->get_arg(k)));
+                    }
+                    switch (compare(vals[i].get(), vals[j].get())) {
+                    case l_false:
+                        lits.push_back(m.mk_not(mk_and(eqs)));
+                        break;
+                    case l_true:
+                        // fall-through
+                    case l_undef:
+                        lits.push_back(m.mk_implies(mk_and(eqs), m.mk_eq(reps[i].get(), reps[j].get())));
+                        break;                        
+                    }
+                }                
+            }                        
         }
 
         bool contains_x(expr* e) {
@@ -133,17 +198,80 @@ namespace qe {
                 lits.push_back(m.mk_eq(x.m_vars[j], y.m_vars[j]));
             }
         }
+        
+        // check that x occurs only under selects or in disequalities.
+        bool check_diseqs(expr_ref_vector const& lits, ptr_vector<app>& selects) {
+            expr_mark mark;
+            ptr_vector<app> todo;
+            app* e;
+            for (unsigned i = 0; i < lits.size(); ++i) {
+                e = to_app(lits[i]);
+                if (is_diseq_x(e)) {
+                    continue;
+                }
+                if (contains_x(e)) {
+                    todo.push_back(e);
+                }
+            }
+            while (!todo.empty()) {
+                e = todo.back();
+                todo.pop_back();                    
+                if (mark.is_marked(e)) {
+                    continue;
+                }
+                mark.mark(e);
+                if (m_var->x() == e) {
+                    return false;
+                }
+                if (a.is_select(e)) {
+                    unsigned start = 0;
+                    if (e->get_arg(0) == m_var->x()) {
+                        start = 1;
+                        selects.push_back(e);
+                    } 
+                    for (unsigned i = start; i < e->get_num_args(); ++i) {
+                        todo.push_back(to_app(e->get_arg(i)));
+                    }
+                }
+            }
+            return true;
+        }
 
         void elim_diseqs(expr_ref_vector& lits) {
             for (unsigned i = 0; i < lits.size(); ++i) {
-                if (is_diseq(lits[i].get())) {
+                if (is_diseq_x(lits[i].get())) {
                     lits[i] = lits.back();
                     lits.pop_back();
                     --i;
                 }
             }
         }
-        bool is_diseq(expr* e) {
+
+        bool is_update_x(app* e) {
+            do {
+                if (m_var->x() == e) {
+                    return true;
+                }
+                if (a.is_store(e) && contains_x(e->get_arg(0))) {
+                    for (unsigned i = 1; i < e->get_num_args(); ++i) {
+                        if (contains_x(e->get_arg(i))) {
+                            return false;
+                        }
+                    }
+                    e = to_app(e->get_arg(0));
+                    continue;
+                }
+            }
+            while (false);
+            return false;
+        }
+
+        bool is_diseq_x(expr* e) {
+            expr *f, * s, *t;
+            if (m.is_not(e, f) && m.is_eq(f, s, t)) {
+                if (contains_x(s) && !contains_x(t) && is_update_x(to_app(s))) return true;
+                if (contains_x(t) && !contains_x(s) && is_update_x(to_app(t))) return true;
+            }
             return false;
         }
 
@@ -277,8 +405,6 @@ namespace qe {
             }
             return l_true;
         }            
-
-
     };
     
     
