@@ -74,6 +74,7 @@ class qsat : public tactic {
                   }
                   tout << "\n";
                   m_kernel.display(tout);
+                  tout << "\n";
                   );
         }
     };

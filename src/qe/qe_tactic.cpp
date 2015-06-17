@@ -85,6 +85,7 @@ class qe_tactic : public tactic {
                 g->update(i, new_f, new_pr, g->dep(i));                
             }
             g->inc_depth();
+            g->elim_true();
             result.push_back(g.get());
             TRACE("qe", g->display(tout););
             SASSERT(g->is_well_sorted());

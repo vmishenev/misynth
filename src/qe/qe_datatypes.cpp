@@ -70,19 +70,24 @@ namespace qe {
             ptr_vector<func_decl> const& acc = *dt.get_constructor_accessors(f);
             for (unsigned i = 0; i < acc.size(); ++i) {
                 arg = m.mk_fresh_const(acc[i]->get_name().str().c_str(), acc[i]->get_range());
-                model.register_decl(arg->get_decl(), arg->get_arg(i));
+                model.register_decl(arg->get_decl(), m_val->get_arg(i));
                 args.push_back(arg);
             }
             val = m.mk_app(f, args.size(), args.c_ptr());
+            TRACE("qe", tout << mk_pp(m_var->x(), m) << " |-> " << val << "\n";);
             reduce(val, lits);
         }
 
         void project_rec(model& model, app_ref_vector& vars, expr_ref_vector& lits) {
             func_decl* f = m_val->get_decl();
             expr_ref rhs(m);
+            expr_ref_vector eqs(m);
             for (unsigned i = 0; i < lits.size(); ++i) {
-                if (solve(lits[i].get(), rhs)) {
+                if (solve(model, vars, lits[i].get(), rhs, eqs)) {
+                    lits[i] = lits.back();
+                    lits.pop_back();
                     reduce(rhs, lits);
+                    lits.append(eqs);
                     return;
                 }
             }
@@ -99,6 +104,8 @@ namespace qe {
             th_rewriter rw(m);
             expr_ref tmp(m);
             sub.insert(m_var->x(), val);
+            TRACE("qe", tout << mk_pp(m_var->x(), m) << " = " << mk_pp(val, m) << "\n";
+                  tout << lits << "\n";);
             for (unsigned i = 0; i < lits.size(); ++i) {                
                 sub(lits[i].get(), tmp);
                 rw(tmp);
@@ -110,20 +117,20 @@ namespace qe {
             return (*m_var)(e);
         }
 
-        bool solve(expr* fml, expr_ref& t) {
+        bool solve(model& model, app_ref_vector& vars, expr* fml, expr_ref& t, expr_ref_vector& eqs) {
             expr* t1, *t2;
             if (m.is_eq(fml, t1, t2)) {
                 if (contains_x(t1) && !contains_x(t2) && is_app(t1)) {
-                    return solve(to_app(t1), t2, t);
+                    return solve(model, vars, to_app(t1), t2, t, eqs);
                 }
                 if (contains_x(t2) && !contains_x(t1) && is_app(t2)) {
-                    return solve(to_app(t2), t1, t);
+                    return solve(model, vars, to_app(t2), t1, t, eqs);
                 }
             }
             return false;
         }
 
-        bool solve(app* a, expr* b, expr_ref& t) {
+        bool solve(model& model, app_ref_vector& vars, app* a, expr* b, expr_ref& t, expr_ref_vector& eqs) {
             SASSERT(contains_x(a));
             SASSERT(!contains_x(b));
             if (m_var->x() == a) {
@@ -134,7 +141,7 @@ namespace qe {
                 return false;
             }
             func_decl* c = a->get_decl();
-            func_decl* r = dt.get_constructor_recognizer(c);
+            func_decl* rec = dt.get_constructor_recognizer(c);
             ptr_vector<func_decl> const & acc = *dt.get_constructor_accessors(c);
             SASSERT(acc.size() == a->get_num_args());
             //
@@ -144,8 +151,29 @@ namespace qe {
             for (unsigned i = 0; i < a->get_num_args(); ++i) {
                 expr* l = a->get_arg(i);
                 if (is_app(l) && contains_x(l)) {
-                    expr_ref r(m.mk_app(acc[i], b), m);
-                    if (solve(to_app(l), r, t)) {
+                    expr_ref r(m);
+                    bool is_cnstr = is_app(b) && to_app(b)->get_decl() == c;
+                    if (is_cnstr) {
+                        r = to_app(b)->get_arg(i);
+                    }
+                    else {
+                        r = m.mk_app(acc[i], b);
+                    }
+                    if (solve(model, vars, to_app(l), r, t, eqs)) {
+                        for (unsigned j = 0; j < c->get_arity(); ++j) {
+                            if (i != j) {
+                                if (is_cnstr) {
+                                    eqs.push_back(m.mk_eq(to_app(b)->get_arg(j), a->get_arg(j)));
+                                }
+                                else {
+                                    eqs.push_back(m.mk_eq(m.mk_app(acc[j], b), a->get_arg(j)));
+                                }
+                            }
+                        }
+                        if (!is_cnstr) {
+                            eqs.push_back(m.mk_app(rec, b));
+                        }
+
                         return true;
                     }
                 }

@@ -35,10 +35,11 @@ namespace qe {
             ast_manager&    m;
             array_util&     a;
             expr_ref_vector m_lits;
-            model*          model;            
+            model*          m_model; 
+            imp*            m_imp;
             
             rw_cfg(ast_manager& m, array_util& a):
-                m(m), a(a), m_lits(m), model(0) {}
+                m(m), a(a), m_lits(m), m_model(0) {}
             
             br_status reduce_app(func_decl* f, unsigned n, expr* const* args, expr_ref& result, proof_ref & pr) {
                 if (a.is_select(f) && a.is_store(args[0])) {                    
@@ -52,8 +53,8 @@ namespace qe {
                             val1 = val2 = arg1;
                         }
                         else {
-                            VERIFY(model->eval(arg1, val1));
-                            VERIFY(model->eval(arg2, val2));
+                            VERIFY(m_model->eval(arg1, val1));
+                            VERIFY(m_model->eval(arg2, val2));
                         }
                         switch(compare(val1, val2)) {
                         case l_true:
@@ -171,17 +172,32 @@ namespace qe {
                 for (unsigned j = i + 1; j < selects.size(); ++j) {
                     app* sel2 = selects[j];
                     eqs.reset();
-                    for (unsigned k = 1; k < sel1->get_num_args(); ++k) {
-                        eqs.push_back(m.mk_eq(sel1->get_arg(k), sel2->get_arg(k)));
+                    bool found_diseq = false;
+                    expr_ref val1(m), val2(m);
+                    for (unsigned k; !found_diseq && k < sel1->get_num_args(); ++k) {
+                        expr* arg1 = sel1->get_arg(k);
+                        expr* arg2 = sel2->get_arg(k);
+                        VERIFY (model.eval(arg1, val1));
+                        VERIFY (model.eval(arg2, val2));
+                        if (val1 != val2) { // TODO: general comparison
+                            lits.push_back(m.mk_not(m.mk_eq(arg1, arg2)));
+                            found_diseq = true;
+                        }
+                        else if (arg1 != arg2) {
+                            eqs.push_back(m.mk_eq(arg1, arg2));
+                        }
                     }
-                    switch (compare(vals[i].get(), vals[j].get())) {
+                    lbool cmp = compare(vals[i].get(), vals[j].get());
+                    switch (cmp) {
                     case l_false:
-                        lits.push_back(m.mk_not(mk_and(eqs)));
                         break;
                     case l_true:
                         // fall-through
                     case l_undef:
-                        lits.push_back(m.mk_implies(mk_and(eqs), m.mk_eq(reps[i].get(), reps[j].get())));
+                        if (!found_diseq) {
+                            lits.append(eqs);
+                            lits.push_back(m.mk_eq(reps[i].get(), reps[j].get()));
+                        }
                         break;                        
                     }
                 }                
@@ -350,7 +366,7 @@ namespace qe {
                     for (unsigned i = 0; i < idxs.size(); ++i) {
                         expr_ref_vector eqs(m);
                         mk_eq(idx, idxs[i], eqs);
-                        lits.push_back(m.mk_not(mk_and(eqs)));
+                        lits.push_back(m.mk_not(mk_and(eqs))); // TBD: extract single index of difference based on model.
                     }
                     args.push_back(t);
                     args.append(n, s->get_args()+1);
