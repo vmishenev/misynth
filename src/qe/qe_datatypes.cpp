@@ -42,8 +42,12 @@ namespace qe {
             expr_ref val(m);
             VERIFY(model.eval(var, val));
             SASSERT(is_app(val));
-            SASSERT(dt.is_constructor(to_app(val)));
+            TRACE("qe", tout << mk_pp(var, m) << " := " << val << "\n";);
             m_val = to_app(val);
+            if (!dt.is_constructor(m_val)) {
+                // assert: var does not occur in lits.
+                return true;
+            }
             m_var = alloc(contains_app, m, var);
 
             try {
