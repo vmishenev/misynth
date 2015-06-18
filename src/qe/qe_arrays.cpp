@@ -143,7 +143,7 @@ namespace qe {
         }
 
         void ackermanize_select(model& model, ptr_vector<app> const& selects, app_ref_vector& vars, expr_ref_vector& lits) {
-            app_ref_vector vals(m), reps(m);
+            expr_ref_vector vals(m), reps(m);
             expr_ref val(m);
             expr_safe_replace sub(m);
 
@@ -151,42 +151,55 @@ namespace qe {
                 return;
             }
 
+            app_ref sel(m);
             for (unsigned i = 0; i < selects.size(); ++i) {                
+                sel = m.mk_fresh_const("sel", m.get_sort(selects[i]));
                 VERIFY (model.eval(selects[i], val));
+                model.register_decl(sel->get_decl(), val);
                 vals.push_back(to_app(val));
-                reps.push_back(m.mk_fresh_const("sel", m.get_sort(selects[i])));  // TODO: direct pass could handle nested selects.
-                vars.push_back(reps.back());
-                sub.insert(selects[i], reps.back());
+                reps.push_back(sel);               // TODO: direct pass could handle nested selects.
+                vars.push_back(sel);
+                sub.insert(selects[i], sel);
             }
 
             for (unsigned i = 0; i < lits.size(); ++i) {
                 sub(lits[i].get(), val);
                 lits[i] = val;
             }
+            
+            partition_values(model, reps, lits);
+            unsigned num_args = selects[0]->get_decl()->get_arity();
+            for (unsigned j = 1; j < num_args; ++j) {
+                expr_ref_vector args(m);            
+                for (unsigned i = 0; i < selects.size(); ++i) {
+                    args.push_back(selects[i]->get_arg(j));
+                }
+                partition_values(model, args, lits);
+            }
 
-            // quadratic expansion
-            expr_ref_vector eqs(m);
-            for (unsigned i = 0; i < selects.size(); ++i) {
-                app* sel1 = selects[i];
-                for (unsigned j = i + 1; j < selects.size(); ++j) {
-                    app* sel2 = selects[j];
-                    eqs.reset();
-                    for (unsigned k = 1; k < sel1->get_num_args(); ++k) {
-                        eqs.push_back(m.mk_eq(sel1->get_arg(k), sel2->get_arg(k)));
-                    }
-                    switch (compare(vals[i].get(), vals[j].get())) {
-                    case l_false:
-                        lits.push_back(m.mk_not(mk_and(eqs)));
-                        break;
-                    case l_true:
-                        // fall-through
-                    case l_undef:
-                        lits.push_back(m.mk_implies(mk_and(eqs), m.mk_eq(reps[i].get(), reps[j].get())));
-                        break;                        
-                    }
-                }                
-            }                        
         }
+
+        void partition_values(model& model, expr_ref_vector const& vals, expr_ref_vector& lits) {
+            expr_ref val(m);
+            expr_ref_vector trail(m);
+            obj_map<expr, expr*> roots;
+            for (unsigned i = 0; i < vals.size(); ++i) {
+                expr* v = vals[i], *root;
+                VERIFY (model.eval(v, val));
+                if (roots.find(val, root)) {
+                    lits.push_back(m.mk_eq(v, root));
+                }
+                else {
+                    roots.insert(val, v);
+                    trail.push_back(val);
+                }
+            }
+            if (trail.size() > 1) {
+                lits.push_back(m.mk_distinct(trail.size(), trail.c_ptr()));
+                // TBD use more elaborate comparison
+            }
+        }
+
 
         bool contains_x(expr* e) {
             return (*m_var)(e);
