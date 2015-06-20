@@ -90,6 +90,7 @@ namespace smt {
                 sort * s      = m_manager.get_sort(r->get_owner());
                 model_value_proc * proc = 0;
                 if (m_manager.is_bool(s)) {
+                    TRACE("model_bug", tout << mk_pp(r->get_owner(), m_manager) << "\n";);
                     SASSERT(m_context->get_assignment(r) == l_true || m_context->get_assignment(r) == l_false);
                     if (m_context->get_assignment(r) == l_true)
                         proc = alloc(expr_wrapper_proc, m_manager.mk_true());
