@@ -606,7 +606,7 @@ def parse_options():
                 raise MKException('x64 compilation mode can only be specified when using Visual Studio')
             VS_X64 = True
         elif opt in ('--x86'):
-            LINUX_X64=False
+            LINUX_X64 = False
         elif opt in ('-h', '--help'):
             display_help(0)
         elif opt in ('-m', '--makefiles'):

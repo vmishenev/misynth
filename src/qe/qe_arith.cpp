@@ -135,13 +135,13 @@ namespace qe {
         }
 
 
-        bool is_linear(model& model, expr* lit, rational& c, expr_ref& t, ineq_type& ty) {
+        bool is_linear(model& model, expr* lit, bool& found_eq) {
+            rational c(0), mul(1);
+            expr_ref t(m);
+            ineq_type ty = t_le;
             expr* e1, *e2;
-            c.reset();
             expr_ref_vector ts(m);            
             bool is_not = m.is_not(lit, lit);
-            rational mul(1);
-            ty = t_le;
             if (is_not) {
                 mul.neg();
             }
@@ -161,6 +161,29 @@ namespace qe {
                 is_linear(model, -mul, e2, c, ts);
                 ty = t_eq;
             }  
+            else if (m.is_distinct(lit) && !is_not && is_arith(to_app(lit)->get_arg(0))) {
+                expr_ref val(m);
+                rational r;
+                app* alit = to_app(lit);
+                vector<std::pair<expr*,rational> > nums;
+                for (unsigned i = 0; i < alit->get_num_args(); ++i) {
+                    VERIFY(model.eval(alit->get_arg(i), val) && a.is_numeral(val, r));
+                    nums.push_back(std::make_pair(alit->get_arg(i), r));
+                }
+                std::sort(nums.begin(), nums.end(), compare_second());
+                for (unsigned i = 0; i + 1 < nums.size(); ++i) {
+                    SASSERT(nums[i].second < nums[i+1].second);
+                    c.reset();
+                    ts.reset();
+                    is_linear(model,  mul, nums[i+1].first, c, ts);
+                    is_linear(model, -mul, nums[i].first,   c, ts);  
+                    t = add(ts);
+                    accumulate_linear(model, c, t, t_lt);
+                }
+                t = mk_num(0);
+                c.reset();
+                return true;
+            }
             else if (m.is_eq(lit, e1, e2) && is_not && is_arith(e1)) {
                 expr_ref val1(m), val2(m);
                 rational r1, r2;
@@ -172,7 +195,7 @@ namespace qe {
                 }                
                 ty = t_lt;
                 is_linear(model,  mul, e1, c, ts);
-                is_linear(model, -mul, e2, c, ts);                               
+                is_linear(model, -mul, e2, c, ts);    
             }
             else {
                 TRACE("qe", tout << "can't project:" << mk_pp(lit, m) << "\n";);
@@ -194,7 +217,47 @@ namespace qe {
                 m_num_neg++;
                 ty = t_le;
             }
+            accumulate_linear(model, c, t, ty);
+            found_eq = !c.is_zero() && ty == t_eq;
             return true;
+        }
+
+        struct compare_second {
+            bool operator()(std::pair<expr*, rational> const& a, 
+                            std::pair<expr*, rational> const& b) const {
+                return a.second < b.second;
+            }
+        };
+
+        void accumulate_linear(model& model, rational const& c, expr_ref& t, ineq_type ty) {
+            if (c.is_zero()) {
+                switch (ty) {
+                case t_eq:
+                    t = a.mk_eq(t, mk_num(0));
+                    break;
+                case t_lt:
+                    t = a.mk_lt(t, mk_num(0));
+                    break;
+                case t_le:
+                    t = a.mk_le(t, mk_num(0));
+                    break;
+                }
+                add_lit(model, m_new_lits, t);
+            }
+            else {
+                m_ineq_coeffs.push_back(c);
+                m_ineq_terms.push_back(t);
+                m_ineq_types.push_back(ty);
+                if (ty == t_eq) {
+                    // skip
+                }
+                else if (c.is_pos()) {
+                    ++m_num_pos;
+                }
+                else {
+                    ++m_num_neg;
+                }            
+            }        
         }
 
         bool is_arith(expr* e) {
@@ -337,47 +400,16 @@ namespace qe {
             reset();
             bool found_eq = false;
             for (unsigned i = 0; i < lits.size(); ++i) {
-                rational c(0);
-                expr_ref t(m);
-                ineq_type ty;
                 expr* e = lits[i].get();
                 if (!(*m_var)(e)) {
                     m_new_lits.push_back(e);                    
                 }
-                else if (is_linear(model, e, c, t, ty)) {
-                    if (c.is_zero()) {
-                        switch (ty) {
-                        case t_eq:
-                            t = a.mk_eq(t, mk_num(0));
-                            break;
-                        case t_lt:
-                            t = a.mk_lt(t, mk_num(0));
-                            break;
-                        case t_le:
-                            t = a.mk_le(t, mk_num(0));
-                            break;
-                        }
-                        add_lit(model, m_new_lits, t);
-                    }
-                    else {
-                        m_ineq_coeffs.push_back(c);
-                        m_ineq_terms.push_back(t);
-                        m_ineq_types.push_back(ty);
-                        if (ty == t_eq) {
-                            found_eq = true;
-                            eq_index = m_ineq_coeffs.size()-1;
-                        }
-                        else if (c.is_pos()) {
-                            ++m_num_pos;
-                        }
-                        else {
-                            ++m_num_neg;
-                        }            
-                    }        
-                }
-                else {
+                else if (!is_linear(model, e, found_eq)) {
                     TRACE("qe", tout << "can't project:" << mk_pp(e, m) << "\n";);
                     throw cant_project();
+                }
+                else {
+                    eq_index = num_ineqs()-1;
                 }
             }
             TRACE("qe", display(tout << mk_pp(m_var->x(), m) << ":\n");
