@@ -518,6 +518,8 @@ namespace z3 {
 
         /**
            \brief Return true if this expression is a numeral.
+           Specialized functions also return representations for the numerals as
+           small integers, 64 bit integers or rational or decimal strings.
         */
         bool is_numeral() const { return kind() == Z3_NUMERAL_AST; }
         bool is_numeral_i64(__int64& i) const { bool r = Z3_get_numeral_int64(ctx(), m_ast, &i); return r;}
