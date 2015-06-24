@@ -21,7 +21,6 @@ Revision History:
 #include "qsat.h"
 #include "smt_kernel.h"
 #include "qe_mbp.h"
-#include "qe_util.h"
 #include "smt_params.h"
 #include "ast_util.h"
 #include "quant_hoist.h"

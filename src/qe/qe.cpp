@@ -36,7 +36,6 @@ Revision History:
 #include "expr_functors.h"
 #include "quant_hoist.h"
 #include "bool_rewriter.h"
-#include "qe_util.h"
 #include "th_rewriter.h"
 #include "smt_kernel.h"
 #include "model_evaluator.h"
@@ -81,7 +80,7 @@ namespace qe {
             ptr_vector<expr> todo;
             ptr_vector<expr> conjs_closed, conjs_mixed, conjs_open;
             
-            qe::flatten_and(fml, conjs);
+            flatten_and(fml, conjs);
 
             for (unsigned i = 0; i < conjs.size(); ++i) {
                 todo.push_back(conjs[i].get());
@@ -306,7 +305,7 @@ namespace qe {
     // conj_enum
 
     conj_enum::conj_enum(ast_manager& m, expr* e): m(m), m_conjs(m) {
-        qe::flatten_and(e, m_conjs);
+        flatten_and(e, m_conjs);
     }
 
     void conj_enum::extract_equalities(expr_ref_vector& eqs) {

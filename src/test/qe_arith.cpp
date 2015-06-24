@@ -12,7 +12,6 @@ Copyright (c) 2015 Microsoft Corporation
 #include "reg_decl_plugins.h"
 #include "arith_rewriter.h"
 #include "ast_pp.h"
-#include "qe_util.h"
 #include "smt_context.h"
 #include "expr_abstract.h"
 #include "expr_safe_replace.h"
@@ -241,7 +240,7 @@ static void test2(char const *ex) {
     vars.push_back(m.mk_const(symbol("x"), a.mk_real()));
     vars.push_back(m.mk_const(symbol("y"), a.mk_real()));
     vars.push_back(m.mk_const(symbol("z"), a.mk_real()));
-    qe::flatten_and(fml, lits);
+    flatten_and(fml, lits);
 
     smt::context ctx(m, params);
     ctx.push();

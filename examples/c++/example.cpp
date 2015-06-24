@@ -1,6 +1,8 @@
-
 /*++
 Copyright (c) 2015 Microsoft Corporation
+
+Abstract:
+  Examples exercising the C++ API
 
 --*/
 
@@ -8,7 +10,6 @@ Copyright (c) 2015 Microsoft Corporation
 #include"z3++.h"
 
 using namespace z3;
-
 
 
 

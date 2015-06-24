@@ -21,7 +21,6 @@ Revision History:
 #include "qe_mbp.h"
 #include "qe_arith.h"
 #include "qe_datatypes.h"
-#include "qe_util.h"
 #include "expr_safe_replace.h"
 #include "ast_pp.h"
 #include "th_rewriter.h"

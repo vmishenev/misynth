@@ -18,7 +18,6 @@ Revision History:
 --*/
 
 #include "qe_arith.h"
-#include "qe_util.h"
 #include "ast_pp.h"
 #include "th_rewriter.h"
 #include "expr_functors.h"
