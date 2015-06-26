@@ -59,6 +59,15 @@ public:
         app_ref_vector vars(vars0);
         app_ref var(m);
         th_rewriter rw(m);
+        bool change = true;
+        while (change) {
+            change = false;
+            for (unsigned i = 0; i < m_plugins.size(); ++i) {
+                if (m_plugins[i] && (*m_plugins[i])(vars, fmls)) {
+                    change = true;
+                }
+            }
+        }
         while (!vars.empty()) {
             var = vars.back();
             vars.pop_back();

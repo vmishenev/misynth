@@ -110,6 +110,9 @@ namespace qe {
         imp(ast_manager& m): m(m), a(m) {}
         ~imp() {}
 
+        virtual void operator()(app_ref_vector& vars, expr_ref_vector& lits) {
+        }
+
         bool operator()(model& model, app* var, app_ref_vector& vars, expr_ref_vector& lits) {
 
             m_var = alloc(contains_app, m, var);

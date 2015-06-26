@@ -37,6 +37,10 @@ namespace qe {
         imp(ast_manager& m):
             m(m), dt(m), m_val(m) {}
         
+        virtual bool operator()(app_ref_vector& vars, expr_ref_vector& lits) {
+            return lift_foreign(vars, lits);
+        }
+
         bool operator()(model& model, app* var, app_ref_vector& vars, expr_ref_vector& lits) {
             expr_ref val(m);
             VERIFY(model.eval(var, val));
@@ -48,6 +52,7 @@ namespace qe {
                 return true;
             }
             m_var = alloc(contains_app, m, var);
+
 
             try {
                 if (dt.is_recursive(m.get_sort(var))) {
@@ -155,25 +160,14 @@ namespace qe {
                 expr* l = a->get_arg(i);
                 if (is_app(l) && contains_x(l)) {
                     expr_ref r(m);
-                    bool is_cnstr = is_app(b) && to_app(b)->get_decl() == c;
-                    if (is_cnstr) {
-                        r = to_app(b)->get_arg(i);
-                    }
-                    else {
-                        r = m.mk_app(acc[i], b);
-                    }
+                    r = access(c, i, acc, b);
                     if (solve(model, vars, to_app(l), r, t, eqs)) {
                         for (unsigned j = 0; j < c->get_arity(); ++j) {
                             if (i != j) {
-                                if (is_cnstr) {
-                                    eqs.push_back(m.mk_eq(to_app(b)->get_arg(j), a->get_arg(j)));
-                                }
-                                else {
-                                    eqs.push_back(m.mk_eq(m.mk_app(acc[j], b), a->get_arg(j)));
-                                }
+                                eqs.push_back(m.mk_eq(access(c, j, acc, b), a->get_arg(j)));
                             }
                         }
-                        if (!is_cnstr) {
+                        if (!is_app_of(b, c)) {
                             eqs.push_back(m.mk_app(rec, b));
                         }
 
@@ -182,6 +176,110 @@ namespace qe {
                 }
             }
             return false;
+        }
+
+
+        expr* access(func_decl* c, unsigned i, ptr_vector<func_decl> const& acc, expr* e) {
+            if (is_app_of(e,c)) {
+                return to_app(e)->get_arg(i);
+            }
+            else {
+                return m.mk_app(acc[i], e);
+            }
+        }
+
+        bool lift_foreign(app_ref_vector const& vars, expr_ref_vector& lits) {
+            TRACE("qe", tout << vars << "\n" << lits << "\n";);
+
+            bool reduced = false;
+            expr_mark visited;
+            expr_mark has_var;
+            bool inserted = false;
+            for (unsigned i = 0; i < vars.size(); ++i) { 
+                if (m.is_bool(vars[i])) continue;
+                if (dt.is_datatype(m.get_sort(vars[i]))) continue;
+                inserted = true;
+                has_var.mark(vars[i]);
+                visited.mark(vars[i]);
+            }
+            if (inserted) {
+                for (unsigned i = 0; i < lits.size(); ++i) {
+                    expr* e = lits[i].get(), *l, *r;
+                    if (m.is_eq(e, l, r) && reduce_eq(visited, has_var, l, r, lits)) {
+                        lits[i] = lits.back();
+                        lits.pop_back();
+                        reduced = true;
+                    }
+                }
+            }
+            TRACE("qe", tout << vars << "\n" << lits << "\n";);
+            return reduced;
+        }
+
+        bool reduce_eq(expr_mark& has_var, expr_mark& visited, expr* l, expr* r, expr_ref_vector& lits) {
+            if (!is_app(l) || !is_app(r)) {
+                return false;
+            }
+            bool reduce = false;
+            if (dt.is_constructor(to_app(r)) && contains_foreign(has_var, visited, r)) {
+                std::swap(l, r);
+                reduce = true;
+            }
+            reduce |= dt.is_constructor(to_app(l)) && contains_foreign(has_var, visited, l);
+            if (!reduce) {
+                return false;
+            }
+            func_decl* c = to_app(l)->get_decl();
+            ptr_vector<func_decl> const& acc = *dt.get_constructor_accessors(c);
+            if (!is_app_of(r, c)) {
+                lits.push_back(m.mk_app(dt.get_constructor_recognizer(c), r));
+            }
+            for (unsigned i = 0; i < acc.size(); ++i) {
+                lits.push_back(m.mk_eq(to_app(l)->get_arg(i), access(c, i, acc, r)));
+            }
+            return true;
+        }
+
+
+        ptr_vector<expr> todo;
+
+        bool contains_foreign(expr_mark& has_var, expr_mark& visited, expr* e) {
+            todo.push_back(e);
+            while (!todo.empty()) {
+                expr* _f = todo.back();
+                if (visited.is_marked(_f)) {
+                    todo.pop_back();
+                    continue;
+                }
+                if (!is_app(_f)) {
+                    visited.mark(_f);                   
+                    todo.pop_back();
+                    continue;
+                }
+                app* f = to_app(_f);
+                bool has_new = false, has_v = false;
+                for (unsigned i = 0; i < f->get_num_args(); ++i) {
+                    expr* arg = f->get_arg(i);
+                    if (!visited.is_marked(arg)) {
+                        todo.push_back(arg);
+                        has_new = true;
+                    }
+                    else {
+                        has_v |= has_var.is_marked(arg);
+                    }
+                }
+                if (has_new) {
+                    continue;
+                }
+                todo.pop_back();
+                if (has_v) {
+                    has_var.mark(f);
+                }
+                TRACE("qe", tout << "contains: " << mk_pp(f, m) << " " << has_var.is_marked(f) << "\n";);
+                visited.mark(f);
+            }
+            TRACE("qe", tout << "contains: " << mk_pp(e, m) << " " << has_var.is_marked(e) << "\n";);
+            return has_var.is_marked(e);
         }
         
     };
@@ -197,6 +295,11 @@ namespace qe {
     bool datatype_project_plugin::operator()(model& model, app* var, app_ref_vector& vars, expr_ref_vector& lits) {
         return (*m_imp)(model, var, vars, lits);
     }
+
+    bool datatype_project_plugin::operator()(app_ref_vector& vars, expr_ref_vector& lits) {
+        return (*m_imp)(vars, lits);
+    }
+
     
     family_id datatype_project_plugin::get_family_id() {
         return m_imp->dt.get_family_id();

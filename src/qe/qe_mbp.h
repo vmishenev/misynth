@@ -34,6 +34,7 @@ namespace qe {
     public:
         virtual ~project_plugin() {}
         virtual bool operator()(model& model, app* var, app_ref_vector& vars, expr_ref_vector& lits) = 0;
+        virtual bool operator()(app_ref_vector& vars, expr_ref_vector& lits) = 0;
         virtual family_id get_family_id() = 0;
     };
 

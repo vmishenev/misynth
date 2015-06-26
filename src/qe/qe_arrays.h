@@ -33,6 +33,7 @@ namespace qe {
         array_project_plugin(ast_manager& m);
         virtual ~array_project_plugin();
         virtual bool operator()(model& model, app* var, app_ref_vector& vars, expr_ref_vector& lits);
+        virtual bool operator()(app_ref_vector& vars, expr_ref_vector& lits);
         virtual family_id get_family_id();
     };
 

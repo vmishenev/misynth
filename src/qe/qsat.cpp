@@ -27,6 +27,8 @@ Revision History:
 #include "ast_pp.h"
 #include "model_v2_pp.h"
 #include "filter_model_converter.h"
+#include "array_decl_plugin.h"
+#include "expr_abstract.h"
 
 namespace qe {
 
@@ -209,6 +211,7 @@ class qsat : public tactic {
     };
 
     ast_manager&               m;
+    array_util                 arr;
     params_ref                 m_params;
     stats                      m_stats;
     statistics                 m_st;
@@ -226,7 +229,8 @@ class qsat : public tactic {
     obj_map<expr, max_level>   m_elevel;
     filter_model_converter_ref m_fmc;
     volatile bool              m_cancel;
-    bool                       m_qelim;
+    bool                       m_qelim;       // perform quantifier elimination
+    bool                       m_epr;         // use EPR mode
     ptr_vector<expr>           todo;          // temporary variable for worklist
 
 
@@ -281,6 +285,11 @@ class qsat : public tactic {
     bool is_forall(unsigned level) const {
         return is_exists(level+1);
     }
+
+    bool is_epr(expr* fml) const {
+        return m_epr || false;
+    }
+
 
     void push() {
         m_level++;
@@ -648,17 +657,18 @@ class qsat : public tactic {
     }
 
     void project_qe(expr_ref_vector& core) {
+        if (m_epr) {
+            project_epr_qe(core);
+            return;
+        }
         SASSERT(m_level == 1);
         expr_ref fml(m), fml0(m);
         model& mdl = *m_model.get();
         app_ref_vector vars(m);
-
-
         get_core(core, 1);
         for (unsigned i = 1; i < m_vars.size(); ++i) {
             vars.append(m_vars[i]);
         }
-
         mk_concrete(core);
         m_mbp(vars, mdl, core);
         fml = mk_not(mk_and(core));
@@ -701,10 +711,48 @@ class qsat : public tactic {
         get_kernel(m_level).assert_expr(fml1);
     }
 
+    void project_epr_qe(expr_ref_vector& core) {
+        SASSERT(m_level == 1);
+        expr_ref fml(m), fml0(m);
+        model& mdl = *m_model.get();
+        app_ref_vector varsp(m);
+        expr_ref_vector varsa(m);        
+        vector<symbol> names;
+        ptr_vector<sort> sorts;
+        get_core(core, 1);
+        for (unsigned i = 1; i < m_vars.size(); ++i) {
+            for (unsigned j = 0; j < m_vars[i].size(); ++j) {
+                app* v = m_vars[i][j].get();
+                if (is_array(v)) {
+                    varsp.push_back(v);
+                }
+                else {
+                    varsa.push_back(v);
+                    sorts.push_back(m.get_sort(v));
+                    names.push_back(v->get_decl()->get_name());
+                }
+            }
+        }
+        mk_concrete(core);
+        m_mbp(varsp, mdl, core);
+        fml = mk_not(mk_and(core));
+        expr_abstract(m, 0, varsa.size(), varsa.c_ptr(), fml, fml);
+        fml = m.mk_forall(varsa.size(), sorts.c_ptr(), names.c_ptr(), fml);
+        m_ex.assert_expr(fml);
+        m_answer.push_back(fml);
+        pop(1);
+    }
+
+    bool is_array(expr* e) {
+        return arr.is_array(m.get_sort(e));
+    }
+
+
 public:
 
     qsat(ast_manager& m, params_ref const& p, bool qelim):
         m(m),
+        arr(m),
         m_mbp(m),
         m_fa(m),
         m_ex(m),
@@ -713,7 +761,8 @@ public:
         m_answer(m),
         m_level(0),
         m_cancel(false),
-        m_qelim(qelim)
+        m_qelim(qelim),
+        m_epr(false)
     {
         reset();
     }
@@ -740,6 +789,7 @@ public:
         mc = 0; pc = 0; core = 0;
         in->get_formulas(fmls);
         fml = mk_and(m, fmls.size(), fmls.c_ptr());
+        m_epr = is_epr(fml);
 
         // for now:
         // fail if cores.  (TBD)
@@ -811,7 +861,7 @@ public:
 
     void set_progress_callback(progress_callback * callback) {
     }
-
+ 
     tactic * translate(ast_manager & m) {
         return alloc(qsat, m, m_params, m_qelim);
     }
@@ -822,6 +872,10 @@ public:
         m_cancel = f;
     }
 
+    void set_epr() {
+        m_epr = true;
+    }
+
 };
 
 };
@@ -830,7 +884,13 @@ tactic * mk_qsat_tactic(ast_manager& m, params_ref const& p) {
     return alloc(qe::qsat, m, p, false);
 }
 
-tactic * mk_qe2_tactic(ast_manager& m, params_ref const& p) {
+tactic * mk_qe2_tactic(ast_manager& m, params_ref const& p) {   
     return alloc(qe::qsat, m, p, true);
+}
+
+tactic * mk_epr_qe_tactic(ast_manager& m, params_ref const& p) {
+    qe::qsat* qs = alloc(qe::qsat, m, p, true);
+    qs->set_epr();
+    return qs;
 }
 

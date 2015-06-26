@@ -26,6 +26,7 @@ Revision History:
 #include "th_rewriter.h"
 #include "expr_functors.h"
 #include "model_v2_pp.h"
+#include "expr_safe_replace.h"
 
 namespace qe {
 
@@ -736,6 +737,62 @@ namespace qe {
         ~imp() {
         }
 
+        bool operator()(app_ref_vector& vars, expr_ref_vector& lits) {
+            expr_mark is_var, is_rem;
+            bool inserted = false;
+            bool reduced = false;
+            for (unsigned i = 0; i < vars.size(); ++i) { 
+                if (is_arith(vars[i].get())) {
+                    is_var.mark(vars[i].get());
+                    inserted = true;
+                }
+            }
+            if (!inserted) {
+                return false;
+            }
+            expr_ref tmp(m), t(m), v(m);            
+            for (unsigned i = 0; i < lits.size(); ++i) {
+                expr* e = lits[i].get(), *l, *r;
+                if (m.is_eq(e, l, r) && reduce_eq(is_var, l, r, v, t)) {
+                    reduced = true;
+                    lits[i] = lits.back();
+                    lits.pop_back();
+                    expr_safe_replace sub(m);
+                    sub.insert(v, t);
+                    is_rem.mark(v);
+                    for (unsigned j = 0; j < lits.size(); ++j) {
+                        sub(lits[j].get(), tmp);
+                        lits[j] = tmp;
+                    }
+                }
+            }
+            if (reduced) {
+                for (unsigned i = 0; i < vars.size(); ++i) {
+                    if (is_rem.is_marked(vars[i].get())) {
+                        vars[i] = vars.back();
+                        vars.pop_back();
+                    }
+                }
+            }
+            return reduced;
+        }
+
+        bool reduce_eq(expr_mark& is_var, expr* l, expr* r, expr_ref& v, expr_ref& t) {
+            if (is_var.is_marked(r)) {
+                std::swap(l, r);
+            }
+            if (is_var.is_marked(l)) {
+                m_var = alloc(contains_app, m, to_app(l));
+                if (!(*m_var)(r)) {
+                    v = to_app(l);
+                    t = r;
+                    return true;
+                }
+            }
+            return false;
+        }
+
+
         bool operator()(model& model, app* v, app_ref_vector& vars, expr_ref_vector& lits) {
             SASSERT(a.is_real(v) || a.is_int(v));
             m_var = alloc(contains_app, m, v);
@@ -760,6 +817,10 @@ namespace qe {
 
     bool arith_project_plugin::operator()(model& model, app* var, app_ref_vector& vars, expr_ref_vector& lits) {
         return (*m_imp)(model, var, vars, lits);
+    }
+
+    bool arith_project_plugin::operator()(app_ref_vector& vars, expr_ref_vector& lits) {
+        return (*m_imp)(vars, lits);
     }
 
     family_id arith_project_plugin::get_family_id() {

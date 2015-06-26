@@ -22,11 +22,13 @@ Revision History:
 #include"qe.h"
 
 class qe_tactic : public tactic {
+    statistics               m_st;
     struct     imp {
         ast_manager &            m;
         smt_params               m_fparams;
         volatile bool            m_cancel;
         qe::expr_quant_elim      m_qe;
+
 
         imp(ast_manager & _m, params_ref const & p):
             m(_m),
@@ -90,6 +92,14 @@ class qe_tactic : public tactic {
             TRACE("qe", g->display(tout););
             SASSERT(g->is_well_sorted());
         }
+
+        void collect_statistics(statistics & st) const {
+            m_qe.collect_statistics(st);
+        }
+
+        void reset_statistics() {            
+        }
+
     };
     
     imp *      m_imp;
@@ -125,7 +135,19 @@ public:
                             proof_converter_ref & pc,
                             expr_dependency_ref & core) {
         (*m_imp)(in, result, mc, pc, core);
+        m_st.reset();
+        m_imp->collect_statistics(m_st);
+        
     }
+
+    virtual void collect_statistics(statistics & st) const {
+        st.copy(m_st);
+    }
+
+    virtual void reset_statistics() {
+        m_st.reset();
+    }
+
     
     virtual void cleanup() {
         ast_manager & m = m_imp->m;
