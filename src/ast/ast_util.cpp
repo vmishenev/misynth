@@ -187,6 +187,10 @@ expr * mk_not(ast_manager & m, expr * arg) {
     expr * atom;
     if (m.is_not(arg, atom))
         return atom;
+    else if (m.is_true(arg)) 
+        return m.mk_false();
+    else if (m.is_false(arg))
+        return m.mk_true();
     else
         return m.mk_not(arg);
 }
@@ -199,6 +203,24 @@ expr * expand_distinct(ast_manager & m, unsigned num_args, expr * const * args) 
     }
     return mk_and(m, new_diseqs.size(), new_diseqs.c_ptr());
 }
+
+expr* mk_distinct(ast_manager& m, unsigned num_args, expr * const * args) {
+    switch (num_args) {
+    case 0:
+    case 1:
+        return m.mk_true();
+    case 2:
+        return m.mk_not(m.mk_eq(args[0], args[1]));
+    default:
+        return m.mk_distinct(num_args, args);
+    }
+}
+
+expr_ref mk_distinct(expr_ref_vector const& args) {
+    ast_manager& m = args.get_manager();
+    return expr_ref(mk_distinct(m, args.size(), args.c_ptr()), m);
+}
+
 
 void flatten_and(expr_ref_vector& result) {
     ast_manager& m = result.get_manager();

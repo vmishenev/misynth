@@ -15,6 +15,8 @@ Author:
 
 Revision History:
 
+Notes:
+
 
 --*/
 
@@ -24,7 +26,7 @@ Revision History:
 #include "smt_params.h"
 #include "ast_util.h"
 #include "quant_hoist.h"
-#include "ast_pp.h"
+#include "ast_pp.h" 
 #include "model_v2_pp.h"
 #include "filter_model_converter.h"
 #include "array_decl_plugin.h"
@@ -113,6 +115,13 @@ class qsat : public tactic {
         expr_ref_vector  m_asms;
         unsigned_vector m_asms_lim;
 
+        expr_ref mk_iff(expr* a, expr* b) {
+            if (m.is_true(a)) return expr_ref(b, m);
+            if (m.is_true(b)) return expr_ref(a, m);
+            if (m.is_false(a)) return expr_ref(q.mk_not(b), m);
+            if (m.is_false(b)) return expr_ref(q.mk_not(a), m);
+            return expr_ref(m.mk_iff(a, b), m);
+        }
     public:
         move_preds(qsat& _q):
             m(_q.m),
@@ -126,12 +135,13 @@ class qsat : public tactic {
 
         void push() {
             m_asms_lim.push_back(m_asms.size());
+            SASSERT(m_asms_lim.size() <= m_preds.size() + 1);
         }
 
         void pop(unsigned num_scopes) {
             unsigned l = m_asms_lim.size() - num_scopes;
             m_asms.resize(m_asms_lim[l]);
-            m_asms_lim.resize(l);
+            m_asms_lim.resize(l);            
         }
         
         void insert(app* a, max_level const& lvl) {
@@ -143,6 +153,7 @@ class qsat : public tactic {
             m_preds[l].push_back(a);            
         }
 
+        typedef obj_map<expr, ptr_vector<app> > select_map;
         void get_assumptions(expr_ref_vector& asms) {
             asms.reset();
             unsigned level = q.m_level;
@@ -150,16 +161,30 @@ class qsat : public tactic {
                 return;
             }
             model& mdl = *q.m_model.get();
+            select_map selects;
             expr_ref val(m);
+            app* f;
             for (unsigned j = 0; j < m_preds[level - 1].size(); ++j) {
                 app* p = m_preds[level - 1][j].get();
+                app* lit = to_app(q.m_pred2lit.find(p));
+                TRACE("qe", tout << "process level: " << level - 1 << ": " << mk_pp(p, m) << "\n";);
+
                 VERIFY(mdl.eval(p, val));
+
+                if (q.is_select(lit, f)) {
+                    selects.insert_if_not_there2(f, ptr_vector<app>())->get_data().m_value.push_back(p);                    
+                    continue;
+                }
                 if (m.is_false(val)) {
                     m_asms.push_back(m.mk_not(p));
                 }
                 else {
                     m_asms.push_back(p);
                 }
+            }
+            select_map::iterator it = selects.begin(), end = selects.end();
+            for (; it != end; ++it) {
+                partition_selects(it->m_value);
             }
             asms.append(m_asms);
 
@@ -185,6 +210,58 @@ class qsat : public tactic {
                   model_v2_pp(tout, mdl);
                   q.display(tout, asms););
         }
+
+        void partition_selects(ptr_vector<app> const& ps) {
+            svector<bool> is_true;
+            
+            expr_ref val(m), fml(m), rhs(m);
+            app_ref p(m);
+            for (unsigned i = 0; i < ps.size(); ++i) {
+                VERIFY (q.m_model->eval(ps[i], val));
+                is_true.push_back(m.is_true(val));
+            }
+            for (unsigned i = 0; i < ps.size(); ++i) {
+                app* lit = to_app(q.m_pred2lit.find(ps[i]));
+                SASSERT(q.arr.is_select(lit));
+                if (is_true[i]) {
+                    m_asms.push_back(ps[i]);
+                }
+                else {
+                    // p => ps[i] = args belong to arguments where f evaluates to true.
+                    unsigned num_args = lit->get_num_args();
+                    expr_ref_vector disjs(m);
+                    for (unsigned j = 0; j < ps.size(); ++j) {
+                        if (is_true[j]) {
+                            expr_ref_vector eqs(m);
+                            app* lit_j = to_app(q.m_pred2lit.find(ps[j]));
+                            for (unsigned k = 1; k < num_args; ++k) {
+                                eqs.push_back(m.mk_eq(lit_j->get_arg(k), lit->get_arg(k)));
+                            }
+                            disjs.push_back(mk_and(eqs));
+                        }                        
+                    }
+                    rhs = mk_or(disjs);
+                    if (m.is_false(rhs)) {
+                        m_asms.push_back(m.mk_not(ps[i]));
+                    }
+                    else {
+                        p = q.fresh_bool("q");
+                        rhs = mk_iff(lit, rhs);
+                        max_level l = q.compute_level(ps[i]);
+                        q.m_elevel.insert(p, l);
+                        q.m_moves.insert(p, l);
+                        q.abstract_atoms(rhs, l);
+                        fml = m.mk_iff(p, q.mk_abstract(rhs));
+                        q.add_pred(p, to_app(rhs));
+                        
+                        TRACE("qe", tout << fml << " " << p << " = " << rhs << "\n";);
+                        q.m_ex.assert_expr(fml);
+                        q.m_fa.assert_expr(fml);
+                        m_asms.push_back(p);
+                    }
+                }                
+            }               
+        }        
 
         void display(std::ostream& out) const {
             for (unsigned i = 0; i < m_preds.size(); ++i) {
@@ -232,6 +309,10 @@ class qsat : public tactic {
     bool                       m_qelim;       // perform quantifier elimination
     bool                       m_epr;         // use EPR mode
     ptr_vector<expr>           todo;          // temporary variable for worklist
+    ptr_vector<sort>           m_sorts;
+    vector<symbol>             m_names;
+    app_ref_vector             m_avars;
+    app_ref_vector             m_pvars;
 
 
 
@@ -245,11 +326,12 @@ class qsat : public tactic {
             check_cancel();
             expr_ref_vector asms(m);
             m_moves.get_assumptions(asms);
-            lbool res = get_kernel(m_level).k().check(asms);
+            smt::kernel& k = get_kernel(m_level).k();
+            lbool res = k.check(asms);
             switch (res) {
             case l_true:
-                get_kernel(m_level).k().get_model(m_model);
-                TRACE("qe", display(tout, *m_model.get()); display(tout, asms););
+                k.get_model(m_model);
+                TRACE("qe", k.display(tout); display(tout << "\n", *m_model.get()); display(tout, asms); );
                 push();
                 break;
             case l_false:
@@ -304,11 +386,20 @@ class qsat : public tactic {
 
     void add_pred(app* p, app* lit) {
         m.inc_ref(p);
-        m.inc_ref(lit);
-        SASSERT(!m_lit2pred.contains(lit));
+        if (!m_lit2pred.contains(lit)) {
+            m.inc_ref(lit);
+            m_lit2pred.insert(lit, p);        
+        }
         m_pred2lit.insert(p, lit);
-        m_lit2pred.insert(lit, p);        
         ++m_stats.m_num_predicates;
+    }
+
+    template <typename T>
+    void dec_keys(obj_map<expr, T*>& map) {
+        obj_map<expr, T*>::iterator it = map.begin(), end = map.end();
+        for (; it != end; ++it) {
+            m.dec_ref(it->m_key);
+        }
     }
 
     void reset() {
@@ -318,11 +409,8 @@ class qsat : public tactic {
         m_moves.reset();
         m_vars.reset();
         m_model = 0;
-        obj_map<expr, expr*>::iterator it = m_pred2lit.begin(), end = m_pred2lit.end();
-        for (; it != end; ++it) {
-            m.dec_ref(it->m_key);
-            m.dec_ref(it->m_value);
-        }
+        dec_keys<expr>(m_pred2lit);
+        dec_keys<app>(m_lit2pred);
         m_lit2pred.reset();
         m_pred2lit.reset();
         m_elevel.reset();
@@ -440,6 +528,7 @@ class qsat : public tactic {
         unsigned sz0 = todo.size();
         todo.push_back(fml);
         m_trail.push_back(fml);
+        max_level l;
         while (sz0 != todo.size()) {
             app* a = to_app(todo.back());
             todo.pop_back();
@@ -454,10 +543,13 @@ class qsat : public tactic {
             }
 
             if (is_uninterp_const(a) && m.is_bool(a)) {
-                max_level l = m_elevel.find(a);
-                m_moves.insert(a, l);
+                l = m_elevel.find(a);
                 level.merge(l);
-                add_pred(a, a);
+
+                if (!m_pred2lit.contains(a)) {
+                    m_moves.insert(a, l);
+                    add_pred(a, a);
+                }
                 continue;
             }
 
@@ -596,8 +688,19 @@ class qsat : public tactic {
                 todo.pop_back();
                 continue;
             }
+            app* f;
             max_level lvl, lvl0;
             bool has_new = false;
+            if (is_select(a, f)) {
+                if (m_elevel.find(f, lvl)) {
+                    m_elevel.insert(a, lvl);
+                    todo.pop_back();
+                }
+                else {
+                    todo.push_back(f);
+                }
+                continue;
+            }
             for (unsigned i = 0; i < a->get_num_args(); ++i) {
                 app* arg = to_app(a->get_arg(i));
                 if (m_elevel.find(arg, lvl)) {
@@ -618,6 +721,7 @@ class qsat : public tactic {
 
     void get_core(expr_ref_vector& core, unsigned level) {
         get_kernel(level).get_core(core);
+        mk_concrete(core);
     }
 
     void check_cancel() {
@@ -642,36 +746,29 @@ class qsat : public tactic {
     }
 
     void display(std::ostream& out, expr_ref_vector const& asms) const {
-        expr* e = 0;
-        max_level lvl;
+        max_level lvl;       
         for (unsigned i = 0; i < asms.size(); ++i) {
+            expr* e = asms[i];
+            bool is_not = m.is_not(asms[i], e);
             out << mk_pp(asms[i], m);
-            if (m_elevel.find(asms[i], lvl)) {
+            if (m_elevel.find(e, lvl)) {
                 lvl.display(out << " - ");
             }
-            if (m_pred2lit.find(asms[i], e)) {
-                out << " : " << mk_pp(e, m);
+            if (m_pred2lit.find(e, e)) {
+                out << " : " << (is_not?"!":"") << mk_pp(e, m);
             }
             out << "\n";
         }
     }
 
     void project_qe(expr_ref_vector& core) {
-        if (m_epr) {
-            project_epr_qe(core);
-            return;
-        }
         SASSERT(m_level == 1);
         expr_ref fml(m), fml0(m);
         model& mdl = *m_model.get();
-        app_ref_vector vars(m);
-        get_core(core, 1);
-        for (unsigned i = 1; i < m_vars.size(); ++i) {
-            vars.append(m_vars[i]);
-        }
-        mk_concrete(core);
-        m_mbp(vars, mdl, core);
-        fml = mk_not(mk_and(core));
+        get_core(core, m_level);
+        get_vars(m_level);
+        m_mbp(m_avars, mdl, core);
+        fml = negate_core(core);
         m_ex.assert_expr(fml);
         m_answer.push_back(fml);
         pop(1);
@@ -681,70 +778,101 @@ class qsat : public tactic {
         get_core(core, m_level);
         TRACE("qe", display(tout); display(tout << "core\n", core););
         SASSERT(m_level >= 2);
-        app_ref_vector vars(m);
-        expr_ref fml(m), fml0(m), fml1(m); 
+        expr_ref fml(m); 
         max_level level;
         model& mdl = *m_model.get();
 
-        for (unsigned i = m_level-1; i < m_vars.size(); ++i) {
-            vars.append(m_vars[i]);
-        }
-        mk_concrete(core);
-        fml0 = mk_and(core);
-        m_mbp(vars, mdl, core);
-        fml = mk_and(core);
-        abstract_atoms(fml, level);
-        fml = mk_abstract(fml);
-        fml1 = mk_not(fml);
+        get_vars(m_level-1);
+        m_mbp(m_avars, mdl, core);
+        fml = negate_core(core);
         unsigned num_scopes = 0;
-        
-        if (level.max() == UINT_MAX) {
-            num_scopes = 2*(m_level/2);
+
+        if (m_pvars.empty()) {
+            abstract_atoms(fml, level);
+            fml = mk_abstract(fml);
+            if (level.max() == UINT_MAX) {
+                num_scopes = 2*(m_level/2);
+            }
+            else {
+                SASSERT(level.max() + 2 <= m_level);
+                num_scopes = m_level - level.max();
+                if (0 != (num_scopes % 2)) {
+                    --num_scopes;
+                }
+                SASSERT(num_scopes >= 2);
+                SASSERT((num_scopes % 2) == 0);
+            }
         }
         else {
-            SASSERT(level.max() + 2 <= m_level);
-            SASSERT(0 == ((m_level - level.max()) % 2));
-            num_scopes = m_level - level.max();
+            num_scopes = 2;
         }
-        TRACE("qe", tout << "backtrack: " << num_scopes << "\nproject:\n" << fml0 << "\n|->\n" << fml << "\n";);
+        
+        TRACE("qe", tout << "backtrack: " << num_scopes << "\nproject:\n" << core << "\n|->\n" << fml << "\n";);
         pop(num_scopes); 
-        get_kernel(m_level).assert_expr(fml1);
+        get_kernel(m_level).assert_expr(fml);
     }
 
-    void project_epr_qe(expr_ref_vector& core) {
-        SASSERT(m_level == 1);
-        expr_ref fml(m), fml0(m);
-        model& mdl = *m_model.get();
-        app_ref_vector varsp(m);
-        expr_ref_vector varsa(m);        
-        vector<symbol> names;
-        ptr_vector<sort> sorts;
-        get_core(core, 1);
-        for (unsigned i = 1; i < m_vars.size(); ++i) {
-            for (unsigned j = 0; j < m_vars[i].size(); ++j) {
-                app* v = m_vars[i][j].get();
-                if (is_array(v)) {
-                    varsp.push_back(v);
-                }
-                else {
-                    varsa.push_back(v);
-                    sorts.push_back(m.get_sort(v));
-                    names.push_back(v->get_decl()->get_name());
+    void get_vars(unsigned  level) {
+        m_avars.reset();
+        m_pvars.reset();
+        m_sorts.reset();
+        m_names.reset();
+        if (m_epr) {
+            for (unsigned i = level; i < m_vars.size(); ++i) {
+                for (unsigned j = 0; j < m_vars[i].size(); ++j) {
+                    app* v = m_vars[i][j].get();
+                    if (is_array(v)) {
+                        m_avars.push_back(v);
+                    }
+                    else {
+                        m_pvars.push_back(v);
+                        m_sorts.push_back(m.get_sort(v));
+                        m_names.push_back(v->get_decl()->get_name());
+                    }
                 }
             }
         }
-        mk_concrete(core);
-        m_mbp(varsp, mdl, core);
-        fml = mk_not(mk_and(core));
-        expr_abstract(m, 0, varsa.size(), varsa.c_ptr(), fml, fml);
-        fml = m.mk_forall(varsa.size(), sorts.c_ptr(), names.c_ptr(), fml);
-        m_ex.assert_expr(fml);
-        m_answer.push_back(fml);
-        pop(1);
+        else {
+            for (unsigned i = level; i < m_vars.size(); ++i) {
+                m_avars.append(m_vars[i]);
+            }
+        }                
+    }
+
+    expr_ref negate_core(expr_ref_vector& core) {
+        expr_ref fml(m);
+        m_mbp.solve(*m_model.get(), m_pvars, core);
+        fml = mk_not(::mk_and(core));
+        if (!m_pvars.empty()) {
+            expr_abstract(m, 0, m_pvars.size(), (expr*const*)m_pvars.c_ptr(), fml, fml);
+            fml = m.mk_forall(m_pvars.size(), m_sorts.c_ptr(), m_names.c_ptr(), fml);
+        }
+        return fml;
     }
 
     bool is_array(expr* e) {
         return arr.is_array(m.get_sort(e));
+    }
+
+    unsigned get_select_arg_level(app* p) {
+        SASSERT(arr.is_select(p));
+        max_level level;
+        for (unsigned i = 1; i < p->get_num_args(); ++i) {
+            level.merge(m_elevel.find(p->get_arg(i)));
+        }
+        unsigned lvl = level.max();
+        return (lvl == UINT_MAX)?0:lvl;
+    }
+
+
+    bool is_select(expr* e, app*& f) {
+        if (arr.is_select(e)) {
+            f = to_app(to_app(e)->get_arg(0));
+            return true;
+        }
+        else {
+            return false;
+        }
     }
 
 
@@ -762,7 +890,9 @@ public:
         m_level(0),
         m_cancel(false),
         m_qelim(qelim),
-        m_epr(false)
+        m_epr(false),
+        m_avars(m),
+        m_pvars(m)
     {
         reset();
     }

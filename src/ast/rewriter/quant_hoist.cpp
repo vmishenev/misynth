@@ -73,7 +73,7 @@ public:
         unsigned nd = q->get_num_decls();
         for (unsigned i = 0; i < nd; ++i) {
             sort* s = q->get_decl_sort(i);
-            app* a = m.mk_fresh_const("x", s);
+            app* a = m.mk_fresh_const(q->get_decl_name(i).str().c_str(), s);
             vars.push_back(a);
         }
         expr * const * exprs = (expr* const*) (vars.c_ptr() + vars.size()- nd);

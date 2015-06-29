@@ -110,11 +110,13 @@ namespace qe {
         imp(ast_manager& m): m(m), a(m) {}
         ~imp() {}
 
-        virtual void operator()(app_ref_vector& vars, expr_ref_vector& lits) {
+        virtual bool solve(model& model, app_ref_vector& vars, expr_ref_vector& lits) {
+            return false;
         }
 
         bool operator()(model& model, app* var, app_ref_vector& vars, expr_ref_vector& lits) {
 
+            TRACE("qe", tout << mk_pp(var, m) << "\n" << lits;);
             m_var = alloc(contains_app, m, var);
 
             // reduce select-store redeces based on model.
@@ -122,11 +124,11 @@ namespace qe {
             // rw(lits);
 
             // try first to solve for var.
-            if (solve(model, vars, lits)) {
+            if (solve_eq(model, vars, lits)) {
                 return true;
             } 
 
-            ptr_vector<app> selects;
+            app_ref_vector selects(m);
 
             // check that only non-select occurrences are in disequalities.
             if (!check_diseqs(lits, selects)) {
@@ -142,11 +144,12 @@ namespace qe {
             // that is congruent to model value.
 
             ackermanize_select(model, selects, vars, lits);
-            
+           
+            TRACE("qe", tout << selects << "\n" << lits << "\n";);
             return true;
         }
 
-        void ackermanize_select(model& model, ptr_vector<app> const& selects, app_ref_vector& vars, expr_ref_vector& lits) {
+        void ackermanize_select(model& model, app_ref_vector const& selects, app_ref_vector& vars, expr_ref_vector& lits) {
             expr_ref_vector vals(m), reps(m);
             expr_ref val(m);
             expr_safe_replace sub(m);
@@ -161,49 +164,24 @@ namespace qe {
                 VERIFY (model.eval(selects[i], val));
                 model.register_decl(sel->get_decl(), val);
                 vals.push_back(to_app(val));
-                reps.push_back(sel);               // TODO: direct pass could handle nested selects.
+                reps.push_back(val);               // TODO: direct pass could handle nested selects.
                 vars.push_back(sel);
-                sub.insert(selects[i], sel);
+                sub.insert(selects[i], val);
             }
 
+            sub(lits);
+            remove_true(lits);
+            project_plugin::partition_args(model, selects, lits);
+            project_plugin::partition_values(model, reps, lits);
+        }
+
+        void remove_true(expr_ref_vector& lits) {
             for (unsigned i = 0; i < lits.size(); ++i) {
-                sub(lits[i].get(), val);
-                lits[i] = val;
-            }
-            
-            partition_values(model, reps, lits);
-            unsigned num_args = selects[0]->get_decl()->get_arity();
-            for (unsigned j = 1; j < num_args; ++j) {
-                expr_ref_vector args(m);            
-                for (unsigned i = 0; i < selects.size(); ++i) {
-                    args.push_back(selects[i]->get_arg(j));
+                if (m.is_true(lits[i].get())) {
+                    project_plugin::erase(lits, i);
                 }
-                partition_values(model, args, lits);
-            }
-
+            }            
         }
-
-        void partition_values(model& model, expr_ref_vector const& vals, expr_ref_vector& lits) {
-            expr_ref val(m);
-            expr_ref_vector trail(m);
-            obj_map<expr, expr*> roots;
-            for (unsigned i = 0; i < vals.size(); ++i) {
-                expr* v = vals[i], *root;
-                VERIFY (model.eval(v, val));
-                if (roots.find(val, root)) {
-                    lits.push_back(m.mk_eq(v, root));
-                }
-                else {
-                    roots.insert(val, v);
-                    trail.push_back(val);
-                }
-            }
-            if (trail.size() > 1) {
-                lits.push_back(m.mk_distinct(trail.size(), trail.c_ptr()));
-                // TBD use more elaborate comparison
-            }
-        }
-
 
         bool contains_x(expr* e) {
             return (*m_var)(e);
@@ -217,7 +195,7 @@ namespace qe {
         }
         
         // check that x occurs only under selects or in disequalities.
-        bool check_diseqs(expr_ref_vector const& lits, ptr_vector<app>& selects) {
+        bool check_diseqs(expr_ref_vector const& lits, app_ref_vector& selects) {
             expr_mark mark;
             ptr_vector<app> todo;
             app* e;
@@ -240,15 +218,15 @@ namespace qe {
                 if (m_var->x() == e) {
                     return false;
                 }
+                unsigned start = 0;
                 if (a.is_select(e)) {
-                    unsigned start = 0;
                     if (e->get_arg(0) == m_var->x()) {
                         start = 1;
                         selects.push_back(e);
                     } 
-                    for (unsigned i = start; i < e->get_num_args(); ++i) {
-                        todo.push_back(to_app(e->get_arg(i)));
-                    }
+                }
+                for (unsigned i = start; i < e->get_num_args(); ++i) {
+                    todo.push_back(to_app(e->get_arg(i)));
                 }
             }
             return true;
@@ -257,9 +235,7 @@ namespace qe {
         void elim_diseqs(expr_ref_vector& lits) {
             for (unsigned i = 0; i < lits.size(); ++i) {
                 if (is_diseq_x(lits[i].get())) {
-                    lits[i] = lits.back();
-                    lits.pop_back();
-                    --i;
+                    project_plugin::erase(lits, i);
                 }
             }
         }
@@ -292,15 +268,16 @@ namespace qe {
             return false;
         }
 
-        bool solve(model& model, app_ref_vector& vars, expr_ref_vector& lits) {
+        bool solve_eq(model& model, app_ref_vector& vars, expr_ref_vector& lits) {
             // find an equality to solve for.
             expr* s, *t;
             for (unsigned i = 0; i < lits.size(); ++i) {
                 if (m.is_eq(lits[i].get(), s, t)) {
                     vector<indices> idxs;
-                    expr_ref save(m);
+                    expr_ref save(m), back(m);
                     save = lits[i].get();
-                    lits[i] = lits.back();
+                    back = lits.back();
+                    lits[i] = back;
                     lits.pop_back();
                     unsigned sz = lits.size();
                     if (contains_x(s) && !contains_x(t) && is_app(s)) {
@@ -315,9 +292,10 @@ namespace qe {
                     }
                     // put back the equality literal.
                     lits.resize(sz);
-                    lits.push_back(lits[i].get());
+                    lits.push_back(back);
                     lits[i] = save;
                 }
+                // TBD: not distinct?
             }
             return false;
         }
@@ -435,6 +413,10 @@ namespace qe {
     
     bool array_project_plugin::operator()(model& model, app* var, app_ref_vector& vars, expr_ref_vector& lits) {
         return (*m_imp)(model, var, vars, lits);
+    }
+
+    bool array_project_plugin::solve(model& model, app_ref_vector& vars, expr_ref_vector& lits) {
+        return m_imp->solve(model, vars, lits);
     }
     
     family_id array_project_plugin::get_family_id() {

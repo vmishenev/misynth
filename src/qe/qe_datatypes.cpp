@@ -37,7 +37,7 @@ namespace qe {
         imp(ast_manager& m):
             m(m), dt(m), m_val(m) {}
         
-        virtual bool operator()(app_ref_vector& vars, expr_ref_vector& lits) {
+        virtual bool solve(model& model, app_ref_vector& vars, expr_ref_vector& lits) {
             return lift_foreign(vars, lits);
         }
 
@@ -92,8 +92,7 @@ namespace qe {
             expr_ref_vector eqs(m);
             for (unsigned i = 0; i < lits.size(); ++i) {
                 if (solve(model, vars, lits[i].get(), rhs, eqs)) {
-                    lits[i] = lits.back();
-                    lits.pop_back();
+                    project_plugin::erase(lits, i);
                     reduce(rhs, lits);
                     lits.append(eqs);
                     return;
@@ -134,6 +133,10 @@ namespace qe {
                 if (contains_x(t2) && !contains_x(t1) && is_app(t2)) {
                     return solve(model, vars, to_app(t2), t1, t, eqs);
                 }
+            }
+            if (m.is_not(fml, t1) && m.is_distinct(t1)) {
+                expr_ref eq = project_plugin::pick_equality(m, model, t1);
+                return solve(model, vars, eq, t, eqs);
             }
             return false;
         }
@@ -189,7 +192,6 @@ namespace qe {
         }
 
         bool lift_foreign(app_ref_vector const& vars, expr_ref_vector& lits) {
-            TRACE("qe", tout << vars << "\n" << lits << "\n";);
 
             bool reduced = false;
             expr_mark visited;
@@ -206,13 +208,12 @@ namespace qe {
                 for (unsigned i = 0; i < lits.size(); ++i) {
                     expr* e = lits[i].get(), *l, *r;
                     if (m.is_eq(e, l, r) && reduce_eq(visited, has_var, l, r, lits)) {
-                        lits[i] = lits.back();
-                        lits.pop_back();
+                        project_plugin::erase(lits, i);
                         reduced = true;
                     }
                 }
+                CTRACE("qe", reduced, tout << vars << "\n" << lits << "\n";);
             }
-            TRACE("qe", tout << vars << "\n" << lits << "\n";);
             return reduced;
         }
 
@@ -296,8 +297,8 @@ namespace qe {
         return (*m_imp)(model, var, vars, lits);
     }
 
-    bool datatype_project_plugin::operator()(app_ref_vector& vars, expr_ref_vector& lits) {
-        return (*m_imp)(vars, lits);
+    bool datatype_project_plugin::solve(model& model, app_ref_vector& vars, expr_ref_vector& lits) {
+        return m_imp->solve(model, vars, lits);
     }
 
     

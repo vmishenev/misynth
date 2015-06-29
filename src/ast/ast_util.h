@@ -133,6 +133,13 @@ expr * mk_not(ast_manager & m, expr * arg);
 expr * expand_distinct(ast_manager & m, unsigned num_args, expr * const * args);
 
 /**
+   Create simplified distinct term. Binary distinct becomes a single disequality.
+ */
+expr * mk_distinct(ast_manager& m, unsigned num_args, expr * const * args);
+
+expr_ref mk_distinct(expr_ref_vector const& args);
+
+/**
    \brief Collect top-level conjunctions and disjunctions.
 */
 

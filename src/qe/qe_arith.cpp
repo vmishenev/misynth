@@ -185,6 +185,10 @@ namespace qe {
                 c.reset();
                 return true;
             }
+            else if (m.is_distinct(lit) && is_not && is_arith(to_app(lit)->get_arg(0))) {
+                expr_ref eq = project_plugin::pick_equality(m, model, to_app(lit)->get_arg(0));
+                return is_linear(model, eq, found_eq);
+            }
             else if (m.is_eq(lit, e1, e2) && is_not && is_arith(e1)) {
                 expr_ref val1(m), val2(m);
                 rational r1, r2;
@@ -737,61 +741,9 @@ namespace qe {
         ~imp() {
         }
 
-        bool operator()(app_ref_vector& vars, expr_ref_vector& lits) {
-            expr_mark is_var, is_rem;
-            bool inserted = false;
-            bool reduced = false;
-            for (unsigned i = 0; i < vars.size(); ++i) { 
-                if (is_arith(vars[i].get())) {
-                    is_var.mark(vars[i].get());
-                    inserted = true;
-                }
-            }
-            if (!inserted) {
-                return false;
-            }
-            expr_ref tmp(m), t(m), v(m);            
-            for (unsigned i = 0; i < lits.size(); ++i) {
-                expr* e = lits[i].get(), *l, *r;
-                if (m.is_eq(e, l, r) && reduce_eq(is_var, l, r, v, t)) {
-                    reduced = true;
-                    lits[i] = lits.back();
-                    lits.pop_back();
-                    expr_safe_replace sub(m);
-                    sub.insert(v, t);
-                    is_rem.mark(v);
-                    for (unsigned j = 0; j < lits.size(); ++j) {
-                        sub(lits[j].get(), tmp);
-                        lits[j] = tmp;
-                    }
-                }
-            }
-            if (reduced) {
-                for (unsigned i = 0; i < vars.size(); ++i) {
-                    if (is_rem.is_marked(vars[i].get())) {
-                        vars[i] = vars.back();
-                        vars.pop_back();
-                    }
-                }
-            }
-            return reduced;
-        }
-
-        bool reduce_eq(expr_mark& is_var, expr* l, expr* r, expr_ref& v, expr_ref& t) {
-            if (is_var.is_marked(r)) {
-                std::swap(l, r);
-            }
-            if (is_var.is_marked(l)) {
-                m_var = alloc(contains_app, m, to_app(l));
-                if (!(*m_var)(r)) {
-                    v = to_app(l);
-                    t = r;
-                    return true;
-                }
-            }
+        bool solve(model& model, app_ref_vector& vars, expr_ref_vector& lits) {
             return false;
         }
-
 
         bool operator()(model& model, app* v, app_ref_vector& vars, expr_ref_vector& lits) {
             SASSERT(a.is_real(v) || a.is_int(v));
@@ -819,8 +771,8 @@ namespace qe {
         return (*m_imp)(model, var, vars, lits);
     }
 
-    bool arith_project_plugin::operator()(app_ref_vector& vars, expr_ref_vector& lits) {
-        return (*m_imp)(vars, lits);
+    bool arith_project_plugin::solve(model& model, app_ref_vector& vars, expr_ref_vector& lits) {
+        return m_imp->solve(model, vars, lits);
     }
 
     family_id arith_project_plugin::get_family_id() {
