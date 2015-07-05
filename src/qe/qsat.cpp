@@ -339,9 +339,21 @@ class qsat : public tactic {
                 case 0: return l_false;
                 case 1: 
                     if (!m_qelim) return l_true; 
-                    project_qe(asms);
+                    if (m_model.get()) {
+                        project_qe(asms);
+                    }
+                    else {
+                        pop(1);
+                    }
                     break;
-                default: project(asms); break;
+                default: 
+                    if (m_model.get()) {
+                        project(asms); 
+                    }
+                    else {
+                        pop(1);
+                    }
+                    break;
                 }
                 break;
             case l_undef:
@@ -379,6 +391,7 @@ class qsat : public tactic {
     }
 
     void pop(unsigned num_scopes) {
+        m_model.reset();
         SASSERT(num_scopes <= m_level);
         m_moves.pop(num_scopes);
         m_level -= num_scopes;
@@ -796,11 +809,7 @@ class qsat : public tactic {
             else {
                 SASSERT(level.max() + 2 <= m_level);
                 num_scopes = m_level - level.max();
-                if (0 != (num_scopes % 2)) {
-                    --num_scopes;
-                }
                 SASSERT(num_scopes >= 2);
-                SASSERT((num_scopes % 2) == 0);
             }
         }
         else {
@@ -810,6 +819,7 @@ class qsat : public tactic {
         TRACE("qe", tout << "backtrack: " << num_scopes << "\nproject:\n" << core << "\n|->\n" << fml << "\n";);
         pop(num_scopes); 
         get_kernel(m_level).assert_expr(fml);
+        get_kernel(m_level+1).assert_expr(fml);
     }
 
     void get_vars(unsigned  level) {
