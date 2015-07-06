@@ -91,10 +91,10 @@ namespace qe {
             if (t == m_var->x()) {
                 c += mul;
             }
-            else if (a.is_mul(t, t1, t2) && a.is_numeral(t1, mul1)) {
+            else if (a.is_mul(t, t1, t2) && is_numeral(model, t1, mul1)) {
                 is_linear(model, mul* mul1, t2, c, ts);
             }
-            else if (a.is_mul(t, t1, t2) && a.is_numeral(t2, mul1)) {
+            else if (a.is_mul(t, t1, t2) && is_numeral(model, t2, mul1)) {
                 is_linear(model, mul* mul1, t1, c, ts);
             }
             else if (a.is_add(t)) {
@@ -212,12 +212,12 @@ namespace qe {
             }
             t = add(ts);
             if (ty == t_eq && c.is_neg()) {
-                t = a.mk_uminus(t);
+                t = mk_uminus(t);
                 c.neg();
             }
             if (ty == t_eq && c > rational(1)) {
                 m_ineq_coeffs.push_back(-c);
-                m_ineq_terms.push_back(a.mk_uminus(t));
+                m_ineq_terms.push_back(mk_uminus(t));
                 m_ineq_types.push_back(t_le);
                 m_num_neg++;
                 ty = t_le;
@@ -225,6 +225,46 @@ namespace qe {
             accumulate_linear(model, c, t, ty);
             found_eq = !c.is_zero() && ty == t_eq;
             return true;
+        }
+
+        bool is_numeral(model& model, expr* t, rational& r) {
+            expr* t1, *t2, *t3;
+            rational r1, r2;
+            expr_ref val(m);
+            if (a.is_numeral(t, r)) return true;
+
+            if (a.is_uminus(t, t1) && is_numeral(model, t1, r)) {
+                r.neg();
+                return true;
+            }         
+            else if (a.is_mul(t, t1, t2) && is_numeral(model, t1, r1) && is_numeral(model, t2, r2)) {
+                r = r1*r2;
+                return true;
+            }
+            else if (a.is_add(t)) {
+                app* ap = to_app(t);
+                r = rational(1);
+                for (unsigned i = 0; i < ap->get_num_args(); ++i) {
+                    if (!is_numeral(model, ap->get_arg(i), r1)) return false;
+                    r *= r1;
+                }
+                return true;
+            }
+            else if (m.is_ite(t, t1, t2, t3)) {
+                VERIFY (model.eval(t1, val));
+                if (m.is_true(val)) {
+                    return is_numeral(model, t1, r);
+                }
+                else {
+                    return is_numeral(model, t2, r);
+                }
+            }
+            else if (a.is_sub(t, t1, t2) && is_numeral(model, t1, r1) && is_numeral(model, t2, r2)) {
+                r = r1 - r2;
+                return true;
+            }
+            
+            return false;
         }
 
         struct compare_second {
@@ -270,10 +310,12 @@ namespace qe {
         }
 
         expr_ref add(expr_ref_vector const& ts) {
-            if (ts.empty()) {
+            switch (ts.size()) {
+            case 0:
                 return mk_num(0);
-            }
-            else {
+            case 1:
+                return expr_ref(ts[0], m);
+            default:
                 return expr_ref(a.mk_add(ts.size(), ts.c_ptr()), m);
             }
         }
@@ -303,7 +345,7 @@ namespace qe {
                 SASSERT (a.is_numeral(val));
                 TRACE("qe", tout << "extract: " << mk_pp(e, m) << " evals: " << val << " c: " << c << " t: " << t << "\n";);
                 if (!c.is_zero()) {
-                    t = a.mk_sub(t, val);
+                    t = mk_sub(t, val);
                     m_div_terms.push_back(t);
                     m_div_divisors.push_back(k);
                     m_div_coeffs.push_back(c);
@@ -635,6 +677,21 @@ namespace qe {
             return expr_ref(a.mk_mul(mk_num(r), t), m);
         }
 
+        expr_ref mk_sub(expr* t1, expr* t2) {
+            rational r1, r2;
+            if (a.is_numeral(t2, r2) && r2.is_zero()) return expr_ref(t1, m);
+            if (a.is_numeral(t1, r1) && a.is_numeral(t2, r2)) return mk_num(r1 - r2);
+            return expr_ref(a.mk_sub(t1, t2), m);
+        }
+
+        expr_ref mk_uminus(expr* t) {
+            rational r;
+            if (a.is_numeral(t, r)) {
+                return mk_num(-r);
+            }
+            return expr_ref(a.mk_uminus(t), m);
+        }
+
         void add_lit(model& model, expr_ref_vector& lits, expr* e) { 
             expr_ref orig(e, m), result(m);
             m_rw(orig, result);            
@@ -659,12 +716,12 @@ namespace qe {
             
             for (unsigned i = 0; i < num_divs(); ++i) {
                 add_lit(model, lits, mk_divides(c*div_divisor(i), 
-                                                a.mk_sub(mk_mul(c, div_term(i)), mk_mul(div_coeff(i), t))));
+                                                mk_sub(mk_mul(c, div_term(i)), mk_mul(div_coeff(i), t))));
             }
             for (unsigned i = 0; i < num_ineqs(); ++i) {
                 if (eq_index != i) {
                     expr_ref lhs(m);
-                    lhs = a.mk_sub(mk_mul(c, ineq_term(i)), mk_mul(ineq_coeff(i), t));
+                    lhs = mk_sub(mk_mul(c, ineq_term(i)), mk_mul(ineq_coeff(i), t));
                     switch (ineq_ty(i)) {
                     case t_lt: lhs = a.mk_lt(lhs, mk_num(0)); break;
                     case t_le: lhs = a.mk_le(lhs, mk_num(0)); break;
