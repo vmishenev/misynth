@@ -16,8 +16,8 @@ Author:
 Revision History:
 
 --*/
-#ifndef _DDNF__H_
-#define _DDNF__H_
+#ifndef DDNF_H_
+#define DDNF_H_
 
 #include "ast.h"
 #include "lbool.h"

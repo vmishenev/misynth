@@ -16,8 +16,8 @@ Author:
 Revision History:
 
 --*/
-#ifndef _THEORY_ARITH_CORE_H_
-#define _THEORY_ARITH_CORE_H_
+#ifndef THEORY_ARITH_CORE_H_
+#define THEORY_ARITH_CORE_H_
 
 #include"smt_context.h"
 #include"theory_arith.h"
@@ -2154,6 +2154,7 @@ namespace smt {
         CASSERT("arith", wf_rows());
         CASSERT("arith", wf_columns());
         CASSERT("arith", valid_row_assignment());
+        CASSERT("arith", satisfy_bounds());
         return true;
     }
 
@@ -3317,5 +3318,5 @@ namespace smt {
 
 };
 
-#endif /* _THEORY_ARITH_CORE_H_ */
+#endif /* THEORY_ARITH_CORE_H_ */
 

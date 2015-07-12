@@ -16,8 +16,8 @@ Author:
 Revision History:
 
 --*/
-#ifndef _THEORY_ARITH_INV_H_
-#define _THEORY_ARITH_INV_H_
+#ifndef THEORY_ARITH_INV_H_
+#define THEORY_ARITH_INV_H_
 
 #include"theory_arith.h"
 #include"ast_pp.h"
@@ -196,6 +196,7 @@ namespace smt {
             CTRACE("bound_bug", below_lower(v) || above_upper(v), display_var(tout, v); display(tout););
             SASSERT(!below_lower(v));
             SASSERT(!above_upper(v));
+            if (below_lower(v) || above_upper(v)) return false;
         }
         return true;
     }
@@ -227,5 +228,5 @@ namespace smt {
 
 };
 
-#endif /* _THEORY_ARITH_INV_H_ */
+#endif /* THEORY_ARITH_INV_H_ */
 

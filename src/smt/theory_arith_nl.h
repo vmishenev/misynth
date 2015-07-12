@@ -16,8 +16,8 @@ Author:
 Revision History:
 
 --*/
-#ifndef _THEORY_ARITH_NL_H_
-#define _THEORY_ARITH_NL_H_
+#ifndef THEORY_ARITH_NL_H_
+#define THEORY_ARITH_NL_H_
 
 #include"ast_smt2_pp.h"
 
@@ -2238,6 +2238,9 @@ namespace smt {
                 m_nl_gb_exhausted = true;
                 warn              = true;
             }
+            if (get_context().get_cancel_flag()) {
+                return GB_FAIL;
+            }
             TRACE("non_linear_gb", tout << "after:\n"; gb.display(tout););
             // Scan the grobner basis eqs, and look for inconsistencies.
             eqs.reset();
@@ -2440,5 +2443,5 @@ namespace smt {
 };
 
 
-#endif /* _THEORY_ARITH_NL_H_ */
+#endif /* THEORY_ARITH_NL_H_ */
 
