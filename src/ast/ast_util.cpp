@@ -195,6 +195,35 @@ expr * mk_not(ast_manager & m, expr * arg) {
         return m.mk_not(arg);
 }
 
+expr_ref push_not(expr_ref& e) {
+    ast_manager& m = e.get_manager();
+    if (!is_app(e)) {
+        return expr_ref(m.mk_not(e), m);
+    }
+    app* a = to_app(e);
+    if (m.is_and(a)) {
+        if (a->get_num_args() == 0) {
+            return expr_ref(m.mk_false(), m);
+        }
+        expr_ref_vector args(m);
+        for (unsigned i = 0; i < a->get_num_args(); ++i) {
+            args.push_back(push_not(expr_ref(a->get_arg(i), m)));
+        }
+        return mk_or(args);
+    }
+    if (m.is_or(a)) {
+        if (a->get_num_args() == 0) {
+            return expr_ref(m.mk_true(), m);
+        }
+        expr_ref_vector args(m);
+        for (unsigned i = 0; i < a->get_num_args(); ++i) {
+            args.push_back(push_not(expr_ref(a->get_arg(i), m)));
+        }
+        return mk_and(args);
+    }
+    return expr_ref(mk_not(m, e), m);    
+}
+
 expr * expand_distinct(ast_manager & m, unsigned num_args, expr * const * args) {
     expr_ref_buffer new_diseqs(m);
     for (unsigned i = 0; i < num_args; i++) {

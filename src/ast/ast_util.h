@@ -128,6 +128,11 @@ inline expr_ref mk_or(expr_ref_vector const& args) { return expr_ref(mk_or(args.
 expr * mk_not(ast_manager & m, expr * arg);
 
 /**
+   Negate and push over conjunction or disjunction.
+ */
+expr_ref push_not(expr_ref& arg);
+
+/**
    Return the expression (and (not (= args[0] args[1])) (not (= args[0] args[2])) ... (not (= args[num_args-2] args[num_args-1])))
 */
 expr * expand_distinct(ast_manager & m, unsigned num_args, expr * const * args);
