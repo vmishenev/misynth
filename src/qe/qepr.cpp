@@ -113,6 +113,8 @@ namespace qe {
             ++m_level;
         }
 
+        typedef obj_map<func_decl, ptr_vector<app> > pred2occs;
+
         void project(expr_ref_vector& core) {
             expr_ref fml(m);
             SASSERT(m_level > 0);
@@ -127,9 +129,43 @@ namespace qe {
             }
 
             model& mdl = *m_model.get();
-            
-            // TBD
 
+            pred2occs pos, neg;
+
+            if (m_level == 2) {
+                expr_ref_vector new_core(m);
+                for (unsigned i = 0; i < core.size(); ++i) {
+                    expr* e = core[i].get(), *ne;
+                    if (is_bound_predicate(e)) {
+                        add_predicate(pos, e);
+                    }
+                    else if (m.is_not(e, ne) && is_bound_predicate(ne)) {
+                        add_predicate(neg, ne);
+                    }
+                    else {
+                        new_core.push_back(e);
+                    }
+                }
+                
+                // remove m_bound_preds
+                // retain disequalities that are required by bound_preds.
+                // e.g, if Q(z) and !Q(u), then z != u
+                // 
+
+            }
+
+            // m_level = 3:
+            // just create negated core.
+
+            
+            fml = negate_core(core);
+            m_ex.assert_expr(fml);
+            m_fa.assert_expr(fml);
+            m_level -= 2;
+        }
+
+        void add_predicate(pred2occs& map, expr* p) {
+            // TBD
         }
 
         void get_core(expr_ref_vector& core, unsigned level) {
@@ -139,24 +175,61 @@ namespace qe {
             for (unsigned i = 0; i < sz; ++i) {
                 core.push_back(k.get_unsat_core_expr(i));
             }
+            m_pred_abs.mk_concrete(core);
             TRACE("qe", tout << "core: " << core << "\n"; k.display(tout); tout << "\n";);
         }
 
         void get_assumptions(expr_ref_vector& asms) {
-            m_pred_abs.get_assumptions(m_model.get(), asms);
             switch (m_level) {
             case 0:
                 break;
-            case 1:
+            case 1: 
+            case 3: {
                 // extract equalities between free variables (and bound vars).
                 // evaluation of free predicates
+                app_ref_vector vars(m);
+                vars.append(m_free_vars);
+                vars.append(m_bound_vars);
+                extract_equalities(vars);
                 break;
+            }
             case 2:
                 // evaluation of m_preds
                 break;
-            case 3:
-                // equalities updated for bound variables.
+            default:
+                UNREACHABLE();
                 break;
+            }
+            m_pred_abs.get_assumptions(m_model.get(), asms);
+        }
+
+        /**
+           \brief Create fresh equality atoms for each equality that holds in current model among vars.
+         */
+        void extract_equalities(app_ref_vector const& vars) {
+            expr_ref_vector trail(m), defs(m);
+            expr_ref eq(m), val(m), pred(m);
+            obj_map<expr, expr*> val2var;
+            expr* var;
+            model& mdl = *m_model.get();
+            for (unsigned i = 0; i < vars.size(); ++i) {
+                VERIFY(mdl.eval(vars[i], val));
+                if (val2var.find(val, var)) {
+                    max_level level;
+                    eq = m.mk_eq(var, vars[i]);
+                    m_pred_abs.abstract_atoms(eq, level, defs);
+                }
+                else {
+                    val2var.insert(val, vars[i]);
+                    trail.push_back(val);
+                }
+            }
+            for (unsigned j = 0; j < defs.size(); ++j) {
+                SASSERT(m.is_eq(defs[j].get()));
+                app* p = to_app(to_app(defs[j].get())->get_arg(0));
+                mdl.register_decl(p->get_decl(), m.mk_true());
+                m_fa.assert_expr(defs[j].get());
+                m_ex.assert_expr(defs[j].get());
             }
         }
      
@@ -226,6 +299,12 @@ namespace qe {
                     todo.push_back(a->get_arg(i));
                 }                    
             }            
+        }
+
+        bool is_bound_predicate(expr* e) {
+            return 
+                is_app(e) && 
+                is_bound_predicate(to_app(e)->get_decl());
         }
 
         bool is_bound_predicate(func_decl* d) {
@@ -365,58 +444,6 @@ tactic * mk_epr_qe_tactic(ast_manager& m, params_ref const& p) {
 }
 
 #if 0
-
-        m_pvars.reset();
-        m_sorts.reset();
-        m_names.reset();
-        if (m_epr) {
-            for (unsigned i = level; i < m_vars.size(); ++i) {
-                for (unsigned j = 0; j < m_vars[i].size(); ++j) {
-                    app* v = m_vars[i][j].get();
-                    if (is_array(v)) {
-                        m_avars.push_back(v);
-                    }
-                    else {
-                        m_pvars.push_back(v);
-                        m_sorts.push_back(m.get_sort(v));
-                        m_names.push_back(v->get_decl()->get_name());
-                    }
-                }
-            }
-        }
-
-
-            if (is_select(a, f)) {
-                if (m_elevel.find(f, lvl)) {
-                    m_elevel.insert(a, lvl);
-                    todo.pop_back();
-                }
-                else {
-                    todo.push_back(f);
-                }
-                continue;
-            }
-
-    unsigned get_select_arg_level(app* p) {
-        SASSERT(arr.is_select(p));
-        max_level level;
-        for (unsigned i = 1; i < p->get_num_args(); ++i) {
-            level.merge(m_elevel.find(p->get_arg(i)));
-        }
-        unsigned lvl = level.max();
-        return (lvl == UINT_MAX)?0:lvl;
-    }
-
-
-    bool is_select(expr* e, app*& f) {
-        if (arr.is_select(e)) {
-            f = to_app(to_app(e)->get_arg(0));
-            return true;
-        }
-        else {
-            return false;
-        }
-    }
 
             select_map::iterator it = selects.begin(), end = selects.end();
             for (; it != end; ++it) {

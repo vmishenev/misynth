@@ -220,7 +220,7 @@ namespace qe {
                 TRACE("qe", tout << mk_pp(a, m) << "\n";);
                 r = fresh_bool("p");
                 add_pred(r, a);
-                eq = m.mk_eq(a, r);
+                eq = m.mk_eq(r, a);
                 defs.push_back(eq);
                 max_level l = compute_level(a);
                 m_elevel.insert(r, l);
