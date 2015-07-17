@@ -334,6 +334,10 @@ namespace qe {
             fmls[i] = to_app(cache.find(fmls[i].get()));
         }
     }
+
+    void pred_abs::collect_statistics(statistics& st) const {
+        st.update("qsat num predicates", m_pred2lit.size());
+    }
         
     void pred_abs::display(std::ostream& out) const {
         out << "pred2lit:\n";
@@ -402,7 +406,6 @@ namespace qe {
 class qsat : public tactic {
 
     struct stats {
-        unsigned m_num_predicates;
         unsigned m_num_rounds;        
         stats() { reset(); }
         void reset() { memset(this, 0, sizeof(*this)); }
@@ -538,14 +541,15 @@ class qsat : public tactic {
     }
 
     void reset() {
+        m_fa.k().collect_statistics(m_st);
+        m_ex.k().collect_statistics(m_st);        
+        m_pred_abs.collect_statistics(m_st);
         m_level = 0;
         m_answer.reset();
         m_pred_abs.reset();
         m_vars.reset();
         m_model = 0;
         m_st.reset();        
-        m_fa.k().collect_statistics(m_st);
-        m_ex.k().collect_statistics(m_st);
         m_fa.k().reset();
         m_ex.k().reset();        
         m_cancel = false;
@@ -779,8 +783,8 @@ public:
 
     void collect_statistics(statistics & st) const {
         st.copy(m_st);
-        st.update("qsat num predicates", m_stats.m_num_predicates);
         st.update("qsat num rounds", m_stats.m_num_rounds); 
+        m_pred_abs.collect_statistics(st);
     }
 
     void reset_statistics() {

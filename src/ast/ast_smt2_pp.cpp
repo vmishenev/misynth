@@ -1173,6 +1173,14 @@ std::ostream& operator<<(std::ostream& out, app_ref const&  e) {
     return out << mk_ismt2_pp(e.get(), e.get_manager());
 }
 
+std::ostream& operator<<(std::ostream& out, func_decl_ref const&  e) {
+    return out << mk_ismt2_pp(e.get(), e.get_manager());
+}
+
+std::ostream& operator<<(std::ostream& out, sort_ref const&  e) {
+    return out << mk_ismt2_pp(e.get(), e.get_manager());
+}
+
 std::ostream& operator<<(std::ostream& out, expr_ref_vector const&  e) {
     for (unsigned i = 0; i < e.size(); ++i) 
         out << mk_ismt2_pp(e[i], e.get_manager()) << "\n";
@@ -1180,6 +1188,18 @@ std::ostream& operator<<(std::ostream& out, expr_ref_vector const&  e) {
 }
 
 std::ostream& operator<<(std::ostream& out, app_ref_vector const&  e) {
+    for (unsigned i = 0; i < e.size(); ++i) 
+        out << mk_ismt2_pp(e[i], e.get_manager()) << "\n";
+    return out;
+}
+
+std::ostream& operator<<(std::ostream& out, func_decl_ref_vector const&  e) {
+    for (unsigned i = 0; i < e.size(); ++i) 
+        out << mk_ismt2_pp(e[i], e.get_manager()) << "\n";
+    return out;
+}
+
+std::ostream& operator<<(std::ostream& out, sort_ref_vector const&  e) {
     for (unsigned i = 0; i < e.size(); ++i) 
         out << mk_ismt2_pp(e[i], e.get_manager()) << "\n";
     return out;

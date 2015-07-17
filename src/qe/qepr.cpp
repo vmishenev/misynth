@@ -81,12 +81,7 @@ namespace qe {
                     if (m_level == 0) {
                         return l_false;
                     }
-                    if (m_model.get()) {
-                        project(asms); 
-                    }
-                    else {
-                        pop(1);
-                    }
+                    project();
                     break;
                 case l_undef:
                     return res;
@@ -115,15 +110,21 @@ namespace qe {
 
         typedef obj_map<func_decl, ptr_vector<app> > pred2occs;
 
-        void project(expr_ref_vector& core) {
+        void project() {
+            expr_ref_vector core(m);
             expr_ref fml(m);
-            SASSERT(m_level > 0);
             get_core(core, m_level);
+            SASSERT(m_level > 0);
             TRACE("qe", display(tout); display(tout << "core\n", core););
             if (m_level == 1) {
                 fml = negate_core(core);
                 m_ex.assert_expr(fml);
                 m_answer.push_back(fml);
+                pop(1);
+                return;
+            }
+
+            if (!m_model.get()) {
                 pop(1);
                 return;
             }
@@ -146,17 +147,38 @@ namespace qe {
                         new_core.push_back(e);
                     }
                 }
-                
                 // remove m_bound_preds
                 // retain disequalities that are required by bound_preds.
                 // e.g, if Q(z) and !Q(u), then z != u
                 // 
+                pred2occs::iterator it = pos.begin(), end = pos.end();
+                expr_ref val1(m), val2(m);
+                for (; it != end; ++it) {
+                    func_decl* f = it->m_key;
+                    pred2occs::obj_map_entry* e = neg.find_core(f);
+                    if (!e) {
+                        continue;
+                    }
+                    for (unsigned i = 0; i < it->m_value.size(); ++i) {
+                        app* p = it->m_value[i];
+                        for (unsigned j = 0; j < e->get_data().m_value.size(); ++j) {
+                            app* n = e->get_data().m_value[j];
+                            for (unsigned k = 0; k < p->get_num_args(); ++k) {
+                                VERIFY(mdl.eval(p->get_arg(k), val1));
+                                VERIFY(mdl.eval(n->get_arg(k), val2));
+                                if (val1 != val2) {
+                                    new_core.push_back(m.mk_not(m.mk_eq(p->get_arg(k), n->get_arg(k))));
+                                }
+                            }
+                        }
+                    }
+                }
 
             }
 
-            // m_level = 3:
-            // just create negated core.
-
+            SASSERT(m_level <= 3);
+            // m_level = 2, 3:
+            // create negated core.
             
             fml = negate_core(core);
             m_ex.assert_expr(fml);
@@ -164,8 +186,9 @@ namespace qe {
             m_level -= 2;
         }
 
-        void add_predicate(pred2occs& map, expr* p) {
-            // TBD
+        void add_predicate(pred2occs& map, expr* _p) {
+            app* p = to_app(_p);
+            map.insert_if_not_there2(p->get_decl(), ptr_vector<app>())->get_data().m_value.push_back(p);
         }
 
         void get_core(expr_ref_vector& core, unsigned level) {
@@ -194,7 +217,7 @@ namespace qe {
                 break;
             }
             case 2:
-                // evaluation of m_preds
+                // evaluation of m_bound_preds
                 break;
             default:
                 UNREACHABLE();
@@ -329,7 +352,12 @@ namespace qe {
         }
 
         void display(std::ostream& out) const {
-            // TBD
+            out << "Level:       " << m_level << "\n";
+            out << "Free vars:   " << m_free_vars << "\n";
+            out << "Free preds:  " << m_free_preds << "\n";
+            out << "Bound vars:  " << m_bound_vars << "\n";
+            out << "Bound preds: " << m_bound_preds << "\n";
+            m_pred_abs.display(out);
         }
 
         void display(std::ostream& out, model& model) const {
@@ -338,7 +366,7 @@ namespace qe {
         }
 
         void display(std::ostream& out, expr_ref_vector const& asms) const {
-            // TBD
+            m_pred_abs.display(out, asms);
         }
 
     public:
@@ -406,14 +434,37 @@ namespace qe {
             /* out */ expr_dependency_ref & core) {
             tactic_report report("qsat-tactic", *in);
             ptr_vector<expr> fmls;
+            expr_ref_vector defs(m);
             expr_ref fml(m);
             max_level level;
             mc = 0; pc = 0; core = 0;
             in->get_formulas(fmls);
             fml = mk_and(m, fmls.size(), fmls.c_ptr());
             fml = push_not(fml);
-
-            // TBD
+            hoist(fml);
+            m_pred_abs.abstract_atoms(fml, level, defs);
+            fml = m_pred_abs.mk_abstract(fml);
+            m_ex.assert_expr(mk_and(defs));
+            m_fa.assert_expr(mk_and(defs));
+            m_ex.assert_expr(m.mk_not(fml));
+            m_fa.assert_expr(fml);
+            lbool is_sat = check_sat();
+            
+            switch (is_sat) {
+            case l_false:
+                in->reset();
+                in->inc_depth();
+                fml = mk_and(m_answer);
+                in->assert_expr(fml);
+                result.push_back(in.get());
+                break;
+            case l_true:
+                UNREACHABLE();                
+            case l_undef:
+                result.push_back(in.get());
+                std::string s = m_ex.last_failure_as_string() + m_fa.last_failure_as_string();
+                throw tactic_exception(s.c_str()); 
+            }
         }
 
         virtual void reset() {

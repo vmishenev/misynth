@@ -90,6 +90,7 @@ namespace qe {
         void get_free_vars(expr* fml, app_ref_vector& vars);
         void display(std::ostream& out) const;
         void display(std::ostream& out, expr_ref_vector const& asms) const;
+        void collect_statistics(statistics& st) const;
     };
 }
 
