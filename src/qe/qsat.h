@@ -85,9 +85,11 @@ namespace qe {
         void get_assumptions(model* mdl, expr_ref_vector& asms);
         void set_expr_level(app* v, max_level const& lvl);
         void abstract_atoms(expr* fml, max_level& level, expr_ref_vector& defs);
+        void abstract_atoms(expr* fml, expr_ref_vector& defs);
         expr_ref mk_abstract(expr* fml);
         void mk_concrete(expr_ref_vector& fmls);
         void get_free_vars(expr* fml, app_ref_vector& vars);
+        app_ref mk_assumption_literal(expr* a, expr_ref_vector& defs);
         void display(std::ostream& out) const;
         void display(std::ostream& out, expr_ref_vector const& asms) const;
         void collect_statistics(statistics& st) const;

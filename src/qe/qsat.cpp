@@ -165,6 +165,10 @@ namespace qe {
         m_elevel.insert(v, lvl);
     }
 
+    void pred_abs::abstract_atoms(expr* fml, expr_ref_vector& defs) {
+        max_level level;
+        abstract_atoms(fml, level, defs);
+    }
     /** 
         \brief create propositional abstraction of formula by replacing atomic sub-formulas by fresh 
         propositional variables, and adding definitions for each propositional formula on the side.
@@ -284,6 +288,20 @@ namespace qe {
             }
         }
         return expr_ref(cache.find(fml), m);
+    }
+
+    app_ref pred_abs::mk_assumption_literal(expr* a, expr_ref_vector& defs) {
+        app_ref b(m), p(m);
+        expr* nb;
+        abstract_atoms(a, defs);        
+        b = to_app(mk_abstract(a));
+        if (is_uninterp_const(b) || (m.is_not(b, nb) && is_uninterp_const(nb))) {
+            return b;
+        }
+        p = fresh_bool("def");
+        defs.push_back(m.mk_eq(p, b));
+        add_pred(p, b);
+        return p;
     }
     
     void pred_abs::mk_concrete(expr_ref_vector& fmls) {
@@ -727,7 +745,6 @@ public:
         ptr_vector<expr> fmls;
         expr_ref_vector defs(m);
         expr_ref fml(m);
-        max_level level;
         mc = 0; pc = 0; core = 0;
         in->get_formulas(fmls);
         fml = mk_and(m, fmls.size(), fmls.c_ptr());
@@ -742,7 +759,7 @@ public:
             fml = push_not(fml);
         }
         hoist(fml);
-        m_pred_abs.abstract_atoms(fml, level, defs);
+        m_pred_abs.abstract_atoms(fml, defs);
         fml = m_pred_abs.mk_abstract(fml);
         m_ex.assert_expr(mk_and(defs));
         m_fa.assert_expr(mk_and(defs));
