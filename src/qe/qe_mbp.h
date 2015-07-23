@@ -65,6 +65,11 @@ namespace qe {
         */
         void solve(model& model, app_ref_vector& vars, expr_ref_vector& lits);
 
+        /**
+           \brief 
+           Extract literals from formulas based on model.
+         */
+        void extract_literals(model& model, expr_ref_vector& lits);
     };
 }
 

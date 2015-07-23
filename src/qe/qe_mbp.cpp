@@ -173,6 +173,8 @@ class mbp::impl {
         return false;
     }
 
+public:
+
     void extract_literals(model& model, expr_ref_vector& fmls) {
         expr_ref val(m);
         for (unsigned i = 0; i < fmls.size(); ++i) {
@@ -278,7 +280,6 @@ class mbp::impl {
         }
     }
 
-public:
     impl(ast_manager& m):m(m) {
         add_plugin(alloc(arith_project_plugin, m));
         add_plugin(alloc(datatype_project_plugin, m));
@@ -347,3 +348,6 @@ void mbp::solve(model& model, app_ref_vector& vars, expr_ref_vector& fmls) {
     m_impl->preprocess_solve(model, vars, fmls);
 }
         
+void mbp::extract_literals(model& model, expr_ref_vector& lits) {
+    m_impl->extract_literals(model, lits);
+}

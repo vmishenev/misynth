@@ -64,6 +64,9 @@ namespace qe {
             }
             max_level lvl, lvl0;
             bool has_new = false;
+            if (m_flevel.find(a->get_decl(), lvl)) {
+                lvl0.merge(lvl);
+            }
             for (unsigned i = 0; i < a->get_num_args(); ++i) {
                 app* arg = to_app(a->get_arg(i));
                 if (m_elevel.find(arg, lvl)) {
@@ -76,6 +79,9 @@ namespace qe {
             }
             if (!has_new) {
                 m_elevel.insert(a, lvl0);
+                std::cout << mk_pp(a, m) << " ";
+                lvl0.display(std::cout);
+                std::cout << "\n";
                 todo.pop_back();
             }
         }
@@ -114,11 +120,11 @@ namespace qe {
     void pred_abs::get_assumptions(model* mdl, expr_ref_vector& asms) {
         asms.reset();
         unsigned level = m_asms_lim.size();
-        if (level == 0) {
-            return;
-        }
         if (level > m_preds.size()) {
             level = m_preds.size();
+        }
+        if (level == 0) {
+            return;
         }
         SASSERT(mdl);
         expr_ref val(m);
@@ -163,6 +169,10 @@ namespace qe {
     
     void pred_abs::set_expr_level(app* v, max_level const& lvl) {
         m_elevel.insert(v, lvl);
+    }
+
+    void pred_abs::set_decl_level(func_decl* f, max_level const& lvl) {
+        m_flevel.insert(f, lvl);
     }
 
     void pred_abs::abstract_atoms(expr* fml, expr_ref_vector& defs) {
@@ -290,17 +300,23 @@ namespace qe {
         return expr_ref(cache.find(fml), m);
     }
 
-    app_ref pred_abs::mk_assumption_literal(expr* a, expr_ref_vector& defs) {
-        app_ref b(m), p(m);
-        expr* nb;
-        abstract_atoms(a, defs);        
-        b = to_app(mk_abstract(a));
-        if (is_uninterp_const(b) || (m.is_not(b, nb) && is_uninterp_const(nb))) {
-            return b;
+    app_ref pred_abs::mk_assumption_literal(app* a, max_level const& lvl, expr_ref_vector& defs) {
+        app_ref p(m);
+        app *b;
+        expr *nb;
+        if (m_lit2pred.find(a, b) && compute_level(b) == lvl) {
+            p = b;
         }
-        p = fresh_bool("def");
-        defs.push_back(m.mk_eq(p, b));
-        add_pred(p, b);
+        else if (m.is_not(a, nb) && m_lit2pred.find(nb, b) && compute_level(b) == lvl) {
+            p = m.mk_not(b);
+        }
+        else {
+            p = fresh_bool("def");
+            defs.push_back(m.mk_eq(p, a));
+            add_pred(p, a);
+            m_elevel.insert(p, lvl);
+            insert(p, lvl);
+        }
         return p;
     }
     
@@ -393,7 +409,6 @@ namespace qe {
             out << "\n";
         }
     }
-
 
     void pred_abs::get_free_vars(expr* fml, app_ref_vector& vars) {
         ast_fast_mark1 mark;
@@ -545,7 +560,6 @@ class qsat : public tactic {
         return is_exists(level+1);
     }
 
-
     void push() {
         m_level++;
         m_pred_abs.push();
@@ -616,9 +630,6 @@ class qsat : public tactic {
         }
         TRACE("qe", tout << fml << "\n";);
     }
-
-
-
 
     void get_core(expr_ref_vector& core, unsigned level) {
         get_kernel(level).get_core(core);
@@ -794,8 +805,7 @@ public:
             result.push_back(in.get());
             std::string s = m_ex.k().last_failure_as_string() + m_fa.k().last_failure_as_string();
             throw tactic_exception(s.c_str()); 
-        }
-        
+        }        
     }
 
     void collect_statistics(statistics & st) const {

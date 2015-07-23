@@ -23,12 +23,12 @@ Notes:
 Extraction of cores and assumptions:
 ------------------------------------
 
-          | Core              | Assumptions
+          | Core                         | Assumptions
 ---------------------------------------------
-E P, x, y | Done              | None
-A Q       | Learn conflict    | atomic predicates, disequalities over x,y,z forced by evaluation of Q
-E z       | Add core to l0    | atomic predicates, Graphs for Q, P  
-A 0       | Add core to l1    | atomic predicates 
+E P, x, y | Done                         | None
+A Q       | Learn conflict               | atomic predicates, disequalities over x,y,z forced by evaluation of Q
+E z       | Add core to l0, project Q    | atomic predicates, Graphs for Q, P  
+A 0       | Add core to l1               | atomic predicates 
 
 
 --*/
@@ -84,6 +84,7 @@ namespace qe {
 
         lbool check_sat() {
             while (true) {
+                TRACE("qe", tout << m_level << "\n";);
                 ++m_stats.m_num_rounds;
                 check_cancel();
                 expr_ref_vector asms(m);
@@ -129,13 +130,18 @@ namespace qe {
 
         void project() {
             expr_ref_vector core(m);
-            expr_ref fml(m);
+            expr_ref fml(m), ground_fml(m);
             get_core(core, m_level);
             SASSERT(m_level > 0);
+            SASSERT(m_model.get());
             TRACE("qe", display(tout); display(tout << "core\n", core););
+            if (m_level <= 2 && m_model.get()) {
+                filter_core(core);
+                TRACE("qe", tout << core;);
+            }
             if (m_level == 1) {
-                fml = negate_core(core);
-                m_ex.assert_expr(fml);
+                fml = negate_core(core, ground_fml);
+                m_ex.assert_expr(ground_fml);
                 m_answer.push_back(fml);
                 pop(1);
             }
@@ -153,9 +159,9 @@ namespace qe {
                 // m_level = 2, 3:
                 // create negated core.
                 
-                fml = negate_core(core);
-                m_ex.assert_expr(fml);
-                m_fa.assert_expr(fml);
+                fml = negate_core(core, ground_fml);
+                m_ex.assert_expr(ground_fml);
+                m_fa.assert_expr(ground_fml);
                 m_level -= 2;
             }
         }
@@ -198,10 +204,12 @@ namespace qe {
         }
 
         void assert_defs(expr_ref_vector const& defs) {
+            if (defs.empty()) return;
+            TRACE("qe", tout << defs;);
             expr_ref val(m);
             expr* a, *b;
             for (unsigned j = 0; j < defs.size(); ++j) {
-                VERIFY(m.is_eq(defs[j], a, b));
+                VERIFY(m.is_iff(defs[j], a, b));
                 VERIFY(m_model->eval(b, val));
                 m_model->register_decl(to_app(a)->get_decl(), val);
                 m_fa.assert_expr(defs[j]);
@@ -253,15 +261,19 @@ namespace qe {
         void extract_function_graphs(expr_ref_vector& asms) {
             pred2occs::iterator it1 = m_bound_pred_occs.begin(), end1 = m_bound_pred_occs.end();
             for (; it1 != end1; ++it1) {
-                extract_function_graph(it1->m_key, it1->m_value, asms);
+                max_level lvl;
+                lvl.m_fa = 1;
+                extract_function_graph(it1->m_key, it1->m_value, lvl, asms);
             }
             pred2occs::iterator it2 = m_free_pred_occs.begin(), end2 = m_free_pred_occs.end();
             for (; it2 != end2; ++it2) {
-                extract_function_graph(it2->m_key, it2->m_value, asms);
+                max_level lvl;
+                lvl.m_ex = 0;
+                extract_function_graph(it2->m_key, it2->m_value, lvl, asms);
             }
         }
 
-        void extract_function_graph(func_decl* p, ptr_vector<app> const& occs, expr_ref_vector& asms) {
+        void extract_function_graph(func_decl* p, ptr_vector<app> const& occs, max_level const& lvl, expr_ref_vector& asms) {
 
             pred2occs pos, neg;
             collect_pos_neg(occs, pos, neg);
@@ -276,7 +288,7 @@ namespace qe {
             if (!neg.contains(p)) {
                 ptr_vector<app> const& poss = pos.find(p);
                 for (unsigned i = 0; i < poss.size(); ++i) {
-                    push_asms(asms, poss[i]);
+                    push_asms(asms, lvl, poss[i]);
                 }
                 return;
             }
@@ -284,7 +296,7 @@ namespace qe {
                 ptr_vector<app> const& negs = neg.find(p);
                 for (unsigned i = 0; i < negs.size(); ++i) {
                     expr_ref fml(m.mk_not(negs[i]), m);
-                    push_asms(asms, fml);
+                    push_asms(asms, lvl, fml);
                 }
                 return;
             }
@@ -293,37 +305,46 @@ namespace qe {
             for (unsigned i = 0; i < poss.size(); ++i) {
                 max_level l = m_pred_abs.compute_level(poss[i]);
                 if (l.max() == 2) {
-                    push_asms(asms, mk_graph(poss[i], poss, negs));
+                    push_asms(asms, lvl, mk_graph(true, poss[i], negs));
                 }
             }
             for (unsigned i = 0; i < negs.size(); ++i) {
                 max_level l = m_pred_abs.compute_level(negs[i]);
                 if (l.max() == 2) {
-                    push_asms(asms, mk_graph(negs[i], poss, negs));
+                    push_asms(asms, lvl, mk_graph(false, negs[i], poss));
                 }
             }            
         }
 
-        void push_asms(expr_ref_vector& asms, expr* a) {
+        void push_asms(expr_ref_vector& asms, max_level const& lvl, expr* a) {
             expr_ref_vector defs(m);
-            app_ref lit = m_pred_abs.mk_assumption_literal(a, defs);
+            app_ref lit = m_pred_abs.mk_assumption_literal(to_app(a), lvl, defs);
             assert_defs(defs);
             asms.push_back(lit);
         }
 
-        expr_ref mk_graph(app* p, ptr_vector<app> const& pos, ptr_vector<app> const& neg) {
+
+        // 
+        // !Q(z)  Q(y) -> Q(z) := z = y
+        // Q(z)  !Q(y) -> Q(z) := z != y
+        // 
+        expr_ref mk_graph(bool is_pos, app* p, ptr_vector<app> const& ps) {
             expr_ref fml(m);
             expr_ref_vector fmls(m);
-            for (unsigned i = 0; i < pos.size(); ++i) {
-                fmls.push_back(eq_args(p, pos[i]));
+            for (unsigned i = 0; i < ps.size(); ++i) {
+                fml = eq_args(p, ps[i]);
+                if (is_pos) {
+                    fml = m.mk_not(fml);
+                }
+                fmls.push_back(fml);
             }
-            fml = mk_or(fmls);
-            fmls.reset();
-            fmls.push_back(fml);
-            for (unsigned i = 0; i < neg.size(); ++i) {
-                fmls.push_back(m.mk_not(eq_args(p, neg[i])));
-            }      
-            fml = m.mk_iff(p, mk_and(fmls));
+            if (is_pos) {
+                fml = mk_and(fmls);
+            }
+            else {
+                fml = mk_or(fmls);
+            }
+            fml = m.mk_iff(p, fml);
             return fml;
         }
 
@@ -357,7 +378,6 @@ namespace qe {
 
     
         void collect_pos_neg(pred2occs const& preds, pred2occs& pos, pred2occs& neg) {
-            expr_ref val(m);
             pred2occs::iterator it = preds.begin(), end = preds.end();
             for (; it != end; ++it) {
                 collect_pos_neg(it->m_value, pos, neg);
@@ -368,6 +388,7 @@ namespace qe {
             expr_ref val(m);
             for (unsigned i = 0; i < occs.size(); ++i) {
                 VERIFY(m_model->eval(occs[i], val));
+                TRACE("qe", tout << mk_pp(occs[i], m) << " := " << val << "\n";);
                 if (m.is_true(val)) {
                     add_predicate(pos, occs[i]);
                 }
@@ -376,9 +397,6 @@ namespace qe {
                 }
             }
         }            
-        
-
-    
 
         /**
            \brief Create fresh equality atoms for each equality that holds in current model among vars.
@@ -394,13 +412,33 @@ namespace qe {
             return ((l % 2) == 0)?m_ex:m_fa;
         }
 
-        expr_ref negate_core(expr_ref_vector& core) {
+        expr_ref negate_core(expr_ref_vector& core, expr_ref& ground_fml) {
             expr_ref fml(m);
             app_ref_vector bound(m_bound_vars);
             m_mbp.solve(*m_model.get(), bound, core);
             fml = ::push_not(::mk_and(core));
+            ground_fml = fml;
             fml = mk_forall(m, bound.size(), bound.c_ptr(), fml);
             return fml;
+        }
+
+        /**
+           \brief remove bound predicates from the core.
+         */
+        void filter_core(expr_ref_vector& core) {
+            pred2occs pos, neg;
+            m_mbp.extract_literals(*m_model.get(), core);
+            for (unsigned i = 0; i < core.size(); ++i) {
+                expr* e = core[i].get();
+                bool is_not = m.is_not(e, e);
+                if (is_bound_predicate(e)) {
+                    add_predicate(is_not?neg:pos, e);
+                    core[i] = core.back();
+                    core.pop_back();
+                    --i;
+                }
+            }
+            extract_disequalities(pos, neg, core);
         }
 
         void hoist(expr_ref& fml) {
@@ -409,16 +447,25 @@ namespace qe {
             quantifier_hoister hoist(m);
             m_pred_abs.get_free_vars(fml, m_free_vars);
             hoist.pull_quantifier(true, fml, m_bound_vars);
-            set_level(0, m_free_vars);
-            set_level(2, m_bound_vars);
             collect_predicates(fml);
+            set_level(0, m_free_vars);
+            set_level(1, m_bound_preds);
+            set_level(2, m_bound_vars);
         }
 
         void set_level(unsigned l, app_ref_vector const& vars) {
             max_level lvl;
-            lvl.m_ex = l;
+            if (0 == l % 2) lvl.m_ex = l; else lvl.m_fa = l;
             for (unsigned i = 0; i < vars.size(); ++i) {
                 m_pred_abs.set_expr_level(vars[i], lvl);
+            }
+        }
+
+        void set_level(unsigned l, func_decl_ref_vector const& funs) {
+            max_level lvl;
+            if (0 == l % 2) lvl.m_ex = l; else lvl.m_fa = l;
+            for (unsigned i = 0; i < funs.size(); ++i) {
+                m_pred_abs.set_decl_level(funs[i], lvl);
             }
         }
 
@@ -435,7 +482,10 @@ namespace qe {
             todo.push_back(fml);
             while (!todo.empty()) {
                 expr* e = todo.back();
-                if (mark.is_marked(e) || is_var(e)) continue;
+                todo.pop_back();
+                if (mark.is_marked(e) || is_var(e)) {
+                    continue;
+                }
                 mark.mark(e);
                 if (is_quantifier(e)) {
                     todo.push_back(to_quantifier(e)->get_expr());
@@ -443,12 +493,16 @@ namespace qe {
                 }
                 app* a = to_app(e);
                 func_decl* d = a->get_decl();
-                if (!mark.is_marked(d) && is_bound_predicate(d)) {
-                    m_bound_preds.push_back(d);
+                if (is_bound_predicate(d)) {
+                    if (!mark.is_marked(d)) {
+                        m_bound_preds.push_back(d);
+                    }
                     m_bound_pred_occs.insert_if_not_there2(d, ptr_vector<app>())->get_data().m_value.push_back(a);
                 }
-                if (!mark.is_marked(d) && is_free_predicate(d)) {
-                    m_free_preds.push_back(d);
+                if (is_free_predicate(d)) {
+                    if (!mark.is_marked(d)) {
+                        m_free_preds.push_back(d);
+                    }
                     m_free_pred_occs.insert_if_not_there2(d, ptr_vector<app>())->get_data().m_value.push_back(a);
 
                 }
@@ -487,11 +541,11 @@ namespace qe {
         }
 
         void display(std::ostream& out) const {
-            out << "Level:       " << m_level << "\n";
-            out << "Free vars:   " << m_free_vars << "\n";
-            out << "Free preds:  " << m_free_preds << "\n";
-            out << "Bound vars:  " << m_bound_vars << "\n";
-            out << "Bound preds: " << m_bound_preds << "\n";
+            out << "Level: " << m_level << "\n";
+            out << "Free vars:  \n" << m_free_vars;
+            out << "Free preds: \n" << m_free_preds;
+            out << "Bound vars: \n" << m_bound_vars;
+            out << "Bound preds:\n" << m_bound_preds;
             m_pred_abs.display(out);
         }
 
@@ -558,7 +612,8 @@ namespace qe {
         void reset_statistics() {
             m_stats.reset();
             m_fa.reset_statistics();
-            m_ex.reset_statistics();        
+            m_ex.reset_statistics();
+            m_st.reset();
         }
 
         virtual void operator()(
@@ -567,7 +622,7 @@ namespace qe {
             /* out */ model_converter_ref & mc, 
             /* out */ proof_converter_ref & pc,
             /* out */ expr_dependency_ref & core) {
-            tactic_report report("qsat-tactic", *in);
+            tactic_report report("qsat-epr-tactic", *in);
             ptr_vector<expr> fmls;
             expr_ref_vector defs(m);
             expr_ref fml(m);
@@ -582,8 +637,8 @@ namespace qe {
             m_fa.assert_expr(fml);
             fml = m.mk_not(fml);
             m_ex.assert_expr(fml);
+            m_level = 0;
 
-            
             TRACE("qe", m_fa.display(tout); tout << "\n"; display(tout););
             
             lbool is_sat = check_sat();
@@ -620,7 +675,6 @@ namespace qe {
             m_bound_pred_occs.reset();
             m_model = 0;
             m_pred_abs.reset();
-            m_st.reset();
             m_fa.reset();
             m_ex.reset();        
             m_cancel = false;            

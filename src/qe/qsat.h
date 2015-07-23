@@ -49,6 +49,12 @@ namespace qe {
             if (m_fa != UINT_MAX) out << "a" << m_fa << " ";
             return out;
         }
+        
+        bool operator==(max_level const& other) const {
+            return 
+                m_ex == other.m_ex &&
+                m_fa == other.m_fa;
+        }
     };
 
     class pred_abs {
@@ -61,7 +67,8 @@ namespace qe {
         expr_ref_vector         m_trail;
         filter_model_converter_ref m_fmc;
         ptr_vector<expr>        todo;
-        obj_map<expr, max_level>   m_elevel;
+        obj_map<expr, max_level>      m_elevel;
+        obj_map<func_decl, max_level> m_flevel;
 
         template <typename T>
         void dec_keys(obj_map<expr, T*>& map) {
@@ -84,12 +91,13 @@ namespace qe {
         void insert(app* a, max_level const& lvl);
         void get_assumptions(model* mdl, expr_ref_vector& asms);
         void set_expr_level(app* v, max_level const& lvl);
+        void set_decl_level(func_decl* v, max_level const& lvl);
         void abstract_atoms(expr* fml, max_level& level, expr_ref_vector& defs);
         void abstract_atoms(expr* fml, expr_ref_vector& defs);
         expr_ref mk_abstract(expr* fml);
         void mk_concrete(expr_ref_vector& fmls);
         void get_free_vars(expr* fml, app_ref_vector& vars);
-        app_ref mk_assumption_literal(expr* a, expr_ref_vector& defs);
+        app_ref mk_assumption_literal(app* a, max_level const& lvl, expr_ref_vector& defs);
         void display(std::ostream& out) const;
         void display(std::ostream& out, expr_ref_vector const& asms) const;
         void collect_statistics(statistics& st) const;
