@@ -119,6 +119,14 @@ namespace qe {
             m_preds.push_back(app_ref_vector(m));
         }
         m_preds[l].push_back(a);            
+        if (l + 1 == m_asms_lim.size()) {
+            m_asms.push_back(a);
+        }
+    }
+
+    bool pred_abs::is_predicate(app* a, unsigned l) {
+        max_level lvl1;
+        return m_flevel.find(a->get_decl(), lvl1) && lvl1.max() < l;
     }
 
     void pred_abs::get_assumptions(model* mdl, expr_ref_vector& asms) {
@@ -134,7 +142,6 @@ namespace qe {
         expr_ref val(m);
         for (unsigned j = 0; j < m_preds[level - 1].size(); ++j) {
             app* p = m_preds[level - 1][j].get();
-            app* lit = to_app(m_pred2lit.find(p));
             TRACE("qe", tout << "process level: " << level - 1 << ": " << mk_pp(p, m) << "\n";);
             
             VERIFY(mdl->eval(p, val));
@@ -212,8 +219,7 @@ namespace qe {
             
             if (is_uninterp_const(a) && m.is_bool(a)) {
                 l = m_elevel.find(a);
-                level.merge(l);
-                
+                level.merge(l);                
                 if (!m_pred2lit.contains(a)) {
                     insert(a, l);
                     add_pred(a, a);
@@ -242,7 +248,9 @@ namespace qe {
                 defs.push_back(eq);
                 max_level l = compute_level(a);
                 m_elevel.insert(r, l);
-                insert(r, l);
+                if (!is_predicate(a, l.max())) {
+                    insert(r, l);
+                }
                 level.merge(l);
             }
         }
@@ -308,10 +316,10 @@ namespace qe {
         app_ref p(m);
         app *b;
         expr *nb;
-        if (m_lit2pred.find(a, b) && compute_level(b) == lvl) {
+        if (m_lit2pred.find(a, b)) {
             p = b;
         }
-        else if (m.is_not(a, nb) && m_lit2pred.find(nb, b) && compute_level(b) == lvl) {
+        else if (m.is_not(a, nb) && m_lit2pred.find(nb, b)) {
             p = m.mk_not(b);
         }
         else {

@@ -80,7 +80,7 @@ namespace qe {
         void add_pred(app* p, app* lit);
         void add_lit(app* p, app* lit);
         app_ref fresh_bool(char const* name);
-        
+        bool is_predicate(app* a, unsigned l);
     public:
         
         pred_abs(ast_manager& m);
