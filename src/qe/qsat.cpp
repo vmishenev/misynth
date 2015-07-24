@@ -90,11 +90,15 @@ namespace qe {
     
     void pred_abs::add_pred(app* p, app* lit) {
         m.inc_ref(p);
+        m_pred2lit.insert(p, lit);
+        add_lit(p, lit);
+    }
+
+    void pred_abs::add_lit(app* p, app* lit) {
         if (!m_lit2pred.contains(lit)) {
             m.inc_ref(lit);
             m_lit2pred.insert(lit, p);        
         }
-        m_pred2lit.insert(p, lit);
     }
     
     void pred_abs::push() {
@@ -313,7 +317,7 @@ namespace qe {
         else {
             p = fresh_bool("def");
             defs.push_back(m.mk_eq(p, a));
-            add_pred(p, a);
+            add_lit(p, a);
             m_elevel.insert(p, lvl);
             insert(p, lvl);
         }

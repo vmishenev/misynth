@@ -78,6 +78,7 @@ namespace qe {
             }
         }
         void add_pred(app* p, app* lit);
+        void add_lit(app* p, app* lit);
         app_ref fresh_bool(char const* name);
         
     public:

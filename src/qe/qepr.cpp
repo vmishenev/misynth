@@ -94,7 +94,7 @@ namespace qe {
                 switch (res) {
                 case l_true:
                     k.get_model(m_model);
-                    TRACE("qe", k.display(tout); display(tout << "\n", *m_model.get()); display(tout, asms); );
+                    TRACE("qe", k.display(tout); display(tout << "\n", *m_model); display(tout, asms); );
                     push();
                     break;
                 case l_false:
@@ -143,7 +143,6 @@ namespace qe {
                 fml = negate_core(core, ground_fml);
                 m_ex.assert_expr(ground_fml);
                 m_answer.push_back(fml);
-                pop(1);
             }
             else if (!m_model.get()) {
                 // we can at most reach level 3,
@@ -152,7 +151,6 @@ namespace qe {
                 // level 0: project is not called. 
                 // level 1: previous case applies
                 UNREACHABLE();  
-                pop(1);
             }
             else {
                 SASSERT(m_level <= 3);
@@ -162,8 +160,8 @@ namespace qe {
                 fml = negate_core(core, ground_fml);
                 m_ex.assert_expr(ground_fml);
                 m_fa.assert_expr(ground_fml);
-                m_level -= 2;
             }
+            pop(m_level);
         }
     
         void get_assumptions(expr_ref_vector& asms) {
@@ -172,7 +170,7 @@ namespace qe {
                 asms.reset();
                 break;
             case 1: 
-                ensure_disequalities();
+                ensure_disequalities();                
                 m_pred_abs.get_assumptions(m_model.get(), asms);
                 break;            
             case 2:
@@ -218,7 +216,7 @@ namespace qe {
         }
 
         void extract_disequalities(pred2occs& pos, pred2occs& neg, expr_ref_vector& diseqs) {
-            model& mdl = *m_model.get();
+            model& mdl = *m_model;
             pred2occs::iterator it = pos.begin(), end = pos.end();
             expr_ref val1(m), val2(m);
             obj_pair_set<expr,expr> known_diseq;
@@ -415,7 +413,7 @@ namespace qe {
         expr_ref negate_core(expr_ref_vector& core, expr_ref& ground_fml) {
             expr_ref fml(m);
             app_ref_vector bound(m_bound_vars);
-            m_mbp.solve(*m_model.get(), bound, core);
+            m_mbp.solve(*m_model, bound, core);
             fml = ::push_not(::mk_and(core));
             ground_fml = fml;
             fml = mk_forall(m, bound.size(), bound.c_ptr(), fml);
@@ -427,7 +425,7 @@ namespace qe {
          */
         void filter_core(expr_ref_vector& core) {
             pred2occs pos, neg;
-            m_mbp.extract_literals(*m_model.get(), core);
+            m_mbp.extract_literals(*m_model, core);
             for (unsigned i = 0; i < core.size(); ++i) {
                 expr* e = core[i].get();
                 bool is_not = m.is_not(e, e);
@@ -516,7 +514,7 @@ namespace qe {
         bool is_bound_predicate(expr* e) {
             return 
                 is_app(e) && 
-                is_bound_predicate(to_app(e)->get_decl());
+                m_pred_abs.compute_level(to_app(e)).max() == 1;
         }
 
         bool is_bound_predicate(func_decl* d) {
