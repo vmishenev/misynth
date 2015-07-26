@@ -26,8 +26,8 @@ Extraction of cores and assumptions:
           | Core                         | Assumptions
 ---------------------------------------------
 E P, x, y | Done                         | None
-A Q       | Learn conflict               | atomic predicates, disequalities over x,y,z forced by evaluation of Q
-E z       | Add core to l0, project Q    | atomic predicates, Graphs for Q, P  
+A Q       | Learn conflict               | atomic predicates, Graph for P, disequalities over x,y,z forced by evaluation of Q
+E z       | Add core to l0, project Q    | atomic predicates, Graphs for Q  
 A 0       | Add core to l1               | atomic predicates 
 
 
@@ -80,6 +80,7 @@ namespace qe {
         func_decl_ref_vector       m_bound_preds; // predicates to project
         pred2occs                  m_free_pred_occs;
         pred2occs                  m_bound_pred_occs;
+        expr_ref_vector            m_asms;        // base level assumptions
 
 
         lbool check_sat() {
@@ -141,7 +142,7 @@ namespace qe {
             }
             if (m_level == 1) {
                 fml = negate_core(core, ground_fml);
-                m_ex.assert_expr(ground_fml);
+                add_assumption(ground_fml);
                 m_answer.push_back(fml);
             }
             else if (!m_model.get()) {
@@ -158,27 +159,27 @@ namespace qe {
                 // create negated core.
                 
                 fml = negate_core(core, ground_fml);
-                m_ex.assert_expr(ground_fml);
-                m_fa.assert_expr(ground_fml);
+                add_assumption(ground_fml);
             }
             pop(m_level);
         }
     
         void get_assumptions(expr_ref_vector& asms) {
+            asms.append(m_asms);
             switch (m_level) {
             case 0:
-                asms.reset();
                 break;
             case 1: 
                 ensure_disequalities();                
+                extract_free_pred_graphs();
                 m_pred_abs.get_assumptions(m_model.get(), asms);
                 break;            
             case 2:
-                m_pred_abs.get_assumptions(m_model.get(), asms);
                 // get assumptions should ensure that there are no predicates 
                 // of the form Q(z), P(z) so the graph of P, Q
                 // at these arguments is encoded as constraints.
-                extract_function_graphs(asms);
+                extract_bound_pred_graphs();
+                m_pred_abs.get_assumptions(m_model.get(), asms);
                 break;            
             case 3:
                 // all atoms can be used without change.
@@ -186,6 +187,15 @@ namespace qe {
                 break;
             }             
             TRACE("qe", tout << asms << "\n";);
+        }
+
+        void add_assumption(expr* e) {
+            max_level lvl;
+            expr_ref_vector defs(m);
+            expr_ref lit = 
+                m_pred_abs.mk_assumption_literal(to_app(e), 0, lvl, defs);
+            assert_defs(defs);
+            m_asms.push_back(lit);
         }
 
         void ensure_disequalities() {
@@ -256,22 +266,25 @@ namespace qe {
             }
         }
         
-        void extract_function_graphs(expr_ref_vector& asms) {
-            pred2occs::iterator it1 = m_bound_pred_occs.begin(), end1 = m_bound_pred_occs.end();
-            for (; it1 != end1; ++it1) {
+        void extract_bound_pred_graphs() {
+            pred2occs::iterator it = m_bound_pred_occs.begin(), end = m_bound_pred_occs.end();
+            for (; it != end; ++it) {
                 max_level lvl;
                 lvl.m_fa = 1;
-                extract_function_graph(it1->m_key, it1->m_value, lvl, asms);
-            }
-            pred2occs::iterator it2 = m_free_pred_occs.begin(), end2 = m_free_pred_occs.end();
-            for (; it2 != end2; ++it2) {
-                max_level lvl;
-                lvl.m_ex = 0;
-                extract_function_graph(it2->m_key, it2->m_value, lvl, asms);
+                extract_function_graph(it->m_key, it->m_value, lvl);
             }
         }
 
-        void extract_function_graph(func_decl* p, ptr_vector<app> const& occs, max_level const& lvl, expr_ref_vector& asms) {
+        void extract_free_pred_graphs() {
+            pred2occs::iterator it = m_free_pred_occs.begin(), end = m_free_pred_occs.end();
+            for (; it != end; ++it) {
+                max_level lvl;
+                lvl.m_ex = 0;
+                extract_function_graph(it->m_key, it->m_value, lvl);
+            }
+        }
+
+        void extract_function_graph(func_decl* p, ptr_vector<app> const& occs, max_level const& lvl) {
 
             pred2occs pos, neg;
             collect_pos_neg(occs, pos, neg);
@@ -286,7 +299,7 @@ namespace qe {
             if (!neg.contains(p)) {
                 ptr_vector<app> const& poss = pos.find(p);
                 for (unsigned i = 0; i < poss.size(); ++i) {
-                    push_asms(asms, lvl, poss[i]);
+                    add_asm(lvl, poss[i]);                    
                 }
                 return;
             }
@@ -294,33 +307,34 @@ namespace qe {
                 ptr_vector<app> const& negs = neg.find(p);
                 for (unsigned i = 0; i < negs.size(); ++i) {
                     expr_ref fml(m.mk_not(negs[i]), m);
-                    push_asms(asms, lvl, fml);
+                    add_asm(lvl, fml);
                 }
                 return;
             }
             ptr_vector<app> const& poss = pos.find(p);
             ptr_vector<app> const& negs = neg.find(p);
             for (unsigned i = 0; i < poss.size(); ++i) {
-                max_level l = m_pred_abs.compute_level(poss[i]);
-                if (l.max() == 2) {
-                    push_asms(asms, lvl, mk_graph(true, poss[i], negs));
+                if (has_universal_level(poss[i])) {
+                    add_asm(lvl, mk_graph(true, poss[i], negs));
                 }
             }
             for (unsigned i = 0; i < negs.size(); ++i) {
-                max_level l = m_pred_abs.compute_level(negs[i]);
-                if (l.max() == 2) {
-                    push_asms(asms, lvl, mk_graph(false, negs[i], poss));
+                if (has_universal_level(negs[i])) {
+                    add_asm(lvl, mk_graph(false, negs[i], poss));
                 }
             }            
         }
 
-        void push_asms(expr_ref_vector& asms, max_level const& lvl, expr* a) {
-            expr_ref_vector defs(m);
-            app_ref lit = m_pred_abs.mk_assumption_literal(to_app(a), lvl, defs);
-            assert_defs(defs);
-            asms.push_back(lit);
+        bool has_universal_level(app* p) {
+            max_level l = m_pred_abs.compute_level(p);
+            return l.max() == 2;
         }
 
+        void add_asm(max_level const& lvl, expr* a) {
+            expr_ref_vector defs(m);
+            m_pred_abs.mk_assumption_literal(to_app(a), m_model.get(), lvl, defs);
+            assert_defs(defs);
+        }
 
         // 
         // !Q(z)  Q(y) -> Q(z) := z = y
@@ -447,6 +461,7 @@ namespace qe {
             hoist.pull_quantifier(true, fml, m_bound_vars);
             collect_predicates(fml);
             set_level(0, m_free_vars);
+            set_level(1, m_free_preds);
             set_level(1, m_bound_preds);
             set_level(2, m_bound_vars);
         }
@@ -570,7 +585,8 @@ namespace qe {
             m_free_preds(m),
             m_bound_preds(m),
             m_free_vars(m),
-            m_bound_vars(m)
+            m_bound_vars(m),
+            m_asms(m)
         {
             m_smtp.m_model = true;
             m_smtp.m_relevancy_lvl = 0;
@@ -676,6 +692,7 @@ namespace qe {
             m_fa.reset();
             m_ex.reset();        
             m_cancel = false;            
+            m_asms.reset();
         }
     };
 }

@@ -2254,6 +2254,42 @@ class JavaExample
 
         System.out.println("OK, model: " + s.getModel().toString());        
     }
+
+    public void hornExample(Context ctx) throws TestFailedException
+    {
+        System.out.println("HornExample");
+        Log.append("HornExample");
+	Sort I = ctx.mkIntSort();
+	Sort B = ctx.mkBoolSort();
+        Solver s = ctx.mkSolver("HORN");
+	IntExpr x = ctx.mkIntConst("x");
+	IntExpr y = ctx.mkIntConst("y");
+	IntExpr z = ctx.mkIntConst("z");
+	IntExpr[] xs = { x, y, z };
+	FuncDecl mc = ctx.mkFuncDecl("mc", new Sort[]{ I, I }, B );
+	
+	BoolExpr f1, f2, f3, mc0, mc1, mc2, mc3;
+	mc0 = (BoolExpr) ctx.mkApp(mc, x, y);
+	mc1 = (BoolExpr) ctx.mkApp(mc, x, ctx.mkSub(x, ctx.mkInt(10)));
+	mc2 = (BoolExpr) ctx.mkApp(mc, ctx.mkAdd(x, ctx.mkInt(11)), z);
+	mc3 = (BoolExpr) ctx.mkApp(mc, z, y);
+	
+	f1 = ctx.mkImplies(ctx.mkGt(x, ctx.mkInt(100)), mc1);
+	s.add(ctx.mkForall(xs, f1, 1, null, null, null, null));
+	f2 = ctx.mkImplies
+	    (ctx.mkAnd(ctx.mkLe(x, ctx.mkInt(100)), mc2, mc3),
+	     mc0);
+	s.add(ctx.mkForall(xs, f2, 1, null, null, null, null));
+	f3 = ctx.mkImplies
+	    (ctx.mkAnd(ctx.mkLe(x, ctx.mkInt(101)), mc0),
+	     ctx.mkEq(ctx.mkInt(91), y));
+	s.add(ctx.mkForall(xs, f3, 1, null, null, null, null));
+        System.out.println(s);
+	if (s.check() != Status.SATISFIABLE)
+	    throw new TestFailedException();
+	System.out.println(s.getModel());
+    }
+
     
     public static void main(String[] args)
     {
@@ -2300,6 +2336,7 @@ class JavaExample
                 p.finiteDomainExample(ctx);
                 p.floatingPointExample1(ctx);
                 p.floatingPointExample2(ctx);
+		p.hornExample(ctx);
             }
 
             { // These examples need proof generation turned on.

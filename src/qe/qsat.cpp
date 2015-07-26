@@ -48,8 +48,12 @@ namespace qe {
         m_trail.reset();
         dec_keys<expr>(m_pred2lit);
         dec_keys<app>(m_lit2pred);
+        dec_keys<app>(m_asm2pred);
+        dec_keys<expr>(m_pred2asm);
         m_lit2pred.reset();
         m_pred2lit.reset();
+        m_asm2pred.reset();
+        m_pred2asm.reset();
         m_elevel.reset();
     }
 
@@ -79,9 +83,6 @@ namespace qe {
             }
             if (!has_new) {
                 m_elevel.insert(a, lvl0);
-                std::cout << mk_pp(a, m) << " ";
-                lvl0.display(std::cout);
-                std::cout << "\n";
                 todo.pop_back();
             }
         }
@@ -100,10 +101,17 @@ namespace qe {
             m_lit2pred.insert(lit, p);        
         }
     }
+
+    void pred_abs::add_asm(app* p, expr* assum) {
+        SASSERT(!m_asm2pred.contains(assum));
+        m.inc_ref(p);
+        m.inc_ref(assum);
+        m_asm2pred.insert(assum, p);
+        m_pred2asm.insert(p, assum);
+    }
     
     void pred_abs::push() {
         m_asms_lim.push_back(m_asms.size());
-        SASSERT(m_asms_lim.size() <= m_preds.size() + 1);
     }
 
     void pred_abs::pop(unsigned num_scopes) {
@@ -119,9 +127,6 @@ namespace qe {
             m_preds.push_back(app_ref_vector(m));
         }
         m_preds[l].push_back(a);            
-        if (l + 1 == m_asms_lim.size()) {
-            m_asms.push_back(a);
-        }
     }
 
     bool pred_abs::is_predicate(app* a, unsigned l) {
@@ -150,6 +155,7 @@ namespace qe {
                 m_asms.push_back(m.mk_not(p));
             }
             else {
+                SASSERT(m.is_true(val));
                 m_asms.push_back(p);
             }
         }
@@ -312,27 +318,40 @@ namespace qe {
         return expr_ref(cache.find(fml), m);
     }
 
-    app_ref pred_abs::mk_assumption_literal(app* a, max_level const& lvl, expr_ref_vector& defs) {
+    expr_ref pred_abs::mk_assumption_literal(expr* a, model* mdl, max_level const& lvl, expr_ref_vector& defs) {
         app_ref p(m);
+        expr_ref q(m);
         app *b;
-        expr *nb;
-        if (m_lit2pred.find(a, b)) {
-            p = b;
+        expr *c;
+        if (m_asm2pred.find(a, b)) {
+            SASSERT(m_elevel.find(b) == lvl);
+            q = b;
         }
-        else if (m.is_not(a, nb) && m_lit2pred.find(nb, b)) {
-            p = m.mk_not(b);
+        else if (m.is_not(a, c) && m_asm2pred.find(c, b)) {
+            SASSERT(m_elevel.find(b) == lvl);
+            q = m.mk_not(b);
         }
         else {
             p = fresh_bool("def");
+            if (m.is_not(a, a)) {
+                if (mdl) 
+                    mdl->register_decl(p->get_decl(), m.mk_false());
+                q = m.mk_not(p);
+            }
+            else {
+                if (mdl)
+                    mdl->register_decl(p->get_decl(), m.mk_true());
+                q = p;
+            }
             defs.push_back(m.mk_eq(p, a));
-            add_lit(p, a);
+            add_asm(p, a);
             m_elevel.insert(p, lvl);
             insert(p, lvl);
         }
-        return p;
+        return q;
     }
-    
-    void pred_abs::mk_concrete(expr_ref_vector& fmls) {
+
+    void pred_abs::mk_concrete(expr_ref_vector& fmls, obj_map<expr,expr*> const& map) {
         obj_map<expr,expr*> cache;
         expr_ref_vector trail(m);
         expr* p;
@@ -346,7 +365,7 @@ namespace qe {
                 todo.pop_back();
                 continue;
             }
-            if (m_pred2lit.find(a, p)) {
+            if (map.find(a, p)) {
                 cache.insert(a, p);
                 todo.pop_back();
                 continue;
@@ -378,7 +397,11 @@ namespace qe {
         }
         for (unsigned i = 0; i < fmls.size(); ++i) {
             fmls[i] = to_app(cache.find(fmls[i].get()));
-        }
+        }        
+    }
+    
+    void pred_abs::mk_concrete(expr_ref_vector& fmls) {
+        mk_concrete(fmls, m_pred2lit);
     }
 
     void pred_abs::collect_statistics(statistics& st) const {
