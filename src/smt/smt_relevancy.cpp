@@ -454,12 +454,11 @@ namespace smt {
         */
 
         virtual void propagate() {
+            if (m_propagating) {  
+                return;  
+            }  
+            flet<bool> l_prop(m_propagating, true);  
             ast_manager & m = get_manager();
-
-            if (m_propagating) {
-                return;
-            }
-            flet<bool> l_prop(m_propagating, true);
             while (m_qhead < m_relevant_exprs.size()) {
                 expr * n = m_relevant_exprs.get(m_qhead);
                 TRACE("propagate_relevancy_to_args", tout << "propagating relevancy to args of #" << n->get_id() << "\n";);
