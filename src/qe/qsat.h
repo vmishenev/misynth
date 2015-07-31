@@ -57,6 +57,10 @@ namespace qe {
         }
     };
 
+    inline std::ostream& operator<<(std::ostream& out, max_level const& lvl) {
+        return lvl.display(out);
+    }
+
     class pred_abs {
         ast_manager&            m;
         vector<app_ref_vector>  m_preds;
@@ -100,8 +104,8 @@ namespace qe {
         void abstract_atoms(expr* fml, max_level& level, expr_ref_vector& defs);
         void abstract_atoms(expr* fml, expr_ref_vector& defs);
         expr_ref mk_abstract(expr* fml);
-        void mk_concrete(expr_ref_vector& fmls);
-        expr_ref translate_assumptions(expr* fml);
+        void pred2lit(expr_ref_vector& fmls);
+        expr_ref pred2asm(expr* fml);
         void get_free_vars(expr* fml, app_ref_vector& vars);
         expr_ref mk_assumption_literal(expr* a, model* mdl, max_level const& lvl, expr_ref_vector& defs);
         void display(std::ostream& out) const;

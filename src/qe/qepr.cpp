@@ -75,7 +75,8 @@ namespace qe {
         stats                      m_stats;
         expr_ref_vector            m_answer;
         app_ref_vector             m_free_vars;   // free variables
-        app_ref_vector             m_bound_vars;  // universally bound variables
+        app_ref_vector             m_exist_vars;  // existentially bound variables
+        app_ref_vector             m_univ_vars;   // universally bound variables
         func_decl_ref_vector       m_free_preds;  // predicates to project
         func_decl_ref_vector       m_bound_preds; // predicates to project
         pred2occs                  m_free_pred_occs;
@@ -314,20 +315,22 @@ namespace qe {
             ptr_vector<app> const& poss = pos.find(p);
             ptr_vector<app> const& negs = neg.find(p);
             for (unsigned i = 0; i < poss.size(); ++i) {
-                if (has_universal_level(poss[i])) {
+                if (has_level_increase(poss[i])) {
                     add_asm(lvl, mk_graph(true, poss[i], negs));
                 }
             }
             for (unsigned i = 0; i < negs.size(); ++i) {
-                if (has_universal_level(negs[i])) {
+                if (has_level_increase(negs[i])) {
                     add_asm(lvl, mk_graph(false, negs[i], poss));
                 }
             }            
         }
 
-        bool has_universal_level(app* p) {
+        bool has_level_increase(app* p) {
             max_level l = m_pred_abs.compute_level(p);
-            return l.max() == 2;
+            if (l.max() == 2) return true;
+            if (l.max() == 1 && m_free_pred_occs.contains(p->get_decl())) return true;
+            return false;
         }
 
         void add_asm(max_level const& lvl, expr* a) {
@@ -384,7 +387,7 @@ namespace qe {
             for (unsigned i = 0; i < sz; ++i) {
                 core.push_back(k.get_unsat_core_expr(i));
             }
-            m_pred_abs.mk_concrete(core);
+            m_pred_abs.pred2lit(core);
             TRACE("qe", tout << "core: " << core << "\n"; k.display(tout); tout << "\n";);
         }
 
@@ -426,10 +429,11 @@ namespace qe {
 
         expr_ref negate_core(expr_ref_vector& core, expr_ref& ground_fml) {
             expr_ref fml(m);
-            app_ref_vector bound(m_bound_vars);
+            app_ref_vector bound(m_univ_vars);
             m_mbp.solve(*m_model, bound, core);
             fml = ::push_not(::mk_and(core));
             ground_fml = fml;
+            fml = m_pred_abs.pred2asm(fml);
             fml = mk_forall(m, bound.size(), bound.c_ptr(), fml);
             return fml;
         }
@@ -455,15 +459,18 @@ namespace qe {
 
         void hoist(expr_ref& fml) {
             m_free_vars.reset();
-            m_bound_vars.reset();
+            m_exist_vars.reset();
+            m_univ_vars.reset();
             quantifier_hoister hoist(m);
             m_pred_abs.get_free_vars(fml, m_free_vars);
-            hoist.pull_quantifier(true, fml, m_bound_vars);
+            hoist.pull_quantifier(false, fml, m_exist_vars);
+            hoist.pull_quantifier(true, fml, m_univ_vars);
             collect_predicates(fml);
             set_level(0, m_free_vars);
-            set_level(1, m_free_preds);
+            set_level(0, m_free_preds);
+            set_level(1, m_exist_vars);
             set_level(1, m_bound_preds);
-            set_level(2, m_bound_vars);
+            set_level(2, m_univ_vars);
         }
 
         void set_level(unsigned l, app_ref_vector const& vars) {
@@ -555,10 +562,11 @@ namespace qe {
 
         void display(std::ostream& out) const {
             out << "Level: " << m_level << "\n";
-            out << "Free vars:  \n" << m_free_vars;
-            out << "Free preds: \n" << m_free_preds;
-            out << "Bound vars: \n" << m_bound_vars;
-            out << "Bound preds:\n" << m_bound_preds;
+            if (!m_free_vars.empty())   out << "Free vars:  \n" << m_free_vars;
+            if (!m_free_preds.empty())  out << "Free preds: \n" << m_free_preds;
+            if (!m_exist_vars.empty())  out << "E vars:     \n" << m_exist_vars;
+            if (!m_univ_vars.empty())   out << "A vars:     \n" << m_univ_vars;
+            if (!m_bound_preds.empty()) out << "Bound preds:\n" << m_bound_preds;
             m_pred_abs.display(out);
         }
 
@@ -585,7 +593,8 @@ namespace qe {
             m_free_preds(m),
             m_bound_preds(m),
             m_free_vars(m),
-            m_bound_vars(m),
+            m_exist_vars(m),
+            m_univ_vars(m),
             m_asms(m)
         {
             m_smtp.m_model = true;
@@ -682,7 +691,8 @@ namespace qe {
             m_level = 0;
             m_answer.reset();
             m_free_vars.reset();
-            m_bound_vars.reset();
+            m_exist_vars.reset();
+            m_univ_vars.reset();
             m_free_preds.reset();
             m_bound_preds.reset();
             m_free_pred_occs.reset();

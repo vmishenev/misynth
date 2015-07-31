@@ -319,17 +319,30 @@ namespace qe {
     }
 
     expr_ref pred_abs::mk_assumption_literal(expr* a, model* mdl, max_level const& lvl, expr_ref_vector& defs) {
+        expr_ref A(m);
+        A = pred2asm(a);
+        a = A;
         app_ref p(m);
-        expr_ref q(m);
+        expr_ref q(m), fml(m);
         app *b;
-        expr *c;
+        expr *c, *d;
+        max_level lvl2;
+        TRACE("qe", tout << mk_pp(a, m) << " " << lvl << "\n";);
         if (m_asm2pred.find(a, b)) {
-            SASSERT(m_elevel.find(b) == lvl);
+            //SASSERT(m_elevel.find(b) == lvl);
             q = b;
         }
         else if (m.is_not(a, c) && m_asm2pred.find(c, b)) {
-            SASSERT(m_elevel.find(b) == lvl);
+            //SASSERT(m_elevel.find(b) == lvl);
             q = m.mk_not(b);
+        }
+        else if (m_pred2asm.find(a, d)) {
+            //SASSERT(m_elevel.find(a) == lvl);
+            q = a;
+        }
+        else if (m.is_not(a, c) && m_pred2asm.find(c, d)) {
+            //SASSERT(m_elevel.find(c) == lvl);
+            q = a;
         }
         else {
             p = fresh_bool("def");
@@ -343,10 +356,14 @@ namespace qe {
                     mdl->register_decl(p->get_decl(), m.mk_true());
                 q = p;
             }
-            defs.push_back(m.mk_eq(p, a));
-            add_asm(p, a);
             m_elevel.insert(p, lvl);
             insert(p, lvl);
+            fml = a;
+            abstract_atoms(fml, lvl2, defs);
+            fml = mk_abstract(fml);
+            defs.push_back(m.mk_eq(p, fml));
+            add_asm(p, a);
+            TRACE("qe", tout << mk_pp(a, m) << " |-> " << p << "\n";);
         }
         return q;
     }
@@ -400,8 +417,15 @@ namespace qe {
         }        
     }
     
-    void pred_abs::mk_concrete(expr_ref_vector& fmls) {
+    void pred_abs::pred2lit(expr_ref_vector& fmls) {
         mk_concrete(fmls, m_pred2lit);
+    }
+
+    expr_ref pred_abs::pred2asm(expr* fml) {
+        expr_ref_vector fmls(m);
+        fmls.push_back(fml);
+        mk_concrete(fmls, m_pred2asm);
+        return mk_and(fmls);
     }
 
     void pred_abs::collect_statistics(statistics& st) const {
@@ -668,7 +692,7 @@ class qsat : public tactic {
 
     void get_core(expr_ref_vector& core, unsigned level) {
         get_kernel(level).get_core(core);
-        m_pred_abs.mk_concrete(core);
+        m_pred_abs.pred2lit(core);
     }
 
     void check_cancel() {
