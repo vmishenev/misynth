@@ -652,7 +652,6 @@ namespace opt {
             and_then(mk_simplify_tactic(m), 
                      mk_propagate_values_tactic(m),
                      mk_solve_eqs_tactic(m),
-                     mk_elim_term_ite_tactic(m),
                      // NB: mk_elim_uncstr_tactic(m) is not sound with soft constraints
                      mk_simplify_tactic(m));   
         opt_params optp(m_params);
@@ -660,14 +659,17 @@ namespace opt {
         if (optp.elim_01()) {
             tac2 = mk_elim01_tactic(m);
             tac3 = mk_lia2card_tactic(m);
-            tac4 = mk_elim_term_ite_tactic(m);
             params_ref lia_p;
             lia_p.set_bool("compile_equality", optp.pb_compile_equality());
             tac3->updt_params(lia_p);
-            set_simplify(and_then(tac0.get(), tac2.get(), tac3.get(), tac4.get()));
+            set_simplify(and_then(tac0.get(), tac2.get(), tac3.get()));
         }
         else {
-            set_simplify(tac0.get());
+            tactic_ref tac1 = 
+                and_then(tac0.get(),
+                         mk_elim_term_ite_tactic(m),
+                         mk_simplify_tactic(m));            
+            set_simplify(tac1.get());
         }
         proof_converter_ref pc;
         expr_dependency_ref core(m);

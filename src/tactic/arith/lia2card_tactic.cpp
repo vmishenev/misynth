@@ -131,6 +131,10 @@ public:
                 sub.insert(e, tmp);
                 continue;
             }
+            if (get_pb_sum(sub, e, tmp)) {
+                sub.insert(e, tmp);
+                continue;
+            }
             app* ap = to_app(e);
             m_todo->append(ap->get_num_args(), ap->get_args());
         }
@@ -170,6 +174,38 @@ public:
             return true;
         }                
         return false;
+    }
+
+    bool get_pb_sum(expr_safe_replace& sub, expr* term, expr_ref& result) {
+        expr_ref_vector args(m);
+        vector<rational> coeffs;
+        rational coeff;
+        if ((a.is_int(term) || a.is_real(term)) && get_pb_sum(term, rational::one(), args, coeffs, coeff)) {
+            expr_ref z(m);
+            sort* s = m.get_sort(term);
+            z = a.mk_numeral(rational(0), s);
+            for (unsigned i = 0; i < args.size(); ++i) {
+                args[i] = m.mk_ite(args[i].get(), a.mk_numeral(coeffs[i], s), z);
+            }
+            if (!coeff.is_zero()) {
+                args.push_back(a.mk_numeral(coeff, s));
+            }
+            switch (args.size()) {
+            case 0:
+                result = a.mk_numeral(rational(0), s);
+                break;
+            case 1:
+                result = args[0].get();
+                break;
+            default:
+                result = a.mk_add(args.size(), args.c_ptr());
+                break;
+            }
+            return true;
+        }
+        else {
+            return false;
+        }            
     }
 
     expr* mk_le(unsigned sz, rational const* weights, expr* const* args, rational const& w) {
@@ -238,6 +274,15 @@ public:
             // q*(1-y) = -q*y + q
             coeff += q*mul;
             insert_arg(-q*mul, y, args, coeffs, coeff);
+        }
+        else if (m.is_ite(x, y, z, u) && is_numeral(u, r) && r.is_zero()) {
+            unsigned sz = args.size();
+            ok = get_pb_sum(z, mul, args, coeffs, coeff);
+            if (ok) {
+                for (unsigned i = sz; i < args.size(); ++i) {
+                    args[i] = m.mk_and(y, args[i].get());
+                }
+            }            
         }
         else if (is_01var(x)) {
             insert_arg(mul, mk_01(x), args, coeffs, coeff);
