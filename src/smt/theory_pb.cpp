@@ -1154,17 +1154,19 @@ namespace smt {
         context&     ctx;
         ast_manager& m;
         theory_pb&   th;
+        pb_util      pb;
         typedef smt::literal literal;
         typedef smt::literal_vector literal_vector;
       
         psort_expr(context& c, theory_pb& th):
             ctx(c), 
             m(c.get_manager()),
-            th(th) {}
+            th(th),
+            pb(m) {}
 
         literal fresh() {
             app_ref y(m);
-            y = m.mk_fresh_const("y", m.mk_bool_sort());
+            y = pb.mk_fresh_bool();
             return literal(ctx.mk_bool_var(y));
         }
         
