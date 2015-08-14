@@ -135,7 +135,6 @@ namespace qe {
     }
 
     void pred_abs::get_assumptions(model* mdl, expr_ref_vector& asms) {
-        asms.reset();
         unsigned level = m_asms_lim.size();
         if (level > m_preds.size()) {
             level = m_preds.size();
@@ -329,19 +328,15 @@ namespace qe {
         max_level lvl2;
         TRACE("qe", tout << mk_pp(a, m) << " " << lvl << "\n";);
         if (m_asm2pred.find(a, b)) {
-            //SASSERT(m_elevel.find(b) == lvl);
             q = b;
         }
         else if (m.is_not(a, c) && m_asm2pred.find(c, b)) {
-            //SASSERT(m_elevel.find(b) == lvl);
             q = m.mk_not(b);
         }
         else if (m_pred2asm.find(a, d)) {
-            //SASSERT(m_elevel.find(a) == lvl);
             q = a;
         }
         else if (m.is_not(a, c) && m_pred2asm.find(c, d)) {
-            //SASSERT(m_elevel.find(c) == lvl);
             q = a;
         }
         else {
@@ -546,6 +541,7 @@ class qsat : public tactic {
     kernel                     m_ex;
     pred_abs                   m_pred_abs;
     expr_ref_vector            m_answer;
+    expr_ref_vector            m_asms;
     vector<app_ref_vector>     m_vars;       // variables from alternating prefixes.
     unsigned                   m_level;
     model_ref                  m_model;
@@ -563,7 +559,7 @@ class qsat : public tactic {
         while (true) {
             ++m_stats.m_num_rounds;
             check_cancel();
-            expr_ref_vector asms(m);
+            expr_ref_vector asms(m_asms);
             m_pred_abs.get_assumptions(m_model.get(), asms);
             smt::kernel& k = get_kernel(m_level).k();
             lbool res = k.check(asms);
@@ -637,6 +633,7 @@ class qsat : public tactic {
         m_pred_abs.collect_statistics(m_st);
         m_level = 0;
         m_answer.reset();
+        m_asms.reset();
         m_pred_abs.reset();
         m_vars.reset();
         m_model = 0;
@@ -722,15 +719,22 @@ class qsat : public tactic {
         m_pred_abs.display(out, asms);
     }
 
+    void add_assumption(expr* fml) {
+        app_ref b = m_pred_abs.fresh_bool("b");        
+        m_asms.push_back(b);
+        m_ex.assert_expr(m.mk_eq(b, fml));
+        m_pred_abs.add_pred(b, to_app(fml));
+    }
+
     void project_qe(expr_ref_vector& core) {
         SASSERT(m_level == 1);
-        expr_ref fml(m), fml0(m);
+        expr_ref fml(m);
         model& mdl = *m_model.get();
         get_core(core, m_level);
         get_vars(m_level);
         m_mbp(m_avars, mdl, core);
         fml = negate_core(core);
-        m_ex.assert_expr(fml);
+        add_assumption(fml);
         m_answer.push_back(fml);
         pop(1);
     }
@@ -752,7 +756,6 @@ class qsat : public tactic {
         m_pred_abs.abstract_atoms(fml, level, defs);
         m_ex.assert_expr(mk_and(defs));
         m_fa.assert_expr(mk_and(defs));
-        fml = m_pred_abs.mk_abstract(fml);
         if (level.max() == UINT_MAX) {
             num_scopes = 2*(m_level/2);
         }
@@ -764,8 +767,14 @@ class qsat : public tactic {
         
         TRACE("qe", tout << "backtrack: " << num_scopes << "\nproject:\n" << core << "\n|->\n" << fml << "\n";);
         pop(num_scopes); 
-        get_kernel(m_level).assert_expr(fml);
-        get_kernel(m_level+1).assert_expr(fml);
+        if (m_level == 0 && m_qelim) {
+            add_assumption(fml);
+        }
+        else {
+            fml = m_pred_abs.mk_abstract(fml);
+            get_kernel(m_level).assert_expr(fml);
+            get_kernel(m_level+1).assert_expr(fml);
+        }
     }
 
     void get_vars(unsigned level) {
@@ -788,6 +797,7 @@ public:
         m_ex(m),
         m_pred_abs(m),
         m_answer(m),
+        m_asms(m),
         m_level(0),
         m_cancel(false),
         m_qelim(qelim),

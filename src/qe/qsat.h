@@ -69,7 +69,7 @@ namespace qe {
         obj_map<expr, expr*>    m_pred2lit;    // maintain definitions of predicates.
         obj_map<expr, app*>     m_lit2pred;    // maintain reverse mapping to predicates
         obj_map<expr, app*>     m_asm2pred;    // maintain map from assumptions to predicates
-        obj_map<expr, expr*>     m_pred2asm;    // predicates |-> assumptions
+        obj_map<expr, expr*>    m_pred2asm;    // predicates |-> assumptions
         expr_ref_vector         m_trail;
         filter_model_converter_ref m_fmc;
         ptr_vector<expr>        todo;
@@ -83,10 +83,8 @@ namespace qe {
                 m.dec_ref(it->m_key);
             }
         }
-        void add_pred(app* p, app* lit);
         void add_lit(app* p, app* lit);
         void add_asm(app* p, expr* lit);        
-        app_ref fresh_bool(char const* name);
         bool is_predicate(app* a, unsigned l);
         void mk_concrete(expr_ref_vector& fmls, obj_map<expr, expr*> const& map);
     public:
@@ -108,6 +106,8 @@ namespace qe {
         expr_ref pred2asm(expr* fml);
         void get_free_vars(expr* fml, app_ref_vector& vars);
         expr_ref mk_assumption_literal(expr* a, model* mdl, max_level const& lvl, expr_ref_vector& defs);
+        void add_pred(app* p, app* lit);
+        app_ref fresh_bool(char const* name);
         void display(std::ostream& out) const;
         void display(std::ostream& out, expr_ref_vector const& asms) const;
         void collect_statistics(statistics& st) const;
