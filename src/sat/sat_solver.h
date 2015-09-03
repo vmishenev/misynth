@@ -60,6 +60,7 @@ namespace sat {
         unsigned m_minimized_lits;
         unsigned m_dyn_sub_res;
         unsigned m_non_learned_generation;
+        unsigned m_blocked_corr_sets;
         stats() { reset(); }
         void reset();
         void collect_statistics(statistics & st) const;
@@ -174,6 +175,7 @@ namespace sat {
         //
         // -----------------------
         bool_var mk_var(bool ext = false, bool dvar = true);
+        void mk_clause(literal_vector const& lits) { mk_clause(lits.size(), lits.c_ptr()); }
         void mk_clause(unsigned num_lits, literal * lits);
         void mk_clause(literal l1, literal l2);
         void mk_clause(literal l1, literal l2, literal l3);
@@ -181,6 +183,9 @@ namespace sat {
     protected:
         void del_clause(clause & c);
         clause * mk_clause_core(unsigned num_lits, literal * lits, bool learned);
+        void mk_clause_core(literal_vector const& lits) { mk_clause_core(lits.size(), lits.c_ptr()); }
+        void mk_clause_core(unsigned num_lits, literal * lits) { mk_clause_core(num_lits, lits, false); }
+        void mk_clause_core(literal l1, literal l2) { literal lits[2] = { l1, l2 }; mk_clause_core(2, lits); }
         void mk_bin_clause(literal l1, literal l2, bool learned);
         bool propagate_bin_clause(literal l1, literal l2);
         clause * mk_ter_clause(literal * lits, bool learned);
@@ -210,6 +215,7 @@ namespace sat {
     public:
         bool inconsistent() const { return m_inconsistent; }
         unsigned num_vars() const { return m_level.size(); }
+        unsigned num_clauses() const;
         bool is_external(bool_var v) const { return m_external[v] != 0; }
         bool was_eliminated(bool_var v) const { return m_eliminated[v] != 0; }
         unsigned scope_lvl() const { return m_scope_lvl; }
@@ -238,7 +244,6 @@ namespace sat {
             if (memory::get_allocation_size() > m_config.m_max_memory) throw solver_exception(Z3_MAX_MEMORY_MSG);
         }
         typedef std::pair<literal, literal> bin_clause;
-        void initialize_soft(unsigned sz, literal const* lits, double const* weights);
     protected:
         watch_list & get_wlist(literal l) { return m_watches[l.index()]; }
         watch_list const & get_wlist(literal l) const { return m_watches[l.index()]; }
@@ -270,11 +275,16 @@ namespace sat {
         //
         // -----------------------
     public:
-        lbool check(unsigned num_lits = 0, literal const* lits = 0);
+        lbool check(unsigned num_lits = 0, literal const* lits = 0) {
+            return check(num_lits, lits, 0, 0);
+        }
+        lbool check(unsigned num_lits, literal const* lits, double const* weights, double max_weight);
+
         model const & get_model() const { return m_model; }
         bool model_is_current() const { return m_model_is_current; }
         literal_vector const& get_core() const { return m_core; }
         model_converter const & get_model_converter() const { return m_mc; }
+        void set_model(model const& mdl);
 
     protected:
         unsigned m_conflicts;
@@ -290,7 +300,20 @@ namespace sat {
         bool_var next_var();
         lbool bounded_search();
         void init_search();
-        void init_assumptions(unsigned num_lits, literal const* lits);
+        
+        literal_vector m_min_core;
+        bool           m_min_core_valid;
+        literal_vector m_blocker;
+        double         m_weight;
+        bool           m_initializing_preferred;
+        void init_assumptions(unsigned num_lits, literal const* lits, double const* weights, double max_weight);
+        bool init_weighted_assumptions(unsigned num_lits, literal const* lits, double const* weights, double max_weight);
+        void reassert_min_core();
+        void update_min_core();
+        void resolve_weighted();
+        void reset_assumptions();
+        void add_assumption(literal lit);
+        void pop_assumption();
         void reinit_assumptions();
         bool tracking_assumptions() const;
         bool is_assumption(literal l) const;
@@ -339,11 +362,14 @@ namespace sat {
         literal_vector m_ext_antecedents;
         bool resolve_conflict();
         bool resolve_conflict_core();
-        void resolve_conflict_for_unsat_core();
         unsigned get_max_lvl(literal consequent, justification js);
         void process_antecedent(literal antecedent, unsigned & num_marks);
+        void resolve_conflict_for_unsat_core();
         void process_antecedent_for_unsat_core(literal antecedent);
         void process_consequent_for_unsat_core(literal consequent, justification const& js);
+        bool resolve_conflict_for_init();
+        void process_antecedent_for_init(literal antecedent);
+        bool process_consequent_for_init(literal consequent, justification const& js);
         void fill_ext_antecedents(literal consequent, justification js);
         unsigned skip_literals_above_conflict_level();
         void forget_phase_of_vars(unsigned from_lvl);
@@ -377,11 +403,14 @@ namespace sat {
         void reinit_clauses(unsigned old_sz);
 
         literal_vector m_user_scope_literals;
-        literal_vector m_user_scope_literal_pool;
         literal_vector m_aux_literals;
         svector<bin_clause> m_user_bin_clauses;
         void gc_lit(clause_vector& clauses, literal lit);
         void gc_bin(bool learned, literal nlit);
+        void gc_var(bool_var v);
+        bool_var max_var(clause_vector& clauses, bool_var v);
+        bool_var max_var(bool learned, bool_var v);
+
     public:
         void user_push();
         void user_pop(unsigned num_scopes);
@@ -441,13 +470,13 @@ namespace sat {
         void display(std::ostream & out) const;
         void display_watches(std::ostream & out) const;
         void display_dimacs(std::ostream & out) const;
+        void display_wcnf(std::ostream & out, unsigned sz, literal const* lits, unsigned const* weights) const;
         void display_assignment(std::ostream & out) const;
         void display_justification(std::ostream & out, justification const& j) const;
 
     protected:
         void display_binary(std::ostream & out) const;
-        void display_units(std::ostream & out) const;
-        unsigned num_clauses() const;
+        void display_units(std::ostream & out) const;        
         bool is_unit(clause const & c) const;
         bool is_empty(clause const & c) const;
         bool check_missed_propagation(clause_vector const & cs) const;

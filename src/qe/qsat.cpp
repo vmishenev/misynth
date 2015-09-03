@@ -117,7 +117,7 @@ namespace qe {
     void pred_abs::pop(unsigned num_scopes) {
         unsigned l = m_asms_lim.size() - num_scopes;
         m_asms.resize(m_asms_lim[l]);
-        m_asms_lim.resize(l);            
+        m_asms_lim.shrink(l);            
     }
         
     void pred_abs::insert(app* a, max_level const& lvl) {
@@ -142,6 +142,7 @@ namespace qe {
         if (level == 0) {
             return;
         }
+        CTRACE("qe", !mdl, tout << "level: " << level << "\n";);
         SASSERT(mdl);
         expr_ref val(m);
         for (unsigned j = 0; j < m_preds[level - 1].size(); ++j) {

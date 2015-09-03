@@ -1101,6 +1101,8 @@ protected:
     func_decl * mk_eq_decl_core(char const * name, decl_kind k, sort * s, ptr_vector<func_decl> & cache);
     func_decl * mk_ite_decl(sort * s);
     sort* join(sort* s1, sort* s2);
+    sort* join(unsigned n, sort*const* srts);
+    sort* join(unsigned n, expr*const* es);
 public:
     basic_decl_plugin();
     
@@ -1457,6 +1459,9 @@ protected:
     void init();
 
     bool coercion_needed(func_decl * decl, unsigned num_args, expr * const * args);
+
+    void check_args(func_decl* f, unsigned n, expr* const* es);
+
 
 public:
     ast_manager(proof_gen_mode = PGM_DISABLED, char const * trace_file = 0, bool is_format_manager = false);

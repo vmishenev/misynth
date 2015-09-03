@@ -1016,16 +1016,42 @@ func_decl * basic_decl_plugin::mk_ite_decl(sort * s) {
     return m_ite_decls[id];
 }
 
+sort* basic_decl_plugin::join(unsigned n, sort* const* srts) {
+    SASSERT(n > 0);
+    sort* s = srts[0];
+    while (n > 1) {
+        ++srts;
+        --n;
+        s = join(s, *srts);
+    }
+    return s;
+}
+
+sort* basic_decl_plugin::join(unsigned n, expr* const* es) {
+    SASSERT(n > 0);
+    sort* s = m_manager->get_sort(*es);
+    while (n > 1) {
+        ++es;
+        --n;
+        s = join(s, m_manager->get_sort(*es));
+    }
+    return s;
+}
+
 sort* basic_decl_plugin::join(sort* s1, sort* s2) {
     if (s1 == s2) return s1;
-    if (s1->get_family_id() == m_manager->m_arith_family_id && 
+    if (s1->get_family_id() == m_manager->m_arith_family_id &&
         s2->get_family_id() == m_manager->m_arith_family_id) {
         if (s1->get_decl_kind() == REAL_SORT) {
             return s1;
         }
+        return s2;
     }
-    return s2;
+    std::ostringstream buffer;
+    buffer << "Sorts " << mk_pp(s1, *m_manager) << " and " << mk_pp(s2, *m_manager) << " are incompatible";
+    throw ast_exception(buffer.str().c_str());
 }
+
 
 func_decl * basic_decl_plugin::mk_func_decl(decl_kind k, unsigned num_parameters, parameter const * parameters,
                                           unsigned arity, sort * const * domain, sort * range) {
@@ -1041,8 +1067,8 @@ func_decl * basic_decl_plugin::mk_func_decl(decl_kind k, unsigned num_parameters
     case OP_XOR:     return m_xor_decl;
     case OP_ITE:     return arity == 3 ? mk_ite_decl(join(domain[1], domain[2])) : 0;
         // eq and oeq must have at least two arguments, they can have more since they are chainable
-    case OP_EQ:      return arity >= 2 ? mk_eq_decl_core("=", OP_EQ, join(domain[0],domain[1]), m_eq_decls) : 0;
-    case OP_OEQ:     return arity >= 2 ? mk_eq_decl_core("~", OP_OEQ, join(domain[0],domain[1]), m_oeq_decls) : 0;
+    case OP_EQ:      return arity >= 2 ? mk_eq_decl_core("=", OP_EQ, join(arity, domain), m_eq_decls) : 0;
+    case OP_OEQ:     return arity >= 2 ? mk_eq_decl_core("~", OP_OEQ, join(arity, domain), m_oeq_decls) : 0;
     case OP_DISTINCT: {
         func_decl_info info(m_family_id, OP_DISTINCT);
         info.set_pairwise();
@@ -1084,10 +1110,8 @@ func_decl * basic_decl_plugin::mk_func_decl(decl_kind k, unsigned num_parameters
     case OP_XOR:     return m_xor_decl;
     case OP_ITE:     return num_args == 3 ? mk_ite_decl(join(m_manager->get_sort(args[1]), m_manager->get_sort(args[2]))): 0;
         // eq and oeq must have at least two arguments, they can have more since they are chainable
-    case OP_EQ:      return num_args >= 2 ? mk_eq_decl_core("=", OP_EQ, join(m_manager->get_sort(args[0]),
-                                                                             m_manager->get_sort(args[1])), m_eq_decls) : 0;
-    case OP_OEQ:     return num_args >= 2 ? mk_eq_decl_core("~", OP_OEQ, join(m_manager->get_sort(args[0]),
-                                                                              m_manager->get_sort(args[1])), m_oeq_decls) : 0;
+    case OP_EQ:      return num_args >= 2 ? mk_eq_decl_core("=", OP_EQ, join(num_args, args), m_eq_decls) : 0;
+    case OP_OEQ:     return num_args >= 2 ? mk_eq_decl_core("~", OP_OEQ, join(num_args, args), m_oeq_decls) : 0;
     case OP_DISTINCT:
         return decl_plugin::mk_func_decl(k, num_parameters, parameters, num_args, args, range);
     default:
@@ -2014,11 +2038,13 @@ app * ast_manager::mk_app_core(func_decl * decl, unsigned num_args, expr * const
                 }
             }
         }
+        check_args(decl, num_args, new_args.c_ptr());
         SASSERT(new_args.size() == num_args);
         new_node = new (mem) app(decl, num_args, new_args.c_ptr());
         r = register_node(new_node);
     }
     else {
+        check_args(decl, num_args, args);
         new_node = new (mem) app(decl, num_args, args);
         r = register_node(new_node);
     }
@@ -2039,6 +2065,22 @@ app * ast_manager::mk_app_core(func_decl * decl, unsigned num_args, expr * const
 
     return r;
 }
+
+void ast_manager::check_args(func_decl* f, unsigned n, expr* const* es) {
+    for (unsigned i = 0; i < n; i++) {
+        sort * actual_sort   = get_sort(es[i]);
+        sort * expected_sort = f->is_associative() ? f->get_domain(0) : f->get_domain(i);
+        if (expected_sort != actual_sort) {
+            std::ostringstream buffer;
+            buffer << "Sort mismatch at argument #" << (i+1) 
+                   << " for function " << mk_pp(f,*this) 
+                   << " supplied sort is " 
+                   << mk_pp(actual_sort, *this);
+            throw ast_exception(buffer.str().c_str());            
+        }
+    }
+}
+
 
 inline app * ast_manager::mk_app_core(func_decl * decl, expr * arg1, expr * arg2) {
     expr * args[2] = { arg1, arg2 };
@@ -2591,6 +2633,8 @@ proof * ast_manager::mk_transitivity(proof * p1, proof * p2) {
            tout << mk_pp(to_app(get_fact(p1))->get_decl(), *this) << "\n";
            tout << mk_pp(to_app(get_fact(p2))->get_decl(), *this) << "\n";);
     SASSERT(to_app(get_fact(p1))->get_decl() == to_app(get_fact(p2))->get_decl() ||
+            ((is_iff(get_fact(p1)) || is_eq(get_fact(p1))) && 
+             (is_iff(get_fact(p2)) || is_eq(get_fact(p2)))) ||
             ( (is_eq(get_fact(p1)) || is_oeq(get_fact(p1))) &&
               (is_eq(get_fact(p2)) || is_oeq(get_fact(p2)))));
     CTRACE("mk_transitivity", to_app(get_fact(p1))->get_arg(1) != to_app(get_fact(p2))->get_arg(0),       
