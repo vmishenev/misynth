@@ -99,9 +99,7 @@ tactic * mk_aufnira_tactic(ast_manager & m, params_ref const & p) {
 
 tactic * mk_lra_tactic(ast_manager & m, params_ref const & p) {
     tactic * st = and_then(mk_quant_preprocessor(m),
-                           or_else(try_for(mk_smt_tactic(), 100), 
-                                   try_for(qe::mk_sat_tactic(m), 1000), 
-                                   try_for(mk_smt_tactic(), 1000),
+                           or_else(mk_qsat_tactic(m, p),
                                    and_then(mk_qe_tactic(m), mk_smt_tactic())));
 
     st->updt_params(p);
