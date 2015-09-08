@@ -92,7 +92,7 @@ tactic * mk_tactic_for_logic(ast_manager & m, params_ref const & p, symbol const
         return mk_default_tactic(m, p);
 }
 
-solver* mk_solver_for_logic(ast_manager & m, params_ref const & p, symbol const& logic) {
+static solver* mk_solver_for_logic(ast_manager & m, params_ref const & p, symbol const& logic) {
     if (logic == "QF_BV") 
         return mk_inc_sat_solver(m, p);
     return mk_smt_solver(m, p, logic);

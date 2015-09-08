@@ -34,12 +34,14 @@ Notes:
 #include "tactical.h"
 #include "model_smt2_pp.h"
 #include "card2bv_tactic.h"
-#include "nnf_tactic.h"
+#include "eq2bv_tactic.h"
 #include "inc_sat_solver.h"
 #include "bv_decl_plugin.h"
 #include "pb_decl_plugin.h"
 #include "ast_smt_pp.h"
 #include "filter_model_converter.h"
+#include "ast_pp_util.h"
+#include "inc_sat_solver.h"
 
 namespace opt {
 
@@ -129,7 +131,6 @@ namespace opt {
         m_fm(m),
         m_objective_refs(m),
         m_enable_sat(false),
-        m_enable_sls(false),
         m_is_clausal(false),
         m_pp_neat(false)
     {
@@ -220,7 +221,7 @@ namespace opt {
             TRACE("opt", tout << "Hard constraint: " << mk_ismt2_pp(m_hard_constraints[i].get(), m) << std::endl;);
             s.assert_expr(m_hard_constraints[i].get());
         }
-
+        display_benchmark();
         IF_VERBOSE(1, verbose_stream() << "(optimize:check-sat)\n";);
         lbool is_sat = s.check_sat(0,0);
         TRACE("opt", tout << "initial search result: " << is_sat << "\n";);
@@ -456,6 +457,13 @@ namespace opt {
         return is_sat;
     }
 
+    std::string context::reason_unknown() const { 
+        if (m_solver.get()) {
+            return m_solver->reason_unknown();
+        }
+        return std::string("unknown"); 
+    }
+
     void context::display_bounds(std::ostream& out, bounds_t const& b) const {
         for (unsigned i = 0; i < m_objectives.size(); ++i) {
             objective const& obj = m_objectives[i];
@@ -481,7 +489,8 @@ namespace opt {
             m_opt_solver->set_logic(m_logic);
             m_solver = m_opt_solver.get();
         }
-        if (opt_params(m_params).priority() == symbol("pareto")) {
+        if (opt_params(m_params).priority() == symbol("pareto") ||
+            (opt_params(m_params).priority() == symbol("lex") && m_objectives.size() > 1)) {
             m_opt_solver->ensure_pb();
         }        
     }
@@ -522,19 +531,8 @@ namespace opt {
         }
     }
 
-    void context::set_soft_assumptions() {
-        if (m_sat_solver.get()) {
-            m_params.set_bool("soft_assumptions", true);
-            m_sat_solver->updt_params(m_params);
-        }
-    }
-
-    void context::enable_sls(expr_ref_vector const& soft, vector<rational> const& weights) {
-        SASSERT(soft.size() == weights.size());
-        if (m_sat_solver.get()) {
-            set_soft_inc_sat(m_sat_solver.get(), soft.size(), soft.c_ptr(), weights.c_ptr());
-        }
-        if (m_enable_sls && m_sat_solver.get()) {
+    void context::enable_sls(bool force) {
+        if ((force || m_enable_sls) && m_sat_solver.get()) {
             m_params.set_bool("optimize_model", true);
             m_sat_solver->updt_params(m_params);
         }
@@ -658,10 +656,11 @@ namespace opt {
         if (optp.elim_01()) {
             tac2 = mk_elim01_tactic(m);
             tac3 = mk_lia2card_tactic(m);
+            tac4 = mk_eq2bv_tactic(m);
             params_ref lia_p;
             lia_p.set_bool("compile_equality", optp.pb_compile_equality());
             tac3->updt_params(lia_p);
-            set_simplify(and_then(tac0.get(), tac2.get(), tac3.get(), mk_simplify_tactic(m)));
+            set_simplify(and_then(tac0.get(), tac2.get(), tac3.get(), tac4.get(), mk_simplify_tactic(m)));
         }
         else {
             tactic_ref tac1 = 
@@ -1071,6 +1070,18 @@ namespace opt {
         }
     }
 
+    void context::display_benchmark() {
+        if (opt_params(m_params).dump_benchmarks() && 
+            sat_enabled() && 
+            m_objectives.size() == 1 &&
+            m_objectives[0].m_type == O_MAXSMT
+            ) {
+            objective& o = m_objectives[0];
+            unsigned sz = o.m_terms.size();
+            inc_sat_display(verbose_stream(), get_solver(), sz, o.m_terms.c_ptr(), o.m_weights.c_ptr());
+        }
+    }
+
     void context::display(std::ostream& out) {
         display_assignment(out);
     }
@@ -1255,44 +1266,13 @@ namespace opt {
         m_pp_neat = _p.pp_neat();
     }
 
-    typedef obj_hashtable<func_decl> func_decl_set;
-
-    struct context::free_func_visitor {
-        ast_manager& m;
-        func_decl_set m_funcs;
-        obj_hashtable<sort> m_sorts;
-        expr_mark m_visited;
-    public:
-        free_func_visitor(ast_manager& m): m(m) {}
-        void operator()(var * n)        { }
-        void operator()(app * n)        { 
-            if (n->get_family_id() == null_family_id) {
-                m_funcs.insert(n->get_decl()); 
-            }
-            sort* s = m.get_sort(n);
-            if (s->get_family_id() == null_family_id) {
-                m_sorts.insert(s);
-            }
-        }
-        void operator()(quantifier * n) { }
-        func_decl_set& funcs() { return m_funcs; }
-        obj_hashtable<sort>& sorts() { return m_sorts; }
-
-        void collect(expr* e) {
-            for_each_expr(*this, m_visited, e);
-        }
-    };
-
     std::string context::to_string() const {
         smt2_pp_environment_dbg env(m);
-        ast_smt_pp ll_smt2_pp(m);
-        free_func_visitor visitor(m);
+        ast_pp_util visitor(m);
         std::ostringstream out;
 #define PP(_e_) ast_smt2_pp(out, _e_, env);
-#define PPE(_e_) if (m_pp_neat) ast_smt2_pp(out, _e_, env); else ll_smt2_pp.display_expr_smt2(out, _e_);
-        for (unsigned i = 0; i < m_scoped_state.m_hard.size(); ++i) {
-            visitor.collect(m_scoped_state.m_hard[i]);
-        }
+        visitor.collect(m_scoped_state.m_hard);
+                
         for (unsigned i = 0; i < m_scoped_state.m_objectives.size(); ++i) {
             objective const& obj = m_scoped_state.m_objectives[i];
             switch(obj.m_type) {
@@ -1301,9 +1281,7 @@ namespace opt {
                 visitor.collect(obj.m_term);
                 break;
             case O_MAXSMT: 
-                for (unsigned j = 0; j < obj.m_terms.size(); ++j) {
-                    visitor.collect(obj.m_terms[j]);
-                }
+                visitor.collect(obj.m_terms);
                 break;
             default: 
                 UNREACHABLE();
@@ -1311,22 +1289,8 @@ namespace opt {
             }
         }
 
-        obj_hashtable<sort>::iterator sit = visitor.sorts().begin();
-        obj_hashtable<sort>::iterator send = visitor.sorts().end();
-        for (; sit != send; ++sit) {
-            PP(*sit);
-        }
-        func_decl_set::iterator it  = visitor.funcs().begin();
-        func_decl_set::iterator end = visitor.funcs().end();
-        for (; it != end; ++it) {
-            PP(*it);
-            out << "\n";
-        }
-        for (unsigned i = 0; i < m_scoped_state.m_hard.size(); ++i) {
-            out << "(assert ";
-            PPE(m_scoped_state.m_hard[i]);
-            out << ")\n";
-        }
+        visitor.display_decls(out);
+        visitor.display_asserts(out, m_scoped_state.m_hard, m_pp_neat);
         for (unsigned i = 0; i < m_scoped_state.m_objectives.size(); ++i) {
             objective const& obj = m_scoped_state.m_objectives[i];
             switch(obj.m_type) {
