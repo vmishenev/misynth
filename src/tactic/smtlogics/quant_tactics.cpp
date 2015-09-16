@@ -23,6 +23,7 @@ Revision History:
 #include"elim_uncnstr_tactic.h"
 #include"qe_tactic.h"
 #include"qe_sat_tactic.h"
+#include"qsat.h"
 #include"ctx_simplify_tactic.h"
 #include"smt_tactic.h"
 
