@@ -49,11 +49,16 @@ public:
 };
 
 enum sr_property {
-    sr_transitive    = 0x01,
-    sr_reflexive     = 0x02,
-    sr_antisymmetric = 0x04,
-    sr_lefttree      = 0x08,
-    sr_righttree     = 0x10,    
+    sr_transitive    = 0x01,                              // Rxy & Ryz -> Rxz
+    sr_reflexive     = 0x02,                              // Rxx
+    sr_antisymmetric = 0x04,                              // Rxy & Ryx -> x = y
+    sr_lefttree      = 0x08,                              // Ryx & Rzx -> Ryz | Rzy
+    sr_righttree     = 0x10,                              // Rxy & Rxz -> Ryx | Rzy
+    sr_po            = 0x01 | 0x02 | 0x04,                // partial order
+    sr_lo            = 0x01 | 0x02 | 0x04 | 0x08 | 0x10,  // linear order
+    sr_plo           = 0x01 | 0x02 | 0x04 | 0x20,         // piecewise linear order
+    sr_lto           = 0x01 | 0x02 | 0x04 | 0x08,         // left-tree
+    sr_rto           = 0x01 | 0x02 | 0x04 | 0x10,         // right-tree
 };
 
 class special_relations_util {
