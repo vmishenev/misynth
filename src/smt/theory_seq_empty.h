@@ -31,6 +31,7 @@ namespace smt {
         virtual void new_diseq_eh(theory_var, theory_var) {}
         virtual theory* mk_fresh(context*) { return alloc(theory_seq_empty, get_manager()); }
         virtual char const * get_name() const { return "seq-empty"; }
+        virtual void display(std::ostream& out) const {}
     public:
         theory_seq_empty(ast_manager& m):theory(m.mk_family_id("seq")), m_used(false) {}
     };

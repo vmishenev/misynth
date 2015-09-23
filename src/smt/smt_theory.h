@@ -314,11 +314,13 @@ namespace smt {
             return m_var2enode_lim[m_var2enode_lim.size() - num_scopes];
         }
         
-        virtual void display(std::ostream & out) const {
+        virtual void display(std::ostream & out) const = 0;
+#if 0
+{
             out << "Theory " << static_cast<int>(get_id()) << " does not have a display method\n";
             display_var2enode(out);
         }
-
+#endif
         virtual void display_var2enode(std::ostream & out) const;
         
         virtual void collect_statistics(::statistics & st) const {

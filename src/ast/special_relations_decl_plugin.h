@@ -24,12 +24,18 @@ Revision History:
 
 
 enum special_relations_op_kind {
-    OP_SPECIAL_RELATION,
+    OP_SPECIAL_RELATION_LO,
+    OP_SPECIAL_RELATION_PO,
+    OP_SPECIAL_RELATION_PLO,
+    OP_SPECIAL_RELATION_TO,
     LAST_SPECIAL_RELATIONS_OP
 };
 
 class special_relations_decl_plugin : public decl_plugin {
-    symbol m_special_relation;
+    symbol m_lo;
+    symbol m_po;
+    symbol m_plo;
+    symbol m_to;
 public:
     special_relations_decl_plugin();
     virtual ~special_relations_decl_plugin() {}
@@ -37,7 +43,6 @@ public:
     virtual decl_plugin * mk_fresh() {
         return alloc(special_relations_decl_plugin);
     }
-
     
     virtual func_decl * mk_func_decl(decl_kind k, unsigned num_parameters, parameter const * parameters, 
                                      unsigned arity, sort * const * domain, sort * range);
@@ -57,17 +62,16 @@ enum sr_property {
     sr_po            = 0x01 | 0x02 | 0x04,                // partial order
     sr_lo            = 0x01 | 0x02 | 0x04 | 0x08 | 0x10,  // linear order
     sr_plo           = 0x01 | 0x02 | 0x04 | 0x20,         // piecewise linear order
-    sr_lto           = 0x01 | 0x02 | 0x04 | 0x08,         // left-tree
-    sr_rto           = 0x01 | 0x02 | 0x04 | 0x10,         // right-tree
+    sr_to            = 0x01 | 0x02 | 0x04 | 0x10,         // right-tree
 };
 
 class special_relations_util {
     ast_manager& m;
     family_id    m_fid;
 public:
-    special_relations_util(ast_manager& m) : m(m), m_fid(m.get_family_id("special-relations")) {}
+    special_relations_util(ast_manager& m) : m(m), m_fid(m.get_family_id("special_relations")) {}
     
-    bool is_special_relation(func_decl* f) const { return is_decl_of(f, m_fid, OP_SPECIAL_RELATION); }
+    bool is_special_relation(func_decl* f) const { return f->get_family_id() == m_fid; }
     bool is_special_relation(app* e) const { return is_special_relation(e->get_decl()); }
     sr_property get_property(func_decl* f) const;
     sr_property get_property(app* e) const { return get_property(e->get_decl()); }

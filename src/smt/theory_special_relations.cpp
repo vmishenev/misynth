@@ -44,21 +44,24 @@ namespace smt {
 
     void theory_special_relations::relation::ensure_var(theory_var v) {
         while ((unsigned)v > m_uf.mk_var());
-        m_graph.init_var(v);
+        if ((unsigned)v >= m_graph.get_num_nodes()) {
+            m_graph.init_var(v);
+        }
     }
 
     bool theory_special_relations::relation::new_eq_eh(literal l, theory_var v1, theory_var v2) {
         ensure_var(v1);
         ensure_var(v2);
+        literal_vector ls;
+        ls.push_back(l);
         return 
-            m_graph.enable_edge(m_graph.add_edge(v1, v2, s_integer(0), l)) &&
-            m_graph.enable_edge(m_graph.add_edge(v2, v1, s_integer(0), l));            
+            m_graph.enable_edge(m_graph.add_edge(v1, v2, s_integer(0), ls)) &&
+            m_graph.enable_edge(m_graph.add_edge(v2, v1, s_integer(0), ls));            
     }
 
     theory_special_relations::theory_special_relations(ast_manager& m):
-        theory(m.mk_family_id("special-relations")),
-        m_util(m),
-        m_nc_functor(*this)
+        theory(m.mk_family_id("special_relations")),
+        m_util(m)
     {}
 
     theory_special_relations::~theory_special_relations() {
@@ -70,10 +73,11 @@ namespace smt {
     }
 
     bool theory_special_relations::internalize_atom(app * atm, bool gate_ctx) {
+        TRACE("special_relations", tout << mk_pp(atm, get_manager()) << "\n";);
         SASSERT(m_util.is_special_relation(atm));
         relation* r = 0;
         if (!m_relations.find(atm->get_decl(), r)) {
-            r = alloc(relation, m_util.get_property(atm)); 
+            r = alloc(relation, m_util.get_property(atm), atm->get_decl()); 
             m_relations.insert(atm->get_decl(), r);
         }
         context& ctx = get_context();
@@ -122,16 +126,19 @@ namespace smt {
     }
 
     final_check_status theory_special_relations::final_check_eh() {
+        TRACE("special_relations", tout << "\n";);
         obj_map<func_decl, relation*>::iterator it = m_relations.begin(), end = m_relations.end();
         lbool r = l_true;
         for (; it != end && r == l_true; ++it) {
             r = final_check(*it->m_value);
         }
-        if (l_undef == r) {
+        switch (r) {
+        case l_undef:
             return FC_GIVEUP;
-        }
-        if (l_false == r) {
-            return FC_DONE;
+        case l_false:
+            return FC_CONTINUE;
+        default:
+            break;
         }
         it = m_relations.begin();
         bool new_equality = false;
@@ -154,11 +161,24 @@ namespace smt {
     }
 
     lbool theory_special_relations::final_check_po(relation& r) {
-        NOT_IMPLEMENTED_YET();
-        return l_undef;
+        lbool res = l_true;
+        for (unsigned i = 0; res == l_true && i < r.m_asserted_atoms.size(); ++i) {
+            atom& a = *r.m_asserted_atoms[i];
+            if (!a.phase() && r.m_uf.find(a.v1()) == r.m_uf.find(a.v2())) {
+                // v1 !-> v2
+                // find v1 -> v3 -> v4 -> v2 path
+                r.m_explanation.reset();
+                unsigned timestamp = r.m_graph.get_timestamp();
+                if (r.m_graph.find_shortest_reachable_path(a.v1(), a.v2(), timestamp, r)) {
+                    set_conflict(r);
+                    res = l_false;
+                }                
+            }
+        }        
+        return res;
     }
 
-    lbool theory_special_relations::final_check_plo(relation& r) {
+    lbool theory_special_relations::final_check_plo(relation& r) {        
         //
         // ensure that !Rxy -> Ryx between connected components 
         // (where Rzx & Rzy or Rxz & Ryz for some z)
@@ -173,9 +193,43 @@ namespace smt {
         return res;
     }
 
-    lbool theory_special_relations::final_check_to(relation& r, bool is_right) {
-        NOT_IMPLEMENTED_YET();
-        return l_undef;
+    lbool theory_special_relations::final_check_to(relation& r) {
+        uint_set visited, target;
+        lbool res = l_true;
+        for (unsigned i = 0; res == l_true && i < r.m_asserted_atoms.size(); ++i) {
+            atom& a = *r.m_asserted_atoms[i];
+            if (!a.phase() && r.m_uf.find(a.v1()) == r.m_uf.find(a.v2())) {
+                target.reset();
+                theory_var w;
+                // v1 !<= v2 is asserted
+                target.insert(a.v1());
+                if (r.m_graph.reachable(a.v2(), visited, target, w)) {
+                    // we already have v2 <= v1
+                    continue;
+                }
+                target.reset();
+                if (r.m_graph.reachable(a.v1(), target, visited, w)) {
+                    // there is a common successor
+                    // v1 <= w
+                    // v2 <= w
+                    // v1 !<= v2
+                    // -> v1 <= w & v2 <= w & v1 !<= v2 -> v2 <= v1
+                    unsigned timestamp = r.m_graph.get_timestamp();
+                    r.m_explanation.reset();
+                    r.m_graph.find_shortest_reachable_path(a.v1(), w, timestamp, r);
+                    r.m_graph.find_shortest_reachable_path(a.v2(), w, timestamp, r);
+                    r.m_explanation.push_back(a.explanation());
+                    literal_vector const& lits = r.m_explanation;
+                    if (!r.m_graph.enable_edge(r.m_graph.add_edge(a.v2(), a.v1(), s_integer(0), lits))) {
+                        set_neg_cycle_conflict(r);
+                        res = l_false;
+                    }
+                }
+                // TODO: check if algorithm correctly produces all constraints.
+                // e.g., if we add an edge, do we have to repeat the loop?
+            }
+        }        
+        return res;
     }
 
     lbool theory_special_relations::enable(atom& a) {
@@ -190,9 +244,13 @@ namespace smt {
     }
 
     void theory_special_relations::set_neg_cycle_conflict(relation& r) {
-        m_nc_functor.reset();
-        r.m_graph.traverse_neg_cycle2(false, m_nc_functor);
-        literal_vector const& lits = m_nc_functor.get_lits();
+        r.m_explanation.reset();
+        r.m_graph.traverse_neg_cycle2(false, r);
+        set_conflict(r);
+    }
+
+    void theory_special_relations::set_conflict(relation& r) {
+        literal_vector const& lits = r.m_explanation;
         context & ctx = get_context(); 
         vector<parameter> params;   
         ctx.set_conflict(
@@ -215,14 +273,11 @@ namespace smt {
         case sr_plo:
             res = final_check_plo(r);
             break;
-        case sr_rto:
-            res = final_check_to(r, true);
-            break;
-        case sr_lto:
-            res = final_check_to(r, false);            
+        case sr_to:
+            res = final_check_to(r);
             break;
         default:
-            NOT_IMPLEMENTED_YET();
+            UNREACHABLE();
             res = l_undef;
         }        
         return res;
@@ -306,14 +361,11 @@ namespace smt {
     }
 
     void theory_special_relations::assign_eh(bool_var v, bool is_true) {
+        TRACE("special_relations", tout << "assign bv" << v << " " << (is_true?" <- true":" <- false") << "\n";);
         atom* a;
         VERIFY(m_bool_var2atom.find(v, a));
         a->set_phase(is_true);
         a->get_relation().m_asserted_atoms.push_back(a);
-    }
-
-    void theory_special_relations::init_search_eh() {
-        // no-op
     }
 
     void theory_special_relations::push_scope_eh() {
@@ -346,10 +398,6 @@ namespace smt {
     }
 
 
-    void theory_special_relations::restart_eh() {
-        // no-op
-    }
-
     void theory_special_relations::collect_statistics(::statistics & st) const {
         obj_map<func_decl, relation*>::iterator it = m_relations.begin(), end = m_relations.end();
         for (; it != end; ++it) {
@@ -362,25 +410,231 @@ namespace smt {
         return 0;
     }
 
+    expr_ref theory_special_relations::mk_inj(relation& r, model_generator& mg) {
+        context& ctx = get_context();
+        ast_manager& m = get_manager();
+        unsigned sz = r.m_graph.get_num_edges();
+        r.push();
+        for (unsigned i = 0; i < sz; ++i) {
+            if (!r.m_graph.is_enabled(i)) continue;
+            if (r.m_graph.get_weight(i) != s_integer(0)) continue;
+            dl_var src = r.m_graph.get_source(i);
+            dl_var dst = r.m_graph.get_target(i);
+            if (r.m_graph.get_assignment(src) != r.m_graph.get_assignment(dst)) continue;
+            if (get_enode(src)->get_root() == get_enode(dst)->get_root()) continue;
+            VERIFY(r.m_graph.enable_edge(r.m_graph.add_edge(src, dst, s_integer(-1), literal_vector())));
+        }        
+        func_decl_ref fn(m);
+        expr_ref result(m);
+        arith_util arith(m);
+        sort* const* ty = r.decl()->get_domain();
+        fn = m.mk_fresh_func_decl("inj", 1, ty, arith.mk_int());
+        sz = r.m_graph.get_num_nodes();
+        func_interp* fi = alloc(func_interp, m, 1);
+        for (unsigned i = 0; i < sz; ++i) {
+            s_integer val = r.m_graph.get_assignment(i);
+            expr* arg = get_enode(i)->get_owner();
+            fi->insert_new_entry(&arg, arith.mk_numeral(val.to_rational(), true));
+        }
+        TRACE("special_relations", r.m_graph.display(tout););
+        r.pop(1);
+        fi->set_else(arith.mk_numeral(rational(0), true));
+        mg.get_model().register_decl(fn, fi);
+        result = arith.mk_le(m.mk_app(fn,m.mk_var(0, *ty)), m.mk_app(fn, m.mk_var(1, *ty)));
+        return result;
+    }
+
+    expr_ref theory_special_relations::mk_class(relation& r, model_generator& mg) {
+        context& ctx = get_context();
+        ast_manager& m = get_manager();
+        expr_ref result(m);
+        func_decl_ref fn(m);
+        arith_util arith(m);
+        func_interp* fi = alloc(func_interp, m, 1);
+        sort* const* ty = r.decl()->get_domain();
+        fn = m.mk_fresh_func_decl("class", 1, ty, arith.mk_int());
+        unsigned sz = r.m_graph.get_num_nodes();
+        for (unsigned i = 0; i < sz; ++i) {
+            unsigned val = r.m_uf.find(i);
+            expr* arg = get_enode(i)->get_owner();
+            fi->insert_new_entry(&arg, arith.mk_numeral(rational(val), true));
+        }
+        fi->set_else(arith.mk_numeral(rational(0), true));
+        mg.get_model().register_decl(fn, fi);
+        result = m.mk_eq(m.mk_app(fn, m.mk_var(0, *ty)), m.mk_app(fn, m.mk_var(1, *ty)));
+        return result;
+    }
+
+    expr_ref theory_special_relations::mk_interval(relation& r, model_generator& mg, unsigned_vector & lo, unsigned_vector& hi) {
+        graph const& g = r.m_graph;
+        context& ctx = get_context();
+        ast_manager& m = get_manager();
+        expr_ref result(m);
+        func_decl_ref lofn(m), hifn(m);
+        arith_util arith(m);
+        func_interp* lofi = alloc(func_interp, m, 1);
+        func_interp* hifi = alloc(func_interp, m, 1);
+        sort* const* ty = r.decl()->get_domain();
+        lofn = m.mk_fresh_func_decl("lo", 1, ty, arith.mk_int());
+        hifn = m.mk_fresh_func_decl("hi", 1, ty, arith.mk_int());
+        unsigned sz = g.get_num_nodes();
+        for (unsigned i = 0; i < sz; ++i) {
+            expr* arg = get_enode(i)->get_owner();
+            lofi->insert_new_entry(&arg, arith.mk_numeral(rational(lo[i]), true));
+            hifi->insert_new_entry(&arg, arith.mk_numeral(rational(hi[i]), true));
+        }
+        lofi->set_else(arith.mk_numeral(rational(0), true));
+        hifi->set_else(arith.mk_numeral(rational(0), true));
+        mg.get_model().register_decl(lofn, lofi);
+        mg.get_model().register_decl(hifn, hifi);
+        result = m.mk_and(arith.mk_le(m.mk_app(lofn, m.mk_var(0, *ty)), m.mk_app(lofn, m.mk_var(1, *ty))),
+                          arith.mk_le(m.mk_app(hifn, m.mk_var(1, *ty)), m.mk_app(hifn, m.mk_var(0, *ty))));
+        return result;
+    }
+
+    void theory_special_relations::init_model_lo(relation& r, model_generator& m) {
+        expr_ref inj = mk_inj(r, m);        
+        func_interp* fi = alloc(func_interp, get_manager(), 2);
+        fi->set_else(inj);
+        m.get_model().register_decl(r.decl(), fi);        
+    }
+
+    void theory_special_relations::init_model_plo(relation& r, model_generator& m) {
+        expr_ref inj = mk_inj(r, m);        
+        expr_ref cls = mk_class(r, m);
+        func_interp* fi = alloc(func_interp, get_manager(), 2);
+        fi->set_else(get_manager().mk_and(inj, cls));
+        m.get_model().register_decl(r.decl(), fi);        
+    }
+
+    void theory_special_relations::init_model_po(relation& r, model_generator& mg) {
+        NOT_IMPLEMENTED_YET();
+    }
+
+    /**
+       \brief map each node to an interval of numbers, such that
+       the children are proper sub-intervals.
+       Then the <= relation becomes interval containment.
+
+       1. For each vertex, count the number of nodes below it in the transitive closure.
+          Store the result in num_children.
+       2. Identify each root.
+       3. Process children, assigning unique (and disjoint) intervals.
+       4. Extract interpretation.
+     */
+
+    void theory_special_relations::init_model_to(relation& r, model_generator& mg) {
+        unsigned_vector num_children, lo, hi;
+        graph const& g = r.m_graph;
+        count_children(g, num_children);
+        assign_interval(g, num_children, lo, hi);
+        expr_ref iv = mk_interval(r, mg, lo, hi);
+        func_interp* fi = alloc(func_interp, get_manager(), 2);
+        fi->set_else(iv);
+        mg.get_model().register_decl(r.decl(), fi);        
+    }
+
+    void theory_special_relations::count_children(graph const& g, unsigned_vector& num_children) {
+        unsigned sz = g.get_num_nodes();
+        svector<dl_var> nodes;
+        num_children.resize(sz, 0);
+        svector<bool>   processed(sz, false);
+        for (unsigned i = 0; i < sz; ++i) nodes.push_back(i);
+        while (!nodes.empty()) {
+            dl_var v = nodes.back();
+            if (processed[v]) {
+                nodes.pop_back();
+                continue;
+            }
+            unsigned nc = 1;
+            bool all_p = true;
+            int_vector const& edges = g.get_out_edges(v);
+            for (unsigned i = 0; i < edges.size(); ++i) {
+                if (g.is_enabled(edges[i])) {
+                    dl_var dst = g.get_target(edges[i]);
+                    if (!processed[dst]) {
+                        all_p = false;
+                        nodes.push_back(dst);
+                    }
+                    nc += num_children[dst];
+                }
+            }
+            if (all_p) {
+                nodes.pop_back();
+                num_children[v] = nc;
+                processed[v] = true;
+            }
+        }
+    }
+
+    void theory_special_relations::assign_interval(graph const& g, unsigned_vector const& num_children, unsigned_vector& lo, unsigned_vector& hi) {
+        svector<dl_var> nodes;
+        unsigned sz = g.get_num_nodes();
+        lo.resize(sz, 0);
+        hi.resize(sz, 0);
+        unsigned offset = 0;
+        for (unsigned i = 0; i < sz; ++i) {
+            bool is_root = true;
+            int_vector const& edges = g.get_in_edges(i);
+            for (unsigned j = 0; is_root && j < edges.size(); ++j) {
+                is_root = !g.is_enabled(edges[j]);
+            }
+            if (is_root) {
+                lo[i] = offset;
+                hi[i] = offset + num_children[i] - 1;
+                offset = hi[i] + 1;
+                nodes.push_back(i);
+            }
+        }
+        while (!nodes.empty()) {
+            dl_var v = nodes.back();
+            int_vector const& edges = g.get_out_edges(v);
+            unsigned l = lo[v];
+            unsigned h = hi[v];
+            nodes.pop_back();
+            for (unsigned i = 0; i < edges.size(); ++i) {
+                SASSERT(l <= h);
+                if (g.is_enabled(edges[i])) {
+                    dl_var dst = g.get_target(edges[i]);
+                    lo[dst] = l;
+                    hi[dst] = l + num_children[dst] - 1;
+                    l = hi[dst] + 1;
+                    nodes.push_back(dst);
+                }
+            }
+            SASSERT(l == h);
+        }
+    }
+
     void theory_special_relations::init_model(model_generator & m) {
         obj_map<func_decl, relation*>::iterator it = m_relations.begin(), end = m_relations.end();
-        for (; it != end; ++it) {
+        for (; it != end; ++it) {            
             switch (it->m_value->m_property) {
             case sr_lo:
-                NOT_IMPLEMENTED_YET();
+                init_model_lo(*it->m_value, m);
                 break;
             case sr_plo:
-                // pair of total assignment + equivalence class indicator.
-                NOT_IMPLEMENTED_YET();
+                init_model_plo(*it->m_value, m);
                 break;
-            case sr_rto:
-            case sr_lto:
+            case sr_to:
+                init_model_to(*it->m_value, m);
+                break;
             case sr_po:
-                NOT_IMPLEMENTED_YET();
+                init_model_po(*it->m_value, m);
                 break;
             }
-            
-            // TODO ...
+        }
+    }
+
+    void theory_special_relations::display(std::ostream & out) const {
+        if (m_relations.empty()) return;
+        out << "Theory Special Relations\n";
+        display_var2enode(out);
+        obj_map<func_decl, relation*>::iterator it = m_relations.begin(), end = m_relations.end();
+        for (; it != end; ++it) {     
+            out << mk_pp(it->m_value->decl(), get_manager()) << ":\n";
+            it->m_value->m_graph.display(out);
+            it->m_value->m_uf.display(out);
         }
     }
 }

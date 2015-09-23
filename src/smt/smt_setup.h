@@ -98,6 +98,7 @@ namespace smt {
         void setup_i_arith();
         void setup_mi_arith();
         void setup_fpa();
+        void setup_special_relations();
 
     public:
         setup(context & c, smt_params & params);

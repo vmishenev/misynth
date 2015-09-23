@@ -24,14 +24,16 @@ Revision History:
 
 
 special_relations_decl_plugin::special_relations_decl_plugin():
-    m_special_relation("special-relation")
+    m_lo("linear-order"),
+    m_po("partial-order"),
+    m_plo("piecewise-linear-order"),
+    m_to("tree-order")
 {}
     
 func_decl * special_relations_decl_plugin::mk_func_decl(
     decl_kind k, unsigned num_parameters, parameter const * parameters, 
     unsigned arity, sort * const * domain, sort * range)    
 {
-    SASSERT(k == OP_SPECIAL_RELATION);
     if (arity != 2) {
         m_manager->raise_exception("special relations should have arity 2");
         return 0;
@@ -41,44 +43,33 @@ func_decl * special_relations_decl_plugin::mk_func_decl(
         return 0;
     }
     func_decl_info info(m_family_id, k, num_parameters, parameters);
-    return m_manager->mk_func_decl(m_special_relation, arity, domain, m_manager->mk_bool_sort(), info);
+    symbol name;
+    switch(k) {
+    case OP_SPECIAL_RELATION_PO: name = m_po; break;
+    case OP_SPECIAL_RELATION_LO: name = m_lo; break;
+    case OP_SPECIAL_RELATION_PLO: name = m_plo; break;
+    case OP_SPECIAL_RELATION_TO: name = m_to; break;
+    }
+    return m_manager->mk_func_decl(name, arity, domain, m_manager->mk_bool_sort(), info);
 }
 
 void special_relations_decl_plugin::get_op_names(svector<builtin_name> & op_names, symbol const & logic) {
     if (logic == symbol::null) {
-        op_names.push_back(builtin_name("special-relation", OP_SPECIAL_RELATION));
+        op_names.push_back(builtin_name(m_po.bare_str(), OP_SPECIAL_RELATION_PO));
+        op_names.push_back(builtin_name(m_lo.bare_str(), OP_SPECIAL_RELATION_LO));
+        op_names.push_back(builtin_name(m_plo.bare_str(), OP_SPECIAL_RELATION_PLO));
+        op_names.push_back(builtin_name(m_to.bare_str(), OP_SPECIAL_RELATION_TO));
     }
 }
 
 sr_property special_relations_util::get_property(func_decl* f) const {
-    unsigned p = 0;
-    unsigned sz = f->get_num_parameters();
-    for (unsigned i = 0; i < sz; ++i) {
-        parameter const& pa = f->get_parameter(i);
-        if (!pa.is_symbol()) {
-            m.raise_exception("Unexpected non-symbol parameter to special relation");
-        }
-        symbol const& s = pa.get_symbol();
-        if (symbol("transitive") == s) {
-            p |= sr_transitive;
-        }
-        else if (symbol("reflexive") == s) {
-            p |= sr_reflexive;
-        }
-        else if (symbol("antisymmetric") == s) {
-            p |= sr_antisymmetric;
-        }
-        else if (symbol("lefttree") == s) {
-            p |= sr_lefttree;
-        }
-        else if (symbol("rightttree") == s) {
-            p |= sr_righttree;
-        }
-        else {
-            std::ostringstream strm;
-            strm << s << " was not recognized as a special relations attribute";
-            m.raise_exception(strm.str().c_str());
-        }
+    switch (f->get_decl_kind()) {
+    case OP_SPECIAL_RELATION_PO: return sr_po;
+    case OP_SPECIAL_RELATION_LO: return sr_lo;
+    case OP_SPECIAL_RELATION_PLO: return sr_plo;
+    case OP_SPECIAL_RELATION_TO: return sr_to;
+    default:
+        UNREACHABLE();
+        return sr_po;
     }
-    return (sr_property)p;
 }
