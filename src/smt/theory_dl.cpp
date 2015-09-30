@@ -154,8 +154,10 @@ namespace smt {
 
         }
 
+        virtual void display(std::ostream& out) const {}
+
         virtual theory * mk_fresh(context * new_ctx) {
-            return alloc(theory_dl, get_manager());
+            return alloc(theory_dl, new_ctx->get_manager());
         }
 
         virtual void init_model(smt::model_generator & m) {

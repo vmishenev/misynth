@@ -296,6 +296,9 @@ public:
 
     numeral const& get_weight(edge_id id) const { return m_edges[id].get_weight(); }
 
+    edge_id_vector const& get_out_edges(dl_var v) const { return m_out_edges[v]; }
+
+    edge_id_vector const& get_in_edges(dl_var v) const { return m_in_edges[v]; }
 
 private:
     // An assignment is almost feasible if all but edge with idt edge are feasible.
@@ -955,8 +958,8 @@ public:
     }
 
     void get_neighbours_undirected(dl_var current, svector<dl_var> & neighbours) {
-	    neighbours.reset();
-	    edge_id_vector & out_edges = m_out_edges[current];
+        neighbours.reset();
+        edge_id_vector & out_edges = m_out_edges[current];
         typename edge_id_vector::iterator it = out_edges.begin(), end = out_edges.end();
         for (; it != end; ++it) {
             edge_id e_id = *it;
@@ -1015,37 +1018,69 @@ public:
 	    threads[prev] = start;
     }
 
-    void bfs_undirected(dl_var start, svector<dl_var> & parents, svector<dl_var> & depths) {
+    bool can_reach(dl_var src, dl_var dst) {
+        uint_set target, visited;
+        target.insert(dst);
+        return can_reach(src, target, visited, dst);
+    }
+
+    bool reachable(dl_var start, uint_set const& target, uint_set& visited, dl_var& dst) {
+        visited.reset();
+        svector<dl_var> nodes;
+        nodes.push_back(start);
+        for (unsigned i = 0; i < nodes.size(); ++i) {
+            dl_var n = nodes[i];
+            if (visited.contains(n)) continue;
+            visited.insert(n);
+            edge_id_vector & edges = m_out_edges[n];
+            typename edge_id_vector::iterator it  = edges.begin();
+            typename edge_id_vector::iterator end = edges.end();
+            for (; it != end; ++it) {
+                edge_id e_id = *it;
+                edge & e     = m_edges[e_id];
+                if (e.is_enabled()) {
+                    dst = e.get_target();
+                    if (target.contains(dst)) {
+                        return true;
+                    }
+                    nodes.push_back(dst);
+                }
+            }
+        }
+        return false;
+    }
+
+    void bfs_undirected(dl_var start, svector<dl_var> & parents, svector<unsigned> & depths) {
         parents.reset();
         parents.resize(get_num_nodes());
         parents[start] = -1;
         depths.reset();
         depths.resize(get_num_nodes());
-	    uint_set visited;
-	    std::deque<dl_var> nodes;
-	    visited.insert(start);
-	    nodes.push_front(start);
-	    while(!nodes.empty()) {
+        uint_set visited;
+        std::deque<dl_var> nodes;
+        visited.insert(start);
+        nodes.push_front(start);
+        while(!nodes.empty()) {
             dl_var current = nodes.back();
             nodes.pop_back();
-		    SASSERT(visited.contains(current));
+            SASSERT(visited.contains(current));
             svector<dl_var> neighbours;
-		    get_neighbours_undirected(current, neighbours);
+            get_neighbours_undirected(current, neighbours);
             SASSERT(!neighbours.empty());
-		    for (unsigned i = 0; i < neighbours.size(); ++i) {
-			    dl_var next = neighbours[i];
+            for (unsigned i = 0; i < neighbours.size(); ++i) {
+                dl_var next = neighbours[i];
                 DEBUG_CODE(
-                edge_id id;
-                SASSERT(get_edge_id(current, next, id) || get_edge_id(next, current, id)););
+                    edge_id id;
+                    SASSERT(get_edge_id(current, next, id) || get_edge_id(next, current, id)););
                 if (!visited.contains(next)) {
                     TRACE("diff_logic", tout << "parents[" << next << "] --> " << current << std::endl;);
-	                parents[next] = current;
-	                depths[next] = depths[current] + 1;
-	                visited.insert(next);
-	                nodes.push_front(next);
+                    parents[next] = current;
+                    depths[next] = depths[current] + 1;
+                    visited.insert(next);
+                    nodes.push_front(next);
                 }
-		    }
-	    }
+            }
+        }
     }
 
     template<typename Functor>
@@ -1275,6 +1310,15 @@ public:
     // Return true if the path exists, false otherwise.
     template<typename Functor>
     bool find_shortest_zero_edge_path(dl_var source, dl_var target, unsigned timestamp, Functor & f) {
+        return find_shortest_path_aux(source, target, timestamp, f, true);
+    }
+    template<typename Functor>
+    bool find_shortest_reachable_path(dl_var source, dl_var target, unsigned timestamp, Functor & f) {
+        return find_shortest_path_aux(source, target, timestamp, f, false);
+    }
+
+    template<typename Functor>
+    bool find_shortest_path_aux(dl_var source, dl_var target, unsigned timestamp, Functor & f, bool zero_edge) {
         svector<bfs_elem> bfs_todo;
         svector<char>     bfs_mark;
         bfs_mark.resize(m_assignment.size(), false);
@@ -1302,7 +1346,7 @@ public:
                 }
                 set_gamma(e, gamma);
                 TRACE("dl_bfs", tout << "processing edge: "; display_edge(tout, e); tout << "gamma: " << gamma << "\n";);
-                if (gamma.is_zero() && e.get_timestamp() < timestamp) {
+                if ((gamma.is_zero() || (!zero_edge && gamma.is_neg())) && e.get_timestamp() < timestamp) {
                     dl_var curr_target = e.get_target();
                     TRACE("dl_bfs", tout << "curr_target: " << curr_target << 
                           ", mark: " << static_cast<int>(bfs_mark[curr_target]) << "\n";);

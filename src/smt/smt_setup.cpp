@@ -32,6 +32,7 @@ Revision History:
 #include"theory_seq_empty.h"
 #include"theory_pb.h"
 #include"theory_fpa.h"
+#include"theory_special_relations.h"
 
 namespace smt {
 
@@ -826,6 +827,10 @@ namespace smt {
         m_context.register_plugin(alloc(theory_fpa, m_manager));
     }
 
+    void setup::setup_special_relations() {
+        m_context.register_plugin(alloc(theory_special_relations, m_manager));
+    }
+
     void setup::setup_unknown() {
         setup_arith();
         setup_arrays();
@@ -835,6 +840,7 @@ namespace smt {
         setup_seq();
         setup_card();
         setup_fpa();
+        setup_special_relations();
     }
 
     void setup::setup_unknown(static_features & st) {

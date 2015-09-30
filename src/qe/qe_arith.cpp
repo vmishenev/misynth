@@ -70,6 +70,7 @@ namespace qe {
         rational m_delta, m_u;
         scoped_ptr<contains_app> m_var;
         unsigned m_num_pos, m_num_neg;
+        bool m_pos_is_unit, m_neg_is_unit;
 
         sort* var_sort() const { return m.get_sort(m_var->x()); }
 
@@ -298,9 +299,11 @@ namespace qe {
                 }
                 else if (c.is_pos()) {
                     ++m_num_pos;
+                    m_pos_is_unit &= c.is_one();
                 }
                 else {
                     ++m_num_neg;
+                    m_neg_is_unit &= c.is_minus_one();
                 }            
             }        
         }
@@ -443,6 +446,7 @@ namespace qe {
                   model_v2_pp(tout, model); );
 
             m_num_pos = 0; m_num_neg = 0;
+            m_pos_is_unit = true; m_neg_is_unit = true;
             unsigned eq_index = 0;
             reset();
             bool found_eq = false;
@@ -479,18 +483,48 @@ namespace qe {
             if (m_num_pos == 0 || m_num_neg == 0) {
                 return;
             }
-            bool use_pos = m_num_pos < m_num_neg;
-            unsigned max_t = find_max(model, use_pos);
-
-            for (unsigned i = 0; i < m_ineq_terms.size(); ++i) {
-                expr_ref t(m);
-                if (i != max_t) {
-                    if (ineq_coeff(i).is_pos() == use_pos) {
-                        t = mk_le(i, max_t);
-                        add_lit(model, lits, t);
+            if ((m_num_pos <= 2 || m_num_neg <= 2) &&
+                (m_num_pos == 1 || m_num_neg == 1 || (m_num_pos <= 3 && m_num_neg <= 3)) && 
+                (!is_int() || m_pos_is_unit || m_neg_is_unit)) {
+                
+                unsigned index1 = num_ineqs();
+                unsigned index2 = num_ineqs();
+                bool is_pos = m_num_pos <= m_num_neg;
+                for (unsigned i = 0; i < num_ineqs(); ++i) {
+                    if (ineq_coeff(i).is_pos() == is_pos) {
+                        if (index1 == num_ineqs()) {
+                            index1 = i;
+                        }
+                        else {
+                            SASSERT(index2 == num_ineqs());
+                            index2 = i;
+                        }
                     }
-                    else {
-                        mk_lt(model, lits, i, max_t);
+                }
+                for (unsigned i = 0; i < num_ineqs(); ++i) {
+                    if (ineq_coeff(i).is_pos() != is_pos) {
+                        SASSERT(index1 != num_ineqs());
+                        mk_lt(model, lits, i, index1);
+                        if (index2 != num_ineqs()) {
+                            mk_lt(model, lits, i, index2);
+                        }
+                    }
+                }
+            }
+            else {
+                expr_ref t(m);
+                bool use_pos = m_num_pos < m_num_neg;
+                unsigned max_t = find_max(model, use_pos);
+                
+                for (unsigned i = 0; i < num_ineqs(); ++i) {
+                    if (i != max_t) {
+                        if (ineq_coeff(i).is_pos() == use_pos) {
+                            t = mk_le(i, max_t);
+                            add_lit(model, lits, t);
+                        }
+                        else {
+                            mk_lt(model, lits, i, max_t);
+                        }
                     }
                 }
             }
@@ -503,7 +537,7 @@ namespace qe {
             rational max_r, r;
             expr_ref val(m);
             bool is_int = a.is_int(m_var->x());
-            for (unsigned i = 0; i < m_ineq_terms.size(); ++i) {
+            for (unsigned i = 0; i < num_ineqs(); ++i) {
                 rational const& ac = m_ineq_coeffs[i];
                 SASSERT(!is_int || t_le == ineq_ty(i));
 

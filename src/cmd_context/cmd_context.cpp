@@ -26,6 +26,7 @@ Notes:
 #include"seq_decl_plugin.h"
 #include"pb_decl_plugin.h"
 #include"fpa_decl_plugin.h"
+#include"special_relations_decl_plugin.h"
 #include"ast_pp.h"
 #include"var_subst.h"
 #include"pp.h"
@@ -624,6 +625,7 @@ void cmd_context::init_manager_core(bool new_manager) {
         register_plugin(symbol("pb"),     alloc(pb_decl_plugin), !has_logic());
         register_plugin(symbol("fpa"),      alloc(fpa_decl_plugin), logic_has_fpa());
         register_plugin(symbol("datalog_relation"), alloc(datalog::dl_decl_plugin), !has_logic());
+        register_plugin(symbol("special_relations"), alloc(special_relations_decl_plugin), !has_logic());
     }
     else {
         // the manager was created by an external module
