@@ -1018,6 +1018,12 @@ public:
 	    threads[prev] = start;
     }
 
+    bool can_reach(dl_var src, dl_var dst) {
+        uint_set target, visited;
+        target.insert(dst);
+        return can_reach(src, target, visited, dst);
+    }
+
     bool reachable(dl_var start, uint_set const& target, uint_set& visited, dl_var& dst) {
         visited.reset();
         svector<dl_var> nodes;

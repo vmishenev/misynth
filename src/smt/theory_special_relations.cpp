@@ -227,6 +227,7 @@ namespace smt {
                 }
                 // TODO: check if algorithm correctly produces all constraints.
                 // e.g., if we add an edge, do we have to repeat the loop?
+                //
             }
         }        
         return res;
@@ -410,26 +411,55 @@ namespace smt {
         return 0;
     }
 
+    void theory_special_relations::ensure_strict(graph& g) {
+        unsigned sz = g.get_num_edges();
+        for (unsigned i = 0; i < sz; ++i) {
+            if (!g.is_enabled(i)) continue;
+            if (g.get_weight(i) != s_integer(0)) continue;
+            dl_var src = g.get_source(i);
+            dl_var dst = g.get_target(i);
+            if (g.get_assignment(src) != g.get_assignment(dst)) continue;
+            if (get_enode(src)->get_root() == get_enode(dst)->get_root()) continue;
+            VERIFY(g.enable_edge(g.add_edge(src, dst, s_integer(-1), literal_vector())));
+        }        
+        TRACE("special_relations", g.display(tout););
+    }
+
+    void theory_special_relations::ensure_tree(graph& g) {
+        unsigned sz = g.get_num_nodes();
+        for (unsigned i = 0; i < sz; ++i) {
+            int_vector const& edges = g.get_in_edges(i);
+            for (unsigned j = 0; j < edges.size(); ++j) {
+                edge_id e1 = edges[j];
+                if (g.is_enabled(e1)) {
+                    SASSERT (i == g.get_target(e1));
+                    dl_var src1 = g.get_source(e1);
+                    for (unsigned k = j + 1; k < edges.size(); ++k) {
+                        edge_id e2 = edges[k];
+                        if (g.is_enabled(e2)) {
+                            dl_var src2 = g.get_source(e2);
+                            if (get_enode(src1)->get_root() == get_enode(src2)->get_root()) continue;
+                            if (g.can_reach(src1, src2) || can_reach(src2, src1)) continue;
+                            VERIFY(g.enable_edge(g.add_edge(src1, src2, s_integer(-1), literal_vector())));
+                        }
+                    }
+                }
+            }
+        }        
+        TRACE("special_relations", g.display(tout););
+    }
+
     expr_ref theory_special_relations::mk_inj(relation& r, model_generator& mg) {
         context& ctx = get_context();
         ast_manager& m = get_manager();
-        unsigned sz = r.m_graph.get_num_edges();
         r.push();
-        for (unsigned i = 0; i < sz; ++i) {
-            if (!r.m_graph.is_enabled(i)) continue;
-            if (r.m_graph.get_weight(i) != s_integer(0)) continue;
-            dl_var src = r.m_graph.get_source(i);
-            dl_var dst = r.m_graph.get_target(i);
-            if (r.m_graph.get_assignment(src) != r.m_graph.get_assignment(dst)) continue;
-            if (get_enode(src)->get_root() == get_enode(dst)->get_root()) continue;
-            VERIFY(r.m_graph.enable_edge(r.m_graph.add_edge(src, dst, s_integer(-1), literal_vector())));
-        }        
+        ensure_strict(r.m_graph);
         func_decl_ref fn(m);
         expr_ref result(m);
         arith_util arith(m);
         sort* const* ty = r.decl()->get_domain();
         fn = m.mk_fresh_func_decl("inj", 1, ty, arith.mk_int());
-        sz = r.m_graph.get_num_nodes();
+        unsigned sz = r.m_graph.get_num_nodes();
         func_interp* fi = alloc(func_interp, m, 1);
         for (unsigned i = 0; i < sz; ++i) {
             s_integer val = r.m_graph.get_assignment(i);
@@ -521,17 +551,33 @@ namespace smt {
        2. Identify each root.
        3. Process children, assigning unique (and disjoint) intervals.
        4. Extract interpretation.
+
+
      */
 
     void theory_special_relations::init_model_to(relation& r, model_generator& mg) {
         unsigned_vector num_children, lo, hi;
         graph const& g = r.m_graph;
+        r.push();
+        ensure_strict(r.m_graph);
+        ensure_tree(r.m_graph);
         count_children(g, num_children);
         assign_interval(g, num_children, lo, hi);
         expr_ref iv = mk_interval(r, mg, lo, hi);
+        r.pop(1);
         func_interp* fi = alloc(func_interp, get_manager(), 2);
         fi->set_else(iv);
         mg.get_model().register_decl(r.decl(), fi);        
+    }
+    
+    bool theory_special_relations::is_neighbour_edge(graph const& g, edge_id edge) const {
+        CTRACE("special_relations", g.is_enabled(edge), 
+              tout << edge << ": " << g.get_source(edge) << " " << g.get_target(edge) << " ";
+              tout << (g.get_assignment(g.get_source(edge)) - g.get_assignment(g.get_target(edge))) << "\n";);
+
+        return 
+            g.is_enabled(edge) && 
+            g.get_assignment(g.get_source(edge)) - g.get_assignment(g.get_target(edge)) == s_integer(1);
     }
 
     void theory_special_relations::count_children(graph const& g, unsigned_vector& num_children) {
@@ -550,7 +596,7 @@ namespace smt {
             bool all_p = true;
             int_vector const& edges = g.get_out_edges(v);
             for (unsigned i = 0; i < edges.size(); ++i) {
-                if (g.is_enabled(edges[i])) {
+                if (is_neighbour_edge(g, edges[i])) {
                     dl_var dst = g.get_target(edges[i]);
                     if (!processed[dst]) {
                         all_p = false;
@@ -594,7 +640,7 @@ namespace smt {
             nodes.pop_back();
             for (unsigned i = 0; i < edges.size(); ++i) {
                 SASSERT(l <= h);
-                if (g.is_enabled(edges[i])) {
+                if (is_neighbour_edge(g, edges[i])) {
                     dl_var dst = g.get_target(edges[i]);
                     lo[dst] = l;
                     hi[dst] = l + num_children[dst] - 1;

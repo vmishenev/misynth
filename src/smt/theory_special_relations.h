@@ -130,6 +130,8 @@ namespace smt {
         lbool  propagate_plo(atom& a);
         theory_var mk_var(expr* e);
         void count_children(graph const& g, unsigned_vector& num_children);
+        void ensure_strict(graph& g);
+        void ensure_tree(graph& g);
         void assign_interval(graph const& g, unsigned_vector const& num_children, unsigned_vector& lo, unsigned_vector& hi);
         expr_ref mk_inj(relation& r, model_generator& m);
         expr_ref mk_class(relation& r, model_generator& m);
@@ -138,6 +140,7 @@ namespace smt {
         void init_model_to(relation& r, model_generator& m);
         void init_model_po(relation& r, model_generator& m);
         void init_model_plo(relation& r, model_generator& m);
+        bool is_neighbour_edge(graph const& g, edge_id id) const;
 
     public:
         theory_special_relations(ast_manager& m);
