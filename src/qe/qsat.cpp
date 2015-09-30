@@ -142,8 +142,10 @@ namespace qe {
         if (level == 0) {
             return;
         }
-        CTRACE("qe", !mdl, tout << "level: " << level << "\n";);
-        SASSERT(mdl);
+        if (!mdl) {
+            asms.append(m_asms);
+            return;
+        }
         expr_ref val(m);
         for (unsigned j = 0; j < m_preds[level - 1].size(); ++j) {
             app* p = m_preds[level - 1][j].get();
@@ -629,6 +631,7 @@ class qsat : public tactic {
     }
 
     void reset() {
+        m_st.reset();        
         m_fa.k().collect_statistics(m_st);
         m_ex.k().collect_statistics(m_st);        
         m_pred_abs.collect_statistics(m_st);
@@ -638,7 +641,6 @@ class qsat : public tactic {
         m_pred_abs.reset();
         m_vars.reset();
         m_model = 0;
-        m_st.reset();        
         m_fa.k().reset();
         m_ex.k().reset();        
         m_cancel = false;
@@ -774,7 +776,6 @@ class qsat : public tactic {
         else {
             fml = m_pred_abs.mk_abstract(fml);
             get_kernel(m_level).assert_expr(fml);
-            get_kernel(m_level+1).assert_expr(fml);
         }
     }
 
@@ -873,7 +874,10 @@ public:
             break;
         case l_undef:
             result.push_back(in.get());
-            std::string s = m_ex.k().last_failure_as_string() + m_fa.k().last_failure_as_string();
+            std::string s = m_ex.k().last_failure_as_string();
+            if (s == "ok") {
+                s = m_fa.k().last_failure_as_string();
+            }
             throw tactic_exception(s.c_str()); 
         }        
     }

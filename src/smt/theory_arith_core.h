@@ -419,6 +419,7 @@ namespace smt {
             eq                 = m.mk_eq(m_util.mk_add(m_util.mk_mul(divisor, div), mod), dividend);
             lower              = m_util.mk_le(zero, mod);
             upper              = m_util.mk_lt(mod, abs_divisor);
+            TRACE("arith", tout << mk_pp(dividend, m) << " % " << mk_pp(divisor, m) << "\n";);
             mk_axiom(eqz, eq);
             mk_axiom(eqz, lower);
             mk_axiom(eqz, upper);
