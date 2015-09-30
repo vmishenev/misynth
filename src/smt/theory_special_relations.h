@@ -51,9 +51,9 @@ namespace smt {
                 r.ensure_var(v2);
                 literal_vector ls;
                 ls.push_back(literal(b, false));
-                m_pos = r.m_graph.add_edge(v2, v1, s_integer(0), ls);
+                m_pos = r.m_graph.add_edge(v1, v2, s_integer(0), ls);  // v2 <= v1
                 ls[0] = literal(b, true);
-                m_neg = r.m_graph.add_edge(v1, v2, s_integer(-1), ls);
+                m_neg = r.m_graph.add_edge(v2, v1, s_integer(-1), ls); // v1 <= v2 - 1
             }
             bool_var var() const { return m_bvar;}
             relation& get_relation() const { return m_relation; }
@@ -141,6 +141,8 @@ namespace smt {
         void init_model_po(relation& r, model_generator& m);
         void init_model_plo(relation& r, model_generator& m);
         bool is_neighbour_edge(graph const& g, edge_id id) const;
+        bool is_strict_neighbour_edge(graph const& g, edge_id id) const;
+        bool disconnected(graph const& g, dl_var u, dl_var v) const;
 
     public:
         theory_special_relations(ast_manager& m);

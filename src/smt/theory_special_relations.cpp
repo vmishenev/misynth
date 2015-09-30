@@ -201,14 +201,14 @@ namespace smt {
             if (!a.phase() && r.m_uf.find(a.v1()) == r.m_uf.find(a.v2())) {
                 target.reset();
                 theory_var w;
-                // v1 !<= v2 is asserted
-                target.insert(a.v1());
-                if (r.m_graph.reachable(a.v2(), visited, target, w)) {
-                    // we already have v2 <= v1
+                // v2 !<= v1 is asserted
+                target.insert(a.v2());
+                if (r.m_graph.reachable(a.v1(), visited, target, w)) {
+                    // we already have v1 <= v2
                     continue;
                 }
                 target.reset();
-                if (r.m_graph.reachable(a.v1(), target, visited, w)) {
+                if (r.m_graph.reachable(a.v2(), target, visited, w)) {
                     // there is a common successor
                     // v1 <= w
                     // v2 <= w
@@ -418,7 +418,6 @@ namespace smt {
             if (g.get_weight(i) != s_integer(0)) continue;
             dl_var src = g.get_source(i);
             dl_var dst = g.get_target(i);
-            if (g.get_assignment(src) != g.get_assignment(dst)) continue;
             if (get_enode(src)->get_root() == get_enode(dst)->get_root()) continue;
             VERIFY(g.enable_edge(g.add_edge(src, dst, s_integer(-1), literal_vector())));
         }        
@@ -439,7 +438,7 @@ namespace smt {
                         if (g.is_enabled(e2)) {
                             dl_var src2 = g.get_source(e2);
                             if (get_enode(src1)->get_root() == get_enode(src2)->get_root()) continue;
-                            if (g.can_reach(src1, src2) || can_reach(src2, src1)) continue;
+                            if (!disconnected(g, src1, src2)) continue;
                             VERIFY(g.enable_edge(g.add_edge(src1, src2, s_integer(-1), literal_vector())));
                         }
                     }
@@ -447,6 +446,38 @@ namespace smt {
             }
         }        
         TRACE("special_relations", g.display(tout););
+    }
+
+    bool theory_special_relations::disconnected(graph const& g, dl_var u, dl_var v) const {
+        s_integer val_u = g.get_assignment(u);
+        s_integer val_v = g.get_assignment(v);
+        if (val_u == val_v) return u != v;
+        if (val_u < val_v) {
+            std::swap(u, v);
+            std::swap(val_u, val_v);
+        }
+        SASSERT(val_u > val_v);
+        svector<dl_var> todo;
+        todo.push_back(u);
+        while (!todo.empty()) {
+            u = todo.back();
+            todo.pop_back();
+            if (u == v) {
+                return false;
+            }
+            SASSERT(g.get_assignment(u) <= val_u);
+            if (g.get_assignment(u) <= val_v) {
+                continue;
+            }
+            int_vector const& edges = g.get_out_edges(u);
+            for (unsigned i = 0; i < edges.size(); ++i) {
+                edge_id e = edges[i];
+                if (is_strict_neighbour_edge(g, e)) {
+                    todo.push_back(g.get_target(e));
+                }
+            }                    
+        }
+        return true;
     }
 
     expr_ref theory_special_relations::mk_inj(relation& r, model_generator& mg) {
@@ -571,13 +602,17 @@ namespace smt {
     }
     
     bool theory_special_relations::is_neighbour_edge(graph const& g, edge_id edge) const {
-        CTRACE("special_relations", g.is_enabled(edge), 
+        CTRACE("special_relations_verbose", g.is_enabled(edge), 
               tout << edge << ": " << g.get_source(edge) << " " << g.get_target(edge) << " ";
               tout << (g.get_assignment(g.get_source(edge)) - g.get_assignment(g.get_target(edge))) << "\n";);
 
         return 
             g.is_enabled(edge) && 
             g.get_assignment(g.get_source(edge)) - g.get_assignment(g.get_target(edge)) == s_integer(1);
+    }
+
+    bool theory_special_relations::is_strict_neighbour_edge(graph const& g, edge_id e) const {
+        return is_neighbour_edge(g, e) && g.get_weight(e) != s_integer(0);
     }
 
     void theory_special_relations::count_children(graph const& g, unsigned_vector& num_children) {
@@ -596,8 +631,10 @@ namespace smt {
             bool all_p = true;
             int_vector const& edges = g.get_out_edges(v);
             for (unsigned i = 0; i < edges.size(); ++i) {
-                if (is_neighbour_edge(g, edges[i])) {
-                    dl_var dst = g.get_target(edges[i]);
+                edge_id e = edges[i];
+                if (is_strict_neighbour_edge(g, e)) {
+                    dl_var dst = g.get_target(e);
+                    TRACE("special_relations", tout << v << " -> " << dst << "\n";);
                     if (!processed[dst]) {
                         all_p = false;
                         nodes.push_back(dst);
@@ -611,6 +648,10 @@ namespace smt {
                 processed[v] = true;
             }
         }
+        TRACE("special_relations",
+              for (unsigned i = 0; i < sz; ++i) {
+                  tout << i << ": " << num_children[i] << "\n";
+              });
     }
 
     void theory_special_relations::assign_interval(graph const& g, unsigned_vector const& num_children, unsigned_vector& lo, unsigned_vector& hi) {
@@ -640,7 +681,7 @@ namespace smt {
             nodes.pop_back();
             for (unsigned i = 0; i < edges.size(); ++i) {
                 SASSERT(l <= h);
-                if (is_neighbour_edge(g, edges[i])) {
+                if (is_strict_neighbour_edge(g, edges[i])) {
                     dl_var dst = g.get_target(edges[i]);
                     lo[dst] = l;
                     hi[dst] = l + num_children[dst] - 1;
