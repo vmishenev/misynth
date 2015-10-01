@@ -57,7 +57,7 @@ namespace qe {
            Apply model-based qe on constants provided as vector of variables. 
            Return the updated formula and updated set of variables that were not eliminated.           
         */
-        void operator()(app_ref_vector& vars, model& mdl, expr_ref_vector& fmls);
+        void operator()(bool force_elim, app_ref_vector& vars, model& mdl, expr_ref_vector& fmls);
 
         /**
            \brief

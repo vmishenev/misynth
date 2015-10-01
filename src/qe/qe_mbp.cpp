@@ -303,16 +303,29 @@ public:
         }        
     }
 
-    void operator()(app_ref_vector& vars, model& model, expr_ref_vector& fmls) {
+    void operator()(bool force_elim, app_ref_vector& vars, model& model, expr_ref_vector& fmls) {
         expr_ref val(m), tmp(m);
         app_ref var(m);
-        preprocess_solve(model, vars, fmls);
         th_rewriter rw(m);
-        while (!vars.empty()) {
-            var = vars.back();
-            vars.pop_back();
-            project_plugin* p = get_plugin(var);
-            if (!p || !(*p)(model, var, vars, fmls)) {
+        bool progress = true;
+        while (progress && !vars.empty()) {
+            preprocess_solve(model, vars, fmls);
+            app_ref_vector new_vars(m);
+            progress = false;
+            while (!vars.empty()) {
+                var = vars.back();
+                vars.pop_back();
+                project_plugin* p = get_plugin(var);
+                if (p && (*p)(model, var, vars, fmls)) {
+                    progress = true;
+                }
+                else {
+                    new_vars.push_back(var);
+                }
+            }
+            if (!progress && !new_vars.empty() && force_elim) {
+                var = new_vars.back();
+                new_vars.pop_back();
                 expr_safe_replace sub(m);
                 VERIFY(model.eval(var, val));
                 sub.insert(var, val);
@@ -322,12 +335,15 @@ public:
                     if (m.is_true(tmp)) {
                         fmls[i] = fmls.back();
                         fmls.pop_back();
+                        --i;
                     }
                     else {
                         fmls[i] = tmp;
                     }
-                }
+                }            
+                progress = true;
             }
+            vars.append(new_vars);
         }
     }
 };
@@ -340,8 +356,8 @@ mbp::~mbp() {
     dealloc(m_impl);
 }
         
-void mbp::operator()(app_ref_vector& vars, model& mdl, expr_ref_vector& fmls) {
-    (*m_impl)(vars, mdl, fmls);
+void mbp::operator()(bool force_elim, app_ref_vector& vars, model& mdl, expr_ref_vector& fmls) {
+    (*m_impl)(force_elim, vars, mdl, fmls);
 }
 
 void mbp::solve(model& model, app_ref_vector& vars, expr_ref_vector& fmls) {

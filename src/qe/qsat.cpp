@@ -28,6 +28,7 @@ Notes:
 #include "ast_pp.h" 
 #include "model_v2_pp.h"
 #include "qsat.h"
+#include "expr_abstract.h"
 
 
 namespace qe {
@@ -550,6 +551,7 @@ class qsat : public tactic {
     model_ref                  m_model;
     volatile bool              m_cancel;
     bool                       m_qelim;       // perform quantifier elimination
+    bool                       m_force_elim;  // force elimination of variables during projection.
     app_ref_vector             m_avars;       // variables to project
 
 
@@ -735,11 +737,15 @@ class qsat : public tactic {
         model& mdl = *m_model.get();
         get_core(core, m_level);
         get_vars(m_level);
-        m_mbp(m_avars, mdl, core);
+        m_mbp(m_force_elim, m_avars, mdl, core);
         fml = negate_core(core);
         add_assumption(fml);
-        m_answer.push_back(fml);
+        m_answer.push_back(bind(fml));
         pop(1);
+    }
+
+    expr_ref bind(expr_ref& fml) {
+        return mk_exists(m, m_avars.size(), (app* const*) m_vars.c_ptr(), fml);        
     }
 
     void project(expr_ref_vector& core) {
@@ -752,7 +758,7 @@ class qsat : public tactic {
         model& mdl = *m_model.get();
 
         get_vars(m_level-1);
-        m_mbp(m_avars, mdl, core);
+        m_mbp(true, m_avars, mdl, core);
         fml = negate_core(core);
         unsigned num_scopes = 0;
 
@@ -803,6 +809,7 @@ public:
         m_level(0),
         m_cancel(false),
         m_qelim(qelim),
+        m_force_elim(true),
         m_avars(m)
     {
         reset();
