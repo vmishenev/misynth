@@ -112,6 +112,8 @@ namespace qe {
         void display(std::ostream& out, expr_ref_vector const& asms) const;
         void collect_statistics(statistics& st) const;
     };
+
+
 }
 
 tactic * mk_qsat_tactic(ast_manager & m, params_ref const& p = params_ref());

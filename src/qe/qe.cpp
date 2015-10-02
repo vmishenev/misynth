@@ -2299,7 +2299,7 @@ namespace qe {
         }    
     }
 
-    static void extract_vars(quantifier* q, expr_ref& new_body, app_ref_vector& vars) {
+    void extract_vars(quantifier* q, expr_ref& new_body, app_ref_vector& vars) {
         ast_manager& m = new_body.get_manager();
         expr_ref tmp(m);
         unsigned nd = q->get_num_decls();

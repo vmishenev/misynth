@@ -28,6 +28,8 @@ Notes:
 #include "ast_pp.h" 
 #include "model_v2_pp.h"
 #include "qsat.h"
+#include "expr_abstract.h"
+#include "qe.h"
 
 
 namespace qe {
@@ -493,430 +495,532 @@ namespace qe {
         }
     }
 
-class qsat : public tactic {
-
-    struct stats {
-        unsigned m_num_rounds;        
-        stats() { reset(); }
-        void reset() { memset(this, 0, sizeof(*this)); }
-    };
-    
-    class kernel {
-        ast_manager& m;
-        smt_params   m_smtp;
-        smt::kernel  m_kernel;
-
-    public:
-        kernel(ast_manager& m):
-            m(m),
-            m_kernel(m, m_smtp)
-        {
-            m_smtp.m_model = true;
-            m_smtp.m_relevancy_lvl = 0;
-        }
+    class qsat : public tactic {
+        
+        struct stats {
+            unsigned m_num_rounds;        
+            stats() { reset(); }
+            void reset() { memset(this, 0, sizeof(*this)); }
+        };
+        
+        class kernel {
+            ast_manager& m;
+            smt_params   m_smtp;
+            smt::kernel  m_kernel;
             
-        smt::kernel& k() { return m_kernel; }
-        smt::kernel const& k() const { return m_kernel; }
-
-        void assert_expr(expr* e) {
-            m_kernel.assert_expr(e);
-        }
-
-        void get_core(expr_ref_vector& core) {
-            unsigned sz = m_kernel.get_unsat_core_size();
-            core.reset();
-            for (unsigned i = 0; i < sz; ++i) {
-                core.push_back(m_kernel.get_unsat_core_expr(i));
+        public:
+            kernel(ast_manager& m):
+                m(m),
+                m_kernel(m, m_smtp)
+            {
+                m_smtp.m_model = true;
+                m_smtp.m_relevancy_lvl = 0;
             }
-            TRACE("qe", tout << "core: " << core << "\n";
-                  m_kernel.display(tout);
-                  tout << "\n";
-                  );
-        }
-    };
-
-    ast_manager&               m;
-    params_ref                 m_params;
-    stats                      m_stats;
-    statistics                 m_st;
-    qe::mbp                    m_mbp;
-    kernel                     m_fa;
-    kernel                     m_ex;
-    pred_abs                   m_pred_abs;
-    expr_ref_vector            m_answer;
-    expr_ref_vector            m_asms;
-    vector<app_ref_vector>     m_vars;       // variables from alternating prefixes.
-    unsigned                   m_level;
-    model_ref                  m_model;
-    volatile bool              m_cancel;
-    bool                       m_qelim;       // perform quantifier elimination
-    app_ref_vector             m_avars;       // variables to project
-
-
-
-    /**
-       \brief check alternating satisfiability.
-       Even levels are existential, odd levels are universal.
-     */
-    lbool check_sat() {        
-        while (true) {
-            ++m_stats.m_num_rounds;
-            check_cancel();
-            expr_ref_vector asms(m_asms);
-            m_pred_abs.get_assumptions(m_model.get(), asms);
-            smt::kernel& k = get_kernel(m_level).k();
-            lbool res = k.check(asms);
-            switch (res) {
-            case l_true:
-                k.get_model(m_model);
-                TRACE("qe", k.display(tout); display(tout << "\n", *m_model.get()); display(tout, asms); );
-                push();
-                break;
-            case l_false:
-                switch (m_level) {
-                case 0: return l_false;
-                case 1: 
-                    if (!m_qelim) return l_true; 
-                    if (m_model.get()) {
-                        project_qe(asms);
-                    }
-                    else {
-                        pop(1);
+            
+            smt::kernel& k() { return m_kernel; }
+            smt::kernel const& k() const { return m_kernel; }
+            
+            void assert_expr(expr* e) {
+                m_kernel.assert_expr(e);
+            }
+            
+            void get_core(expr_ref_vector& core) {
+                unsigned sz = m_kernel.get_unsat_core_size();
+                core.reset();
+                for (unsigned i = 0; i < sz; ++i) {
+                    core.push_back(m_kernel.get_unsat_core_expr(i));
+                }
+                TRACE("qe", tout << "core: " << core << "\n";
+                      m_kernel.display(tout);
+                      tout << "\n";
+                      );
+            }
+        };
+        
+        ast_manager&               m;
+        params_ref                 m_params;
+        stats                      m_stats;
+        statistics                 m_st;
+        qe::mbp                    m_mbp;
+        kernel                     m_fa;
+        kernel                     m_ex;
+        pred_abs                   m_pred_abs;
+        expr_ref_vector            m_answer;
+        expr_ref_vector            m_asms;
+        vector<app_ref_vector>     m_vars;       // variables from alternating prefixes.
+        unsigned                   m_level;
+        model_ref                  m_model;
+        volatile bool              m_cancel;
+        bool                       m_qelim;       // perform quantifier elimination
+        bool                       m_force_elim;  // force elimination of variables during projection.
+        app_ref_vector             m_avars;       // variables to project
+        
+    public:        
+        
+        /**
+           \brief check alternating satisfiability.
+           Even levels are existential, odd levels are universal.
+        */
+        lbool check_sat() {        
+            while (true) {
+                ++m_stats.m_num_rounds;
+                check_cancel();
+                expr_ref_vector asms(m_asms);
+                m_pred_abs.get_assumptions(m_model.get(), asms);
+                smt::kernel& k = get_kernel(m_level).k();
+                lbool res = k.check(asms);
+                switch (res) {
+                case l_true:
+                    k.get_model(m_model);
+                    TRACE("qe", k.display(tout); display(tout << "\n", *m_model.get()); display(tout, asms); );
+                    push();
+                    break;
+                case l_false:
+                    switch (m_level) {
+                    case 0: return l_false;
+                    case 1: 
+                        if (!m_qelim) return l_true; 
+                        if (m_model.get()) {
+                            project_qe(asms);
+                        }
+                        else {
+                            pop(1);
+                        }
+                        break;
+                    default: 
+                        if (m_model.get()) {
+                            project(asms); 
+                        }
+                        else {
+                            pop(1);
+                        }
+                        break;
                     }
                     break;
-                default: 
-                    if (m_model.get()) {
-                        project(asms); 
+                case l_undef:
+                    return res;
+                }
+            }
+            return l_undef;
+        }
+        
+        kernel& get_kernel(unsigned j) {        
+            if (is_exists(j)) {
+                return m_ex; 
+            }
+            else {
+                return m_fa;
+            }
+        }
+        
+        bool is_exists(unsigned level) const {
+            return (level % 2) == 0;
+        }
+        
+        bool is_forall(unsigned level) const {
+            return is_exists(level+1);
+        }
+        
+        void push() {
+            m_level++;
+            m_pred_abs.push();
+        }
+        
+        void pop(unsigned num_scopes) {
+            m_model.reset();
+            SASSERT(num_scopes <= m_level);
+            m_pred_abs.pop(num_scopes);
+            m_level -= num_scopes;
+        }
+        
+        void reset() {
+            m_st.reset();        
+            m_fa.k().collect_statistics(m_st);
+            m_ex.k().collect_statistics(m_st);        
+            m_pred_abs.collect_statistics(m_st);
+            m_level = 0;
+            m_answer.reset();
+            m_asms.reset();
+            m_pred_abs.reset();
+            m_vars.reset();
+            m_model = 0;
+            m_fa.k().reset();
+            m_ex.k().reset();        
+            m_cancel = false;
+        }    
+        
+        /**
+           \brief create a quantifier prefix formula.
+        */
+        void hoist(expr_ref& fml) {
+            quantifier_hoister hoist(m);
+            app_ref_vector vars(m);
+            bool is_forall = false;        
+            m_pred_abs.get_free_vars(fml, vars);
+            m_vars.push_back(vars);
+            vars.reset();
+            if (m_qelim) {
+                is_forall = true;
+                hoist.pull_quantifier(is_forall, fml, vars);
+                m_vars.push_back(vars);
+            }
+            else {
+                hoist.pull_quantifier(is_forall, fml, vars);
+                m_vars.back().append(vars);
+            }
+            do {
+                is_forall = !is_forall;
+                vars.reset();
+                hoist.pull_quantifier(is_forall, fml, vars);
+                m_vars.push_back(vars);
+            }
+            while (!vars.empty());
+            SASSERT(m_vars.back().empty()); 
+            
+            // initialize levels.
+            for (unsigned i = 0; i < m_vars.size(); ++i) {
+                max_level lvl;
+                if (is_exists(i)) {
+                    lvl.m_ex = i;
+                }
+                else {
+                    lvl.m_fa = i;
+                }
+                for (unsigned j = 0; j < m_vars[i].size(); ++j) {
+                    m_pred_abs.set_expr_level(m_vars[i][j].get(), lvl);
+                }
+            }
+            TRACE("qe", tout << fml << "\n";);
+        }
+        
+        void get_core(expr_ref_vector& core, unsigned level) {
+            get_kernel(level).get_core(core);
+            m_pred_abs.pred2lit(core);
+        }
+        
+        void check_cancel() {
+            if (m_cancel) {
+                throw tactic_exception(TACTIC_CANCELED_MSG);
+            }
+        }
+        
+        void display(std::ostream& out) const {
+            out << "level: " << m_level << "\n";
+            for (unsigned i = 0; i < m_vars.size(); ++i) {
+                for (unsigned j = 0; j < m_vars[i].size(); ++j) {
+                    expr* v = m_vars[i][j];
+                    out << mk_pp(v, m) << " ";
+                }
+                out << "\n";
+            }
+            m_pred_abs.display(out);
+        }
+        
+        void display(std::ostream& out, model& model) const {
+            display(out);
+            model_v2_pp(out, model);
+        }
+        
+        void display(std::ostream& out, expr_ref_vector const& asms) const {
+            m_pred_abs.display(out, asms);
+        }
+        
+        void add_assumption(expr* fml) {
+            app_ref b = m_pred_abs.fresh_bool("b");        
+            m_asms.push_back(b);
+            m_ex.assert_expr(m.mk_eq(b, fml));
+            m_pred_abs.add_pred(b, to_app(fml));
+        }
+        
+        void project_qe(expr_ref_vector& core) {
+            SASSERT(m_level == 1);
+            expr_ref fml(m);
+            model& mdl = *m_model.get();
+            get_core(core, m_level);
+            get_vars(m_level);
+            m_mbp(m_force_elim, m_avars, mdl, core);
+            fml = negate_core(core);
+            add_assumption(fml);
+            m_answer.push_back(bind(fml));
+            pop(1);
+        }
+        
+        expr_ref bind(expr_ref& fml) {
+            return mk_exists(m, m_avars.size(), (app* const*) m_vars.c_ptr(), fml);        
+        }
+        
+        void project(expr_ref_vector& core) {
+            get_core(core, m_level);
+            TRACE("qe", display(tout); display(tout << "core\n", core););
+            SASSERT(m_level >= 2);
+            expr_ref fml(m); 
+            expr_ref_vector defs(m);
+            max_level level;
+            model& mdl = *m_model.get();
+            
+            get_vars(m_level-1);
+            m_mbp(true, m_avars, mdl, core);
+            fml = negate_core(core);
+            unsigned num_scopes = 0;
+            
+            m_pred_abs.abstract_atoms(fml, level, defs);
+            m_ex.assert_expr(mk_and(defs));
+            m_fa.assert_expr(mk_and(defs));
+            if (level.max() == UINT_MAX) {
+                num_scopes = 2*(m_level/2);
+            }
+            else {
+                SASSERT(level.max() + 2 <= m_level);
+                num_scopes = m_level - level.max();
+                SASSERT(num_scopes >= 2);
+            }
+            
+            TRACE("qe", tout << "backtrack: " << num_scopes << "\nproject:\n" << core << "\n|->\n" << fml << "\n";);
+            pop(num_scopes); 
+            if (m_level == 0 && m_qelim) {
+                add_assumption(fml);
+            }
+            else {
+                fml = m_pred_abs.mk_abstract(fml);
+                get_kernel(m_level).assert_expr(fml);
+            }
+        }
+        
+        void get_vars(unsigned level) {
+            m_avars.reset();
+            for (unsigned i = level; i < m_vars.size(); ++i) {
+                m_avars.append(m_vars[i]);
+            }
+        } 
+        
+        expr_ref negate_core(expr_ref_vector& core) {
+            return ::push_not(::mk_and(core));
+        }
+        
+    public:
+        
+        qsat(ast_manager& m, params_ref const& p, bool qelim):
+            m(m),
+            m_mbp(m),
+            m_fa(m),
+            m_ex(m),
+            m_pred_abs(m),
+            m_answer(m),
+            m_asms(m),
+            m_level(0),
+            m_cancel(false),
+            m_qelim(qelim),
+            m_force_elim(true),
+            m_avars(m)
+        {
+            reset();
+        }
+        
+        virtual ~qsat() {
+            reset();
+        }
+        
+        void updt_params(params_ref const & p) {
+        }
+        
+        void collect_param_descrs(param_descrs & r) {
+        }
+
+        expr_ref elim_rec(expr* fml) {
+            expr_ref tmp(m);
+            expr_ref_vector     trail(m);
+            obj_map<expr,expr*> visited;
+            ptr_vector<expr>    todo;
+            trail.push_back(fml);
+            todo.push_back(fml);
+            expr* e = 0, *r = 0;
+            
+            while (!todo.empty()) {
+                check_cancel();
+
+                e = todo.back();
+                if (visited.contains(e)) {
+                    todo.pop_back();
+                    continue;            
+                }
+                
+                switch(e->get_kind()) {
+                case AST_APP: {
+                    app* a = to_app(e);
+                    expr_ref_vector args(m);
+                    unsigned num_args = a->get_num_args();
+                    bool all_visited = true;
+                    for (unsigned i = 0; i < num_args; ++i) {
+                        if (visited.find(a->get_arg(i), r)) {
+                            args.push_back(r);
+                        }
+                        else {
+                            todo.push_back(a->get_arg(i));
+                            all_visited = false;
+                        }
                     }
-                    else {
-                        pop(1);
+                    if (all_visited) {
+                        r = m.mk_app(a->get_decl(), args.size(), args.c_ptr());
+                        todo.pop_back();
+                        trail.push_back(r);
+                        visited.insert(e, r);
                     }
                     break;
                 }
+                case AST_QUANTIFIER: {
+                    app_ref_vector vars(m);
+                    quantifier* q = to_quantifier(e);
+                    bool is_fa = q->is_forall();
+                    tmp = q->get_expr();
+                    extract_vars(q, tmp, vars);
+                    tmp = elim_rec(tmp);
+                    tmp = elim(is_fa, vars.size(), vars.c_ptr(), tmp);
+                    trail.push_back(tmp);
+                    visited.insert(e, tmp);
+                    todo.pop_back();
+                    break;
+                }
+                default:
+                    UNREACHABLE();
+                    break;
+                }        
+            }    
+            VERIFY (visited.find(fml, e));
+            return expr_ref(e, m);
+        }
+        
+        expr_ref elim(bool is_forall, unsigned n, app*const* vs, expr* _fml) {
+            reset();
+            TRACE("qe", tout << fml << "\n";);
+            fml = push_not(fml);            
+            
+            return expr_ref(m);
+        }
+
+#if 0
+        {
+            hoist(fml);
+            m_pred_abs.abstract_atoms(fml, defs);
+            fml = m_pred_abs.mk_abstract(fml);
+            m_ex.assert_expr(mk_and(defs));
+            m_fa.assert_expr(mk_and(defs));
+            m_ex.assert_expr(fml);
+            m_fa.assert_expr(m.mk_not(fml));
+            TRACE("qe", tout << "ex: " << fml << "\n";);
+            lbool is_sat = check_sat();
+            switch (is_sat) {
+            case l_true:
+                UNREACHABLE();
+                return l_true;
+            case l_undef:
+                return l_undef;
+            case l_false:
+                fml = ::mk_and(m_answer);
+                fml = bind(fml);
+                return l_true;
+            }
+        }
+#endif
+        
+        void operator()(/* in */  goal_ref const & in, 
+                        /* out */ goal_ref_buffer & result, 
+                        /* out */ model_converter_ref & mc, 
+                        /* out */ proof_converter_ref & pc,
+                        /* out */ expr_dependency_ref & core) {
+            tactic_report report("qsat-tactic", *in);
+            ptr_vector<expr> fmls;
+            expr_ref_vector defs(m);
+            expr_ref fml(m);
+            mc = 0; pc = 0; core = 0;
+            in->get_formulas(fmls);
+            fml = mk_and(m, fmls.size(), fmls.c_ptr());
+            
+            // for now:
+            // fail if cores.  (TBD)
+            // fail if proofs. (TBD)
+            
+            reset();
+            TRACE("qe", tout << fml << "\n";);
+            if (m_qelim) {
+                fml = push_not(fml);
+            }
+            hoist(fml);
+            m_pred_abs.abstract_atoms(fml, defs);
+            fml = m_pred_abs.mk_abstract(fml);
+            m_ex.assert_expr(mk_and(defs));
+            m_fa.assert_expr(mk_and(defs));
+            m_ex.assert_expr(fml);
+            m_fa.assert_expr(m.mk_not(fml));
+            TRACE("qe", tout << "ex: " << fml << "\n";);
+            lbool is_sat = check_sat();
+            
+            switch (is_sat) {
+            case l_false:
+                in->reset();
+                in->inc_depth();
+                if (m_qelim) {
+                    fml = ::mk_and(m_answer);
+                    in->assert_expr(fml);
+                }
+                else {
+                    in->assert_expr(m.mk_false());
+                }
+                result.push_back(in.get());
+                break;
+            case l_true:
+                in->reset();
+                in->inc_depth();
+                result.push_back(in.get());
+                if (in->models_enabled()) {
+                    mc = model2model_converter(m_model.get());
+                    mc = concat(m_pred_abs.fmc(), mc.get());
+                }
                 break;
             case l_undef:
-                return res;
-            }
-        }
-        return l_undef;
-    }
-
-    kernel& get_kernel(unsigned j) {        
-        if (is_exists(j)) {
-            return m_ex; 
-        }
-        else {
-            return m_fa;
-        }
-    }
-
-    bool is_exists(unsigned level) const {
-        return (level % 2) == 0;
-    }
-
-    bool is_forall(unsigned level) const {
-        return is_exists(level+1);
-    }
-
-    void push() {
-        m_level++;
-        m_pred_abs.push();
-    }
-
-    void pop(unsigned num_scopes) {
-        m_model.reset();
-        SASSERT(num_scopes <= m_level);
-        m_pred_abs.pop(num_scopes);
-        m_level -= num_scopes;
-    }
-
-    void reset() {
-        m_st.reset();        
-        m_fa.k().collect_statistics(m_st);
-        m_ex.k().collect_statistics(m_st);        
-        m_pred_abs.collect_statistics(m_st);
-        m_level = 0;
-        m_answer.reset();
-        m_asms.reset();
-        m_pred_abs.reset();
-        m_vars.reset();
-        m_model = 0;
-        m_fa.k().reset();
-        m_ex.k().reset();        
-        m_cancel = false;
-    }    
-
-    /**
-       \brief create a quantifier prefix formula.
-     */
-    void hoist(expr_ref& fml) {
-        quantifier_hoister hoist(m);
-        app_ref_vector vars(m);
-        bool is_forall = false;        
-        m_pred_abs.get_free_vars(fml, vars);
-        m_vars.push_back(vars);
-        vars.reset();
-        if (m_qelim) {
-            is_forall = true;
-            hoist.pull_quantifier(is_forall, fml, vars);
-            m_vars.push_back(vars);
-        }
-        else {
-            hoist.pull_quantifier(is_forall, fml, vars);
-            m_vars.back().append(vars);
-        }
-        do {
-            is_forall = !is_forall;
-            vars.reset();
-            hoist.pull_quantifier(is_forall, fml, vars);
-            m_vars.push_back(vars);
-        }
-        while (!vars.empty());
-        SASSERT(m_vars.back().empty()); 
-
-        // initialize levels.
-        for (unsigned i = 0; i < m_vars.size(); ++i) {
-            max_level lvl;
-            if (is_exists(i)) {
-                lvl.m_ex = i;
-            }
-            else {
-                lvl.m_fa = i;
-            }
-            for (unsigned j = 0; j < m_vars[i].size(); ++j) {
-                m_pred_abs.set_expr_level(m_vars[i][j].get(), lvl);
-            }
-        }
-        TRACE("qe", tout << fml << "\n";);
-    }
-
-    void get_core(expr_ref_vector& core, unsigned level) {
-        get_kernel(level).get_core(core);
-        m_pred_abs.pred2lit(core);
-    }
-
-    void check_cancel() {
-        if (m_cancel) {
-            throw tactic_exception(TACTIC_CANCELED_MSG);
-        }
-    }
-
-    void display(std::ostream& out) const {
-        out << "level: " << m_level << "\n";
-        for (unsigned i = 0; i < m_vars.size(); ++i) {
-            for (unsigned j = 0; j < m_vars[i].size(); ++j) {
-                expr* v = m_vars[i][j];
-                out << mk_pp(v, m) << " ";
-            }
-            out << "\n";
-        }
-        m_pred_abs.display(out);
-    }
-
-    void display(std::ostream& out, model& model) const {
-        display(out);
-        model_v2_pp(out, model);
-    }
-
-    void display(std::ostream& out, expr_ref_vector const& asms) const {
-        m_pred_abs.display(out, asms);
-    }
-
-    void add_assumption(expr* fml) {
-        app_ref b = m_pred_abs.fresh_bool("b");        
-        m_asms.push_back(b);
-        m_ex.assert_expr(m.mk_eq(b, fml));
-        m_pred_abs.add_pred(b, to_app(fml));
-    }
-
-    void project_qe(expr_ref_vector& core) {
-        SASSERT(m_level == 1);
-        expr_ref fml(m);
-        model& mdl = *m_model.get();
-        get_core(core, m_level);
-        get_vars(m_level);
-        m_mbp(m_avars, mdl, core);
-        fml = negate_core(core);
-        add_assumption(fml);
-        m_answer.push_back(fml);
-        pop(1);
-    }
-
-    void project(expr_ref_vector& core) {
-        get_core(core, m_level);
-        TRACE("qe", display(tout); display(tout << "core\n", core););
-        SASSERT(m_level >= 2);
-        expr_ref fml(m); 
-        expr_ref_vector defs(m);
-        max_level level;
-        model& mdl = *m_model.get();
-
-        get_vars(m_level-1);
-        m_mbp(m_avars, mdl, core);
-        fml = negate_core(core);
-        unsigned num_scopes = 0;
-
-        m_pred_abs.abstract_atoms(fml, level, defs);
-        m_ex.assert_expr(mk_and(defs));
-        m_fa.assert_expr(mk_and(defs));
-        if (level.max() == UINT_MAX) {
-            num_scopes = 2*(m_level/2);
-        }
-        else {
-            SASSERT(level.max() + 2 <= m_level);
-            num_scopes = m_level - level.max();
-            SASSERT(num_scopes >= 2);
+                result.push_back(in.get());
+                std::string s = m_ex.k().last_failure_as_string();
+                if (s == "ok") {
+                    s = m_fa.k().last_failure_as_string();
+                }
+                throw tactic_exception(s.c_str()); 
+            }        
         }
         
-        TRACE("qe", tout << "backtrack: " << num_scopes << "\nproject:\n" << core << "\n|->\n" << fml << "\n";);
-        pop(num_scopes); 
-        if (m_level == 0 && m_qelim) {
-            add_assumption(fml);
+        void collect_statistics(statistics & st) const {
+            st.copy(m_st);
+            st.update("qsat num rounds", m_stats.m_num_rounds); 
+            m_pred_abs.collect_statistics(st);
         }
-        else {
-            fml = m_pred_abs.mk_abstract(fml);
-            get_kernel(m_level).assert_expr(fml);
+        
+        void reset_statistics() {
+            m_stats.reset();
+            m_fa.k().reset_statistics();
+            m_ex.k().reset_statistics();        
         }
-    }
-
-    void get_vars(unsigned level) {
-        m_avars.reset();
-        for (unsigned i = level; i < m_vars.size(); ++i) {
-            m_avars.append(m_vars[i]);
+        
+        void cleanup() {
+            reset();
+            set_cancel(false);
         }
-    } 
-
-    expr_ref negate_core(expr_ref_vector& core) {
-        return ::push_not(::mk_and(core));
-    }
-
-public:
-
-    qsat(ast_manager& m, params_ref const& p, bool qelim):
-        m(m),
-        m_mbp(m),
-        m_fa(m),
-        m_ex(m),
-        m_pred_abs(m),
-        m_answer(m),
-        m_asms(m),
-        m_level(0),
-        m_cancel(false),
-        m_qelim(qelim),
-        m_avars(m)
-    {
-        reset();
-    }
-
-    virtual ~qsat() {
-        reset();
-    }
+        
+        void set_logic(symbol const & l) {
+        }
+        
+        void set_progress_callback(progress_callback * callback) {
+        }
+        
+        tactic * translate(ast_manager & m) {
+            return alloc(qsat, m, m_params, m_qelim);
+        }
+        
+        virtual void set_cancel(bool f) {
+            m_fa.k().set_cancel(f);        
+            m_ex.k().set_cancel(f);        
+            m_cancel = f;
+        }
+        
+    };
     
-    void updt_params(params_ref const & p) {
-    }
-
-    void collect_param_descrs(param_descrs & r) {
-    }
-
-    void operator()(/* in */  goal_ref const & in, 
-                    /* out */ goal_ref_buffer & result, 
-                    /* out */ model_converter_ref & mc, 
-                    /* out */ proof_converter_ref & pc,
-                    /* out */ expr_dependency_ref & core) {
-        tactic_report report("qsat-tactic", *in);
-        ptr_vector<expr> fmls;
-        expr_ref_vector defs(m);
-        expr_ref fml(m);
-        mc = 0; pc = 0; core = 0;
-        in->get_formulas(fmls);
-        fml = mk_and(m, fmls.size(), fmls.c_ptr());
-
-        // for now:
-        // fail if cores.  (TBD)
-        // fail if proofs. (TBD)
-
-        reset();
-        TRACE("qe", tout << fml << "\n";);
-        if (m_qelim) {
-            fml = push_not(fml);
-        }
-        hoist(fml);
-        m_pred_abs.abstract_atoms(fml, defs);
-        fml = m_pred_abs.mk_abstract(fml);
-        m_ex.assert_expr(mk_and(defs));
-        m_fa.assert_expr(mk_and(defs));
-        m_ex.assert_expr(fml);
-        m_fa.assert_expr(m.mk_not(fml));
-        TRACE("qe", tout << "ex: " << fml << "\n";);
-        lbool is_sat = check_sat();
-        
-        switch (is_sat) {
-        case l_false:
-            in->reset();
-            in->inc_depth();
-            if (m_qelim) {
-                fml = ::mk_and(m_answer);
-                in->assert_expr(fml);
-            }
-            else {
-                in->assert_expr(m.mk_false());
-            }
-            result.push_back(in.get());
-            break;
-        case l_true:
-            in->reset();
-            in->inc_depth();
-            result.push_back(in.get());
-            if (in->models_enabled()) {
-                mc = model2model_converter(m_model.get());
-                mc = concat(m_pred_abs.fmc(), mc.get());
-            }
-            break;
-        case l_undef:
-            result.push_back(in.get());
-            std::string s = m_ex.k().last_failure_as_string();
-            if (s == "ok") {
-                s = m_fa.k().last_failure_as_string();
-            }
-            throw tactic_exception(s.c_str()); 
-        }        
-    }
-
-    void collect_statistics(statistics & st) const {
-        st.copy(m_st);
-        st.update("qsat num rounds", m_stats.m_num_rounds); 
-        m_pred_abs.collect_statistics(st);
-    }
-
-    void reset_statistics() {
-        m_stats.reset();
-        m_fa.k().reset_statistics();
-        m_ex.k().reset_statistics();        
-    }
-
-    void cleanup() {
-        reset();
-        set_cancel(false);
-    }
-
-    void set_logic(symbol const & l) {
-    }
-
-    void set_progress_callback(progress_callback * callback) {
-    }
- 
-    tactic * translate(ast_manager & m) {
-        return alloc(qsat, m, m_params, m_qelim);
-    }
-
-    virtual void set_cancel(bool f) {
-        m_fa.k().set_cancel(f);        
-        m_ex.k().set_cancel(f);        
-        m_cancel = f;
-    }
-
-};
-
 };
 
 tactic * mk_qsat_tactic(ast_manager& m, params_ref const& p) {
