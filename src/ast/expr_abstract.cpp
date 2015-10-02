@@ -22,6 +22,10 @@ Notes:
 
 void expr_abstractor::operator()(unsigned base, unsigned num_bound, expr* const* bound, expr* n, expr_ref& result) {
     
+    if (num_bound == 0) {
+        result = n;
+        return;
+    }
     expr * curr = 0, *b = 0;
     SASSERT(n->get_ref_count() > 0);
 

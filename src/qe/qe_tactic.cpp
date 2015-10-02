@@ -29,7 +29,6 @@ class qe_tactic : public tactic {
         volatile bool            m_cancel;
         qe::expr_quant_elim      m_qe;
 
-
         imp(ast_manager & _m, params_ref const & p):
             m(_m),
             m_qe(m, m_fparams) {

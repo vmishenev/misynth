@@ -29,7 +29,10 @@ Notes:
 #include "model_v2_pp.h"
 #include "qsat.h"
 #include "expr_abstract.h"
+<<<<<<< HEAD
 #include "qe.h"
+=======
+>>>>>>> afc2bd34c8591ba72cbbc63f3e3c5c6d7e27e718
 
 
 namespace qe {
@@ -516,6 +519,7 @@ namespace qe {
                 m_smtp.m_model = true;
                 m_smtp.m_relevancy_lvl = 0;
             }
+<<<<<<< HEAD
             
             smt::kernel& k() { return m_kernel; }
             smt::kernel const& k() const { return m_kernel; }
@@ -574,6 +578,64 @@ namespace qe {
                     k.get_model(m_model);
                     TRACE("qe", k.display(tout); display(tout << "\n", *m_model.get()); display(tout, asms); );
                     push();
+=======
+            TRACE("qe", tout << "core: " << core << "\n";
+                  m_kernel.display(tout);
+                  tout << "\n";
+                  );
+        }
+    };
+
+    ast_manager&               m;
+    params_ref                 m_params;
+    stats                      m_stats;
+    statistics                 m_st;
+    qe::mbp                    m_mbp;
+    kernel                     m_fa;
+    kernel                     m_ex;
+    pred_abs                   m_pred_abs;
+    expr_ref_vector            m_answer;
+    expr_ref_vector            m_asms;
+    vector<app_ref_vector>     m_vars;       // variables from alternating prefixes.
+    unsigned                   m_level;
+    model_ref                  m_model;
+    volatile bool              m_cancel;
+    bool                       m_qelim;       // perform quantifier elimination
+    bool                       m_force_elim;  // force elimination of variables during projection.
+    app_ref_vector             m_avars;       // variables to project
+
+
+
+    /**
+       \brief check alternating satisfiability.
+       Even levels are existential, odd levels are universal.
+     */
+    lbool check_sat() {        
+        while (true) {
+            ++m_stats.m_num_rounds;
+            check_cancel();
+            expr_ref_vector asms(m_asms);
+            m_pred_abs.get_assumptions(m_model.get(), asms);
+            smt::kernel& k = get_kernel(m_level).k();
+            lbool res = k.check(asms);
+            switch (res) {
+            case l_true:
+                k.get_model(m_model);
+                TRACE("qe", k.display(tout); display(tout << "\n", *m_model.get()); display(tout, asms); );
+                push();
+                break;
+            case l_false:
+                switch (m_level) {
+                case 0: return l_false;
+                case 1: 
+                    if (!m_qelim) return l_true; 
+                    if (m_model.get()) {
+                        project_qe(asms);
+                    }
+                    else {
+                        pop(1);
+                    }
+>>>>>>> afc2bd34c8591ba72cbbc63f3e3c5c6d7e27e718
                     break;
                 case l_false:
                     switch (m_level) {
@@ -703,6 +765,7 @@ namespace qe {
                 throw tactic_exception(TACTIC_CANCELED_MSG);
             }
         }
+<<<<<<< HEAD
         
         void display(std::ostream& out) const {
             out << "level: " << m_level << "\n";
@@ -714,6 +777,63 @@ namespace qe {
                 out << "\n";
             }
             m_pred_abs.display(out);
+=======
+        m_pred_abs.display(out);
+    }
+
+    void display(std::ostream& out, model& model) const {
+        display(out);
+        model_v2_pp(out, model);
+    }
+
+    void display(std::ostream& out, expr_ref_vector const& asms) const {
+        m_pred_abs.display(out, asms);
+    }
+
+    void add_assumption(expr* fml) {
+        app_ref b = m_pred_abs.fresh_bool("b");        
+        m_asms.push_back(b);
+        m_ex.assert_expr(m.mk_eq(b, fml));
+        m_pred_abs.add_pred(b, to_app(fml));
+    }
+
+    void project_qe(expr_ref_vector& core) {
+        SASSERT(m_level == 1);
+        expr_ref fml(m);
+        model& mdl = *m_model.get();
+        get_core(core, m_level);
+        get_vars(m_level);
+        m_mbp(m_force_elim, m_avars, mdl, core);
+        fml = negate_core(core);
+        add_assumption(fml);
+        m_answer.push_back(bind(fml));
+        pop(1);
+    }
+
+    expr_ref bind(expr_ref& fml) {
+        return mk_exists(m, m_avars.size(), (app* const*) m_vars.c_ptr(), fml);        
+    }
+
+    void project(expr_ref_vector& core) {
+        get_core(core, m_level);
+        TRACE("qe", display(tout); display(tout << "core\n", core););
+        SASSERT(m_level >= 2);
+        expr_ref fml(m); 
+        expr_ref_vector defs(m);
+        max_level level;
+        model& mdl = *m_model.get();
+
+        get_vars(m_level-1);
+        m_mbp(true, m_avars, mdl, core);
+        fml = negate_core(core);
+        unsigned num_scopes = 0;
+
+        m_pred_abs.abstract_atoms(fml, level, defs);
+        m_ex.assert_expr(mk_and(defs));
+        m_fa.assert_expr(mk_and(defs));
+        if (level.max() == UINT_MAX) {
+            num_scopes = 2*(m_level/2);
+>>>>>>> afc2bd34c8591ba72cbbc63f3e3c5c6d7e27e718
         }
         
         void display(std::ostream& out, model& model) const {
