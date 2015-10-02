@@ -226,6 +226,7 @@ namespace qe {
             
             mark.mark(a);
             if (m_lit2pred.find(a, p)) {
+                TRACE("qe", tout 
                 level.merge(m_elevel.find(p));
                 continue;
             }
@@ -763,7 +764,8 @@ namespace qe {
             model& mdl = *m_model.get();
             
             get_vars(m_level-1);
-            m_mbp(true, m_avars, mdl, core);
+            m_mbp(m_force_elim, m_avars, mdl, core);
+            m_free_vars.append(m_avars);
             fml = negate_core(core);
             unsigned num_scopes = 0;
             
@@ -772,6 +774,9 @@ namespace qe {
             m_fa.assert_expr(mk_and(defs));
             if (level.max() == UINT_MAX) {
                 num_scopes = 2*(m_level/2);
+            }
+            else if (m_qelim && !m_force_elim) {
+                num_scopes = 2;
             }
             else {
                 SASSERT(level.max() + 2 <= m_level);
