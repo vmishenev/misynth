@@ -29,10 +29,7 @@ Notes:
 #include "model_v2_pp.h"
 #include "qsat.h"
 #include "expr_abstract.h"
-<<<<<<< HEAD
 #include "qe.h"
-=======
->>>>>>> afc2bd34c8591ba72cbbc63f3e3c5c6d7e27e718
 
 
 namespace qe {
@@ -497,7 +494,7 @@ namespace qe {
             }
         }
     }
-
+    
     class qsat : public tactic {
         
         struct stats {
@@ -519,7 +516,6 @@ namespace qe {
                 m_smtp.m_model = true;
                 m_smtp.m_relevancy_lvl = 0;
             }
-<<<<<<< HEAD
             
             smt::kernel& k() { return m_kernel; }
             smt::kernel const& k() const { return m_kernel; }
@@ -558,8 +554,8 @@ namespace qe {
         bool                       m_qelim;       // perform quantifier elimination
         bool                       m_force_elim;  // force elimination of variables during projection.
         app_ref_vector             m_avars;       // variables to project
-        
-    public:        
+        app_ref_vector             m_free_vars;
+
         
         /**
            \brief check alternating satisfiability.
@@ -578,65 +574,7 @@ namespace qe {
                     k.get_model(m_model);
                     TRACE("qe", k.display(tout); display(tout << "\n", *m_model.get()); display(tout, asms); );
                     push();
-=======
-            TRACE("qe", tout << "core: " << core << "\n";
-                  m_kernel.display(tout);
-                  tout << "\n";
-                  );
-        }
-    };
-
-    ast_manager&               m;
-    params_ref                 m_params;
-    stats                      m_stats;
-    statistics                 m_st;
-    qe::mbp                    m_mbp;
-    kernel                     m_fa;
-    kernel                     m_ex;
-    pred_abs                   m_pred_abs;
-    expr_ref_vector            m_answer;
-    expr_ref_vector            m_asms;
-    vector<app_ref_vector>     m_vars;       // variables from alternating prefixes.
-    unsigned                   m_level;
-    model_ref                  m_model;
-    volatile bool              m_cancel;
-    bool                       m_qelim;       // perform quantifier elimination
-    bool                       m_force_elim;  // force elimination of variables during projection.
-    app_ref_vector             m_avars;       // variables to project
-
-
-
-    /**
-       \brief check alternating satisfiability.
-       Even levels are existential, odd levels are universal.
-     */
-    lbool check_sat() {        
-        while (true) {
-            ++m_stats.m_num_rounds;
-            check_cancel();
-            expr_ref_vector asms(m_asms);
-            m_pred_abs.get_assumptions(m_model.get(), asms);
-            smt::kernel& k = get_kernel(m_level).k();
-            lbool res = k.check(asms);
-            switch (res) {
-            case l_true:
-                k.get_model(m_model);
-                TRACE("qe", k.display(tout); display(tout << "\n", *m_model.get()); display(tout, asms); );
-                push();
                 break;
-            case l_false:
-                switch (m_level) {
-                case 0: return l_false;
-                case 1: 
-                    if (!m_qelim) return l_true; 
-                    if (m_model.get()) {
-                        project_qe(asms);
-                    }
-                    else {
-                        pop(1);
-                    }
->>>>>>> afc2bd34c8591ba72cbbc63f3e3c5c6d7e27e718
-                    break;
                 case l_false:
                     switch (m_level) {
                     case 0: return l_false;
@@ -665,7 +603,7 @@ namespace qe {
             }
             return l_undef;
         }
-        
+
         kernel& get_kernel(unsigned j) {        
             if (is_exists(j)) {
                 return m_ex; 
@@ -709,6 +647,7 @@ namespace qe {
             m_fa.k().reset();
             m_ex.k().reset();        
             m_cancel = false;
+            m_free_vars.reset();
         }    
         
         /**
@@ -738,7 +677,11 @@ namespace qe {
             }
             while (!vars.empty());
             SASSERT(m_vars.back().empty()); 
-            
+            initialize_levels();
+            TRACE("qe", tout << fml << "\n";);
+        }
+
+        void initialize_levels() {
             // initialize levels.
             for (unsigned i = 0; i < m_vars.size(); ++i) {
                 max_level lvl;
@@ -752,7 +695,6 @@ namespace qe {
                     m_pred_abs.set_expr_level(m_vars[i][j].get(), lvl);
                 }
             }
-            TRACE("qe", tout << fml << "\n";);
         }
         
         void get_core(expr_ref_vector& core, unsigned level) {
@@ -765,7 +707,6 @@ namespace qe {
                 throw tactic_exception(TACTIC_CANCELED_MSG);
             }
         }
-<<<<<<< HEAD
         
         void display(std::ostream& out) const {
             out << "level: " << m_level << "\n";
@@ -777,63 +718,6 @@ namespace qe {
                 out << "\n";
             }
             m_pred_abs.display(out);
-=======
-        m_pred_abs.display(out);
-    }
-
-    void display(std::ostream& out, model& model) const {
-        display(out);
-        model_v2_pp(out, model);
-    }
-
-    void display(std::ostream& out, expr_ref_vector const& asms) const {
-        m_pred_abs.display(out, asms);
-    }
-
-    void add_assumption(expr* fml) {
-        app_ref b = m_pred_abs.fresh_bool("b");        
-        m_asms.push_back(b);
-        m_ex.assert_expr(m.mk_eq(b, fml));
-        m_pred_abs.add_pred(b, to_app(fml));
-    }
-
-    void project_qe(expr_ref_vector& core) {
-        SASSERT(m_level == 1);
-        expr_ref fml(m);
-        model& mdl = *m_model.get();
-        get_core(core, m_level);
-        get_vars(m_level);
-        m_mbp(m_force_elim, m_avars, mdl, core);
-        fml = negate_core(core);
-        add_assumption(fml);
-        m_answer.push_back(bind(fml));
-        pop(1);
-    }
-
-    expr_ref bind(expr_ref& fml) {
-        return mk_exists(m, m_avars.size(), (app* const*) m_vars.c_ptr(), fml);        
-    }
-
-    void project(expr_ref_vector& core) {
-        get_core(core, m_level);
-        TRACE("qe", display(tout); display(tout << "core\n", core););
-        SASSERT(m_level >= 2);
-        expr_ref fml(m); 
-        expr_ref_vector defs(m);
-        max_level level;
-        model& mdl = *m_model.get();
-
-        get_vars(m_level-1);
-        m_mbp(true, m_avars, mdl, core);
-        fml = negate_core(core);
-        unsigned num_scopes = 0;
-
-        m_pred_abs.abstract_atoms(fml, level, defs);
-        m_ex.assert_expr(mk_and(defs));
-        m_fa.assert_expr(mk_and(defs));
-        if (level.max() == UINT_MAX) {
-            num_scopes = 2*(m_level/2);
->>>>>>> afc2bd34c8591ba72cbbc63f3e3c5c6d7e27e718
         }
         
         void display(std::ostream& out, model& model) const {
@@ -861,14 +745,11 @@ namespace qe {
             m_mbp(m_force_elim, m_avars, mdl, core);
             fml = negate_core(core);
             add_assumption(fml);
-            m_answer.push_back(bind(fml));
+            m_answer.push_back(fml);
+            m_free_vars.append(m_avars);
             pop(1);
         }
-        
-        expr_ref bind(expr_ref& fml) {
-            return mk_exists(m, m_avars.size(), (app* const*) m_vars.c_ptr(), fml);        
-        }
-        
+                
         void project(expr_ref_vector& core) {
             get_core(core, m_level);
             TRACE("qe", display(tout); display(tout << "core\n", core););
@@ -917,35 +798,6 @@ namespace qe {
             return ::push_not(::mk_and(core));
         }
         
-    public:
-        
-        qsat(ast_manager& m, params_ref const& p, bool qelim):
-            m(m),
-            m_mbp(m),
-            m_fa(m),
-            m_ex(m),
-            m_pred_abs(m),
-            m_answer(m),
-            m_asms(m),
-            m_level(0),
-            m_cancel(false),
-            m_qelim(qelim),
-            m_force_elim(true),
-            m_avars(m)
-        {
-            reset();
-        }
-        
-        virtual ~qsat() {
-            reset();
-        }
-        
-        void updt_params(params_ref const & p) {
-        }
-        
-        void collect_param_descrs(param_descrs & r) {
-        }
-
         expr_ref elim_rec(expr* fml) {
             expr_ref tmp(m);
             expr_ref_vector     trail(m);
@@ -994,7 +846,13 @@ namespace qe {
                     tmp = q->get_expr();
                     extract_vars(q, tmp, vars);
                     tmp = elim_rec(tmp);
-                    tmp = elim(is_fa, vars.size(), vars.c_ptr(), tmp);
+                    if (is_fa) {
+                        tmp = ::push_not(tmp);
+                    }
+                    tmp = elim(vars.size(), vars.c_ptr(), tmp);
+                    if (is_fa) {
+                        tmp = ::push_not(tmp);
+                    }
                     trail.push_back(tmp);
                     visited.insert(e, tmp);
                     todo.pop_back();
@@ -1009,17 +867,17 @@ namespace qe {
             return expr_ref(e, m);
         }
         
-        expr_ref elim(bool is_forall, unsigned n, app*const* vs, expr* _fml) {
+        expr_ref elim(unsigned n, app*const* vs, expr* _fml) {
+            expr_ref fml(_fml, m);
             reset();
-            TRACE("qe", tout << fml << "\n";);
+            app_ref_vector vars(m);
+            vars.append(n, vs);
+            m_vars.push_back(vars);
+            initialize_levels();
             fml = push_not(fml);            
-            
-            return expr_ref(m);
-        }
 
-#if 0
-        {
-            hoist(fml);
+            TRACE("qe", tout << fml << "\n";);
+            expr_ref_vector defs(m);
             m_pred_abs.abstract_atoms(fml, defs);
             fml = m_pred_abs.mk_abstract(fml);
             m_ex.assert_expr(mk_and(defs));
@@ -1028,19 +886,58 @@ namespace qe {
             m_fa.assert_expr(m.mk_not(fml));
             TRACE("qe", tout << "ex: " << fml << "\n";);
             lbool is_sat = check_sat();
-            switch (is_sat) {
-            case l_true:
-                UNREACHABLE();
-                return l_true;
-            case l_undef:
-                return l_undef;
-            case l_false:
+            if (is_sat == l_false) {
+                obj_hashtable<app> vars;
                 fml = ::mk_and(m_answer);
-                fml = bind(fml);
-                return l_true;
+                for (unsigned i = 0; i < m_free_vars.size(); ++i) {
+                    app* v = m_free_vars[i].get();
+                    if (vars.contains(v)) {
+                        m_free_vars[i] = m_free_vars.back();
+                        m_free_vars.pop_back();
+                        --i;
+                    }
+                    else {
+                        vars.insert(v);
+                    }
+                }
+                fml = mk_exists(m, m_free_vars.size(), m_free_vars.c_ptr(), fml);
+                return fml;
+            }
+            else {
+                return expr_ref(_fml, m);
             }
         }
-#endif
+
+    public:
+        
+        qsat(ast_manager& m, params_ref const& p, bool qelim, bool force_elim):
+            m(m),
+            m_mbp(m),
+            m_fa(m),
+            m_ex(m),
+            m_pred_abs(m),
+            m_answer(m),
+            m_asms(m),
+            m_level(0),
+            m_cancel(false),
+            m_qelim(qelim),
+            m_force_elim(force_elim),
+            m_avars(m),
+            m_free_vars(m)
+        {
+            reset();
+        }
+        
+        virtual ~qsat() {
+            reset();
+        }
+        
+        void updt_params(params_ref const & p) {
+        }
+        
+        void collect_param_descrs(param_descrs & r) {
+        }
+
         
         void operator()(/* in */  goal_ref const & in, 
                         /* out */ goal_ref_buffer & result, 
@@ -1059,6 +956,15 @@ namespace qe {
             // fail if cores.  (TBD)
             // fail if proofs. (TBD)
             
+            if (!m_force_elim) {
+                fml = elim_rec(fml);
+                in->reset();
+                in->inc_depth();
+                in->assert_expr(fml);                
+                result.push_back(in.get());
+                return;
+            }
+                
             reset();
             TRACE("qe", tout << fml << "\n";);
             if (m_qelim) {
@@ -1130,7 +1036,7 @@ namespace qe {
         }
         
         tactic * translate(ast_manager & m) {
-            return alloc(qsat, m, m_params, m_qelim);
+            return alloc(qsat, m, m_params, m_qelim, m_force_elim);
         }
         
         virtual void set_cancel(bool f) {
@@ -1144,11 +1050,15 @@ namespace qe {
 };
 
 tactic * mk_qsat_tactic(ast_manager& m, params_ref const& p) {
-    return alloc(qe::qsat, m, p, false);
+    return alloc(qe::qsat, m, p, false, true);
 }
 
 tactic * mk_qe2_tactic(ast_manager& m, params_ref const& p) {   
-    return alloc(qe::qsat, m, p, true);
+    return alloc(qe::qsat, m, p, true, true);
+}
+
+tactic * mk_qe_rec_tactic(ast_manager& m, params_ref const& p) {   
+    return alloc(qe::qsat, m, p, true, true);
 }
 
 
