@@ -57,6 +57,9 @@ namespace qe {
         m_asm2pred.reset();
         m_pred2asm.reset();
         m_elevel.reset();
+        m_asms.reset();
+        m_asms_lim.reset();
+        m_preds.reset();
     }
 
     max_level pred_abs::compute_level(app* e) {
@@ -845,11 +848,12 @@ namespace qe {
                     bool is_fa = q->is_forall();
                     tmp = q->get_expr();
                     extract_vars(q, tmp, vars);
+                    TRACE("qe", tout << vars << " " << mk_pp(q, m) << " " << tmp << "\n";);
                     tmp = elim_rec(tmp);
                     if (is_fa) {
                         tmp = ::push_not(tmp);
                     }
-                    tmp = elim(vars.size(), vars.c_ptr(), tmp);
+                    tmp = elim(vars, tmp);
                     if (is_fa) {
                         tmp = ::push_not(tmp);
                     }
@@ -867,16 +871,15 @@ namespace qe {
             return expr_ref(e, m);
         }
         
-        expr_ref elim(unsigned n, app*const* vs, expr* _fml) {
+        expr_ref elim(app_ref_vector const& vars, expr* _fml) {
             expr_ref fml(_fml, m);
             reset();
-            app_ref_vector vars(m);
-            vars.append(n, vs);
+            m_vars.push_back(app_ref_vector(m));
             m_vars.push_back(vars);
             initialize_levels();
             fml = push_not(fml);            
 
-            TRACE("qe", tout << fml << "\n";);
+            TRACE("qe", tout << vars << " " << fml << "\n";);
             expr_ref_vector defs(m);
             m_pred_abs.abstract_atoms(fml, defs);
             fml = m_pred_abs.mk_abstract(fml);
@@ -886,9 +889,11 @@ namespace qe {
             m_fa.assert_expr(m.mk_not(fml));
             TRACE("qe", tout << "ex: " << fml << "\n";);
             lbool is_sat = check_sat();
+            fml = ::mk_and(m_answer);
+            TRACE("qe", tout << "ans: " << fml << "\n";
+                  tout << "Free vars: " << m_free_vars << "\n";);            
             if (is_sat == l_false) {
                 obj_hashtable<app> vars;
-                fml = ::mk_and(m_answer);
                 for (unsigned i = 0; i < m_free_vars.size(); ++i) {
                     app* v = m_free_vars[i].get();
                     if (vars.contains(v)) {
@@ -1058,7 +1063,7 @@ tactic * mk_qe2_tactic(ast_manager& m, params_ref const& p) {
 }
 
 tactic * mk_qe_rec_tactic(ast_manager& m, params_ref const& p) {   
-    return alloc(qe::qsat, m, p, true, true);
+    return alloc(qe::qsat, m, p, true, false);
 }
 
 
