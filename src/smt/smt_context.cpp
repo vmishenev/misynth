@@ -199,7 +199,7 @@ namespace smt {
     bool context::bcp() {
         SASSERT(!inconsistent());
         while (m_qhead < m_assigned_literals.size()) {
-            if (m_cancel_flag) {
+            if (get_cancel_flag()) {
                 return true;
             }
             literal l      = m_assigned_literals[m_qhead];
@@ -1616,7 +1616,7 @@ namespace smt {
             unsigned qhead = m_qhead;
             if (!bcp())
                 return false;
-            if (m_cancel_flag) 
+            if (get_cancel_flag()) 
                 return true;
             SASSERT(!inconsistent());
             propagate_relevancy(qhead);
@@ -2773,7 +2773,7 @@ namespace smt {
     }
 
     void context::assert_expr_core(expr * e, proof * pr) {
-        if (m_cancel_flag) return;
+        if (get_cancel_flag()) return;
         SASSERT(is_well_sorted(m_manager, e));
         TRACE("begin_assert_expr", tout << mk_pp(e, m_manager) << "\n";);
         TRACE("begin_assert_expr_ll", tout << mk_ll_pp(e, m_manager) << "\n";);
@@ -2803,7 +2803,7 @@ namespace smt {
     }
 
     void context::internalize_assertions() {
-        if (m_cancel_flag) return;
+        if (get_cancel_flag()) return;
         TRACE("internalize_assertions", tout << "internalize_assertions()...\n";);
         timeit tt(get_verbosity_level() >= 100, "smt.preprocessing");
         reduce_assertions();
@@ -2956,9 +2956,13 @@ namespace smt {
     /**
        \brief Execute some finalization code after performing the search.
     */
-    void context::check_finalize(lbool r) {
+    lbool context::check_finalize(lbool r) {
         TRACE("after_search", display(tout << "result: " << r << "\n"););
         display_profile(verbose_stream());
+        if (r == l_true && get_cancel_flag()) {
+            r = l_undef;
+        }
+        return r;
     }
 
     /**
@@ -2990,7 +2994,7 @@ namespace smt {
                 r = search();
             }
         }
-        check_finalize(r);
+        r = check_finalize(r);
         return r;
     }
 
@@ -3085,7 +3089,7 @@ namespace smt {
                 }
             }
         }
-        check_finalize(r);
+        r = check_finalize(r);
         return r;
     }
 
@@ -3195,6 +3199,7 @@ namespace smt {
                 if (status != l_false) {
                     // build candidate model before returning
                     mk_proto_model(status);
+                    // status = l_undef;
                 }
                 break;
             }
@@ -3315,6 +3320,9 @@ namespace smt {
                 if (!inconsistent()) {
                     if (resource_limits_exceeded())
                         return l_undef;
+
+                    if (get_cancel_flag())
+                        return l_undef;
                     
                     if (m_num_conflicts_since_restart > m_restart_threshold && m_scope_lvl - m_base_lvl > 2) {
                         TRACE("search_bug", tout << "bounded-search return undef, inconsistent: " << inconsistent() << "\n";);
@@ -3341,9 +3349,11 @@ namespace smt {
                 return l_undef;
             }
 
+            if (get_cancel_flag())
+                return l_undef;
+
             if (m_base_lvl == m_scope_lvl && m_fparams.m_simplify_clauses)
                 simplify_clauses();
-
             
             if (!decide()) {
                 final_check_status fcs = final_check();
@@ -3385,7 +3395,7 @@ namespace smt {
             }
         }
             
-        if (m_cancel_flag) {
+        if (get_cancel_flag()) {
             m_last_search_failure = CANCELED;
             return true;
         }
