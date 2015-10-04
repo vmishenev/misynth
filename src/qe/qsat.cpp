@@ -226,7 +226,7 @@ namespace qe {
             
             mark.mark(a);
             if (m_lit2pred.find(a, p)) {
-                TRACE("qe", tout 
+                TRACE("qe", tout << mk_pp(a, m) << " " << mk_pp(p, m) << "\n";);
                 level.merge(m_elevel.find(p));
                 continue;
             }
@@ -235,8 +235,8 @@ namespace qe {
                 l = m_elevel.find(a);
                 level.merge(l);                
                 if (!m_pred2lit.contains(a)) {
-                    insert(a, l);
                     add_pred(a, a);
+                    insert(a, l);
                 }
                 continue;
             }
@@ -257,11 +257,11 @@ namespace qe {
             if (!is_boolop && m.is_bool(a)) {
                 TRACE("qe", tout << mk_pp(a, m) << "\n";);
                 r = fresh_bool("p");
+                max_level l = compute_level(a);
                 add_pred(r, a);
+                m_elevel.insert(r, l);
                 eq = m.mk_eq(r, a);
                 defs.push_back(eq);
-                max_level l = compute_level(a);
-                m_elevel.insert(r, l);
                 if (!is_predicate(a, l.max())) {
                     insert(r, l);
                 }
@@ -738,6 +738,8 @@ namespace qe {
             m_asms.push_back(b);
             m_ex.assert_expr(m.mk_eq(b, fml));
             m_pred_abs.add_pred(b, to_app(fml));
+            max_level lvl;
+            m_pred_abs.set_expr_level(b, lvl);
         }
         
         void project_qe(expr_ref_vector& core) {

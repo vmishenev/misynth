@@ -69,8 +69,9 @@ static void test(app* var, expr_ref& fml) {
     symbol x_name(var->get_decl()->get_name());   
     sort* x_sort = m.get_sort(var);
 
+    expr_ref pr(m);
     expr_ref_vector lits(m);
-    qe::flatten_and(fml, lits);
+    flatten_and(fml, lits);
 
     model_ref md;
     {
