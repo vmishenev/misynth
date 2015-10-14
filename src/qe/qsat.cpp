@@ -144,11 +144,11 @@ namespace qe {
         if (level > m_preds.size()) {
             level = m_preds.size();
         }
-        if (level == 0) {
-            return;
-        }
         if (!mdl) {
             asms.append(m_asms);
+            return;
+        }
+        if (level == 0) {
             return;
         }
         expr_ref val(m);
@@ -571,6 +571,7 @@ namespace qe {
                 check_cancel();
                 expr_ref_vector asms(m_asms);
                 m_pred_abs.get_assumptions(m_model.get(), asms);
+                TRACE("qe", tout << asms << "\n";);
                 smt::kernel& k = get_kernel(m_level).k();
                 lbool res = k.check(asms);
                 switch (res) {
@@ -734,9 +735,12 @@ namespace qe {
         }
         
         void add_assumption(expr* fml) {
+            expr_ref eq(m);
             app_ref b = m_pred_abs.fresh_bool("b");        
             m_asms.push_back(b);
-            m_ex.assert_expr(m.mk_eq(b, fml));
+            eq = m.mk_eq(b, fml);
+            m_ex.assert_expr(eq);
+            m_fa.assert_expr(eq);
             m_pred_abs.add_pred(b, to_app(fml));
             max_level lvl;
             m_pred_abs.set_expr_level(b, lvl);
@@ -786,8 +790,8 @@ namespace qe {
                 SASSERT(num_scopes >= 2);
             }
             
-            TRACE("qe", tout << "backtrack: " << num_scopes << "\nproject:\n" << core << "\n|->\n" << fml << "\n";);
             pop(num_scopes); 
+            TRACE("qe", tout << "backtrack: " << num_scopes << " new level: " << m_level << "\nproject:\n" << core << "\n|->\n" << fml << "\n";);
             if (m_level == 0 && m_qelim) {
                 add_assumption(fml);
             }
