@@ -21,6 +21,8 @@ Notes:
 #include"nlsat_evaluator.h"
 #include"nlsat_solver.h"
 #include"util.h"
+#include"nlsat_explain.h"
+#include"polynomial_cache.h"
 
 nlsat::interval_set_ref tst_interval(nlsat::interval_set_ref const & s1,
                                      nlsat::interval_set_ref const & s2,
@@ -28,7 +30,6 @@ nlsat::interval_set_ref tst_interval(nlsat::interval_set_ref const & s1,
                                      bool check_num_intervals = true) {
     nlsat::interval_set_manager & ism = s1.m();
     nlsat::interval_set_ref r(ism);
-    std::cout << "------------------\n";
     std::cout << "s1:            " << s1 << "\n";
     std::cout << "s2:            " << s2 << "\n";
     r = ism.mk_union(s1, s2);
@@ -278,6 +279,8 @@ static void tst5() {
     nlsat::var                  x0, x1;
     x0 = pm.mk_var();
     x1 = pm.mk_var();
+    nlsat::interval_set_ref i(ism);
+
     polynomial_ref p(pm);
     polynomial_ref _x0(pm), _x1(pm);
     _x0 = pm.mk_polynomial(x0);
@@ -288,7 +291,6 @@ static void tst5() {
     nlsat::bool_var b = s.mk_ineq_atom(nlsat::atom::GT, 1, _p, is_even);
     nlsat::atom * a = s.bool_var2atom(b);
     SASSERT(a != 0);
-    nlsat::interval_set_ref  i(ism);
     scoped_anum zero(am);
     am.set(zero, 0);
     as.set(0, zero);
@@ -299,8 +301,87 @@ static void tst5() {
     std::cout << "2) " << i << "\n";
 }
 
+
+
+static void project(nlsat::solver& s, nlsat::explain& ex, nlsat::var x, unsigned num, nlsat::literal const* lits) {
+    s.display(std::cout, num, lits);
+    nlsat::scoped_literal_vector result(s);
+    ex.project(x, num, lits, result);
+    s.display(std::cout << " ==> ", result.size(), result.c_ptr());
+    std::cout << "\n";
+}
+
+static nlsat::literal mk_gt(nlsat::solver& s, nlsat::poly* p) {
+    nlsat::poly * _p[1] = { p };
+    bool is_even[1] = { false };
+    return s.mk_ineq_literal(nlsat::atom::GT, 1, _p, is_even);
+}
+
+static void tst6() {
+    params_ref      ps;
+    reslimit        rlim;
+    nlsat::solver s(rlim, ps);
+    anum_manager & am     = s.am();
+    nlsat::pmanager & pm  = s.pm();
+    nlsat::assignment& as = s.get_assignment();
+    nlsat::explain& ex    = s.get_explain();
+    nlsat::var x0, x1, x2, a, b, c, d;
+    a  = s.mk_var(false);
+    b  = s.mk_var(false);
+    c  = s.mk_var(false);
+    d  = s.mk_var(false);
+    x0 = s.mk_var(false);
+    x1 = s.mk_var(false);
+    x2 = s.mk_var(false);
+
+    polynomial_ref p1(pm), p2(pm), p3(pm), p4(pm), p5(pm);
+    polynomial_ref _x0(pm), _x1(pm), _x2(pm);
+    polynomial_ref _a(pm), _b(pm), _c(pm), _d(pm);
+    _x0 = pm.mk_polynomial(x0);
+    _x1 = pm.mk_polynomial(x1);
+    _x2 = pm.mk_polynomial(x2);
+    _a  = pm.mk_polynomial(a);
+    _b  = pm.mk_polynomial(b);
+    _c  = pm.mk_polynomial(c);
+    _d  = pm.mk_polynomial(d);
+
+    p1 = (_a*(_x0^2)) + _x2 + 2;
+    p2 = (_b*_x1) - (2*_x2) - _x0 + 8;
+    nlsat::scoped_literal_vector lits(s);
+    lits.push_back(mk_gt(s, p1));
+    lits.push_back(mk_gt(s, p2));
+    lits.push_back(mk_gt(s, (_c*_x0) + _x2 + 1));
+    lits.push_back(mk_gt(s, (_d*_x0) - _x1 + 5*_x2));
+
+    scoped_anum zero(am), one(am), two(am);
+    am.set(zero, 0);
+    am.set(one,  1);
+    am.set(two,  2);
+    as.set(0, one);
+    as.set(1, one);
+    as.set(2, two);
+    as.set(3, two);
+    as.set(4, two);
+    as.set(5, one);
+    as.set(6, one); 
+
+    project(s, ex, x0, 2, lits.c_ptr());
+    project(s, ex, x1, 3, lits.c_ptr());
+    project(s, ex, x2, 3, lits.c_ptr());
+    project(s, ex, x2, 2, lits.c_ptr());
+    project(s, ex, x2, 4, lits.c_ptr());
+    project(s, ex, x2, 3, lits.c_ptr()+1);
+    
+    
+}
+
 void tst_nlsat() {
+    tst6();
+    std::cout << "------------------\n";
+    return;
     tst5();
+    std::cout << "------------------\n";
     tst4();
+    std::cout << "------------------\n";
     tst3();
 }

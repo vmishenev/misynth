@@ -32,8 +32,8 @@ namespace nlsat {
     private:
         imp * m_imp;
     public:
-        explain(solver & s, assignment const & x2v, polynomial::cache & u, atom_vector const & atoms, atom_vector const & x2eq,
-                evaluator & ev);
+        explain(solver & s, assignment const & x2v, polynomial::cache & u, 
+                atom_vector const& atoms, atom_vector const& x2eq, evaluator & ev);
         ~explain();
 
         void reset();
@@ -60,6 +60,25 @@ namespace nlsat {
                  - s_1, ..., s_m are false in the current interpretation
         */
         void operator()(unsigned n, literal const * ls, scoped_literal_vector & result);
+
+        
+        /**
+           \brief projection without minimization and for a given variable.
+
+           Given a set of literals ls[0], ... ls[n-1] s.t.
+           - n > 0
+           - all of them are arithmetic literals.
+           - the current interpretation assigns all variables in ls[0], ..., ls[n-1].
+           - all literals in ls are assigned to true.
+
+           This procedure stores in result a set of literals: ls'[0],..,ls'[m-1]
+           s.t. 
+           - x does not occur in ls'
+           - ls'[0] or ... or ls'[m-1] or (exists x . ls[0] and .. and ls[n-1])
+           - !ls'[i] is true under the current interpretation.
+         */
+        void project(var x, unsigned n, literal const * ls, scoped_literal_vector & result);
+
     };
 
 };

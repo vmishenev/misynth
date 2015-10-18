@@ -28,6 +28,9 @@ Revision History:
 
 namespace nlsat {
 
+    class evaluator;
+    class explain;
+
     class solver {
         struct imp;
         imp * m_imp;
@@ -121,6 +124,40 @@ namespace nlsat {
         */
         atom * bool_var2atom(bool_var b);
 
+
+        /**
+           \brief provide access to atoms. Used by explain.
+        */
+        atom_vector const& get_atoms();
+
+        /**
+           \brief Access var -> asserted equality.
+        */
+
+        atom_vector const& get_var2eq();        
+
+        /**
+           \brief expose evaluator.
+        */
+        
+        evaluator& get_evaluator();
+
+        /**
+           \brief Access explanation module.
+         */
+        explain& get_explain();
+
+        /**
+           \brief Access assignments to variables.
+         */
+        assignment& get_assignment();
+
+        /**
+           \brief reorder variables. 
+         */
+        void reorder(unsigned sz, var const* permutation);
+        void restore_order();
+
         /**
            \brief Return number of integer/real variables
         */
@@ -134,6 +171,8 @@ namespace nlsat {
         //
         // -----------------------
         lbool check();
+
+        lbool check(literal_vector& assumptions);
 
         // -----------------------
         //
@@ -174,6 +213,8 @@ namespace nlsat {
            \brief Display literal
         */
         void display(std::ostream & out, literal l) const;
+
+        void display(std::ostream & out, unsigned n, literal const* ls) const;
 
         /**
            \brief Display variable

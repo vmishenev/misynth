@@ -52,11 +52,17 @@ namespace nlsat {
             am().set(m_values[x], v); 
         }
         void reset(var x) { if (x < m_assigned.size()) m_assigned[x] = false; }
+        void reset() { m_assigned.reset(); }
         bool is_assigned(var x) const { return m_assigned.get(x, false); }
         anum const & value(var x) const { return m_values[x]; }
         virtual anum_manager & m() const { return am(); }
         virtual bool contains(var x) const { return is_assigned(x); }
         virtual anum const & operator()(var x) const { SASSERT(is_assigned(x)); return value(x); }
+        void swap(var x, var y) {
+            SASSERT(x < m_values.size() && y < m_values.size());
+            std::swap(m_assigned[x], m_assigned[y]);
+            std::swap(m_values[x], m_values[y]);
+        }
     };
     
     /**
