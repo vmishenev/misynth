@@ -24,7 +24,7 @@ Revision History:
 #include "nlsat_assignment.h"
 #include "qsat.h"
 #include "quant_hoist.h"
-#include "tactic/goal2nlsat.h"
+#include "goal2nlsat.h"
 #include "expr2var.h"
 #include "uint_set.h"
 #include "ast_util.h"
