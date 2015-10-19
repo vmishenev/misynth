@@ -166,8 +166,10 @@ struct fpa2bv_rewriter_cfg : public default_rewriter_cfg {
             case OP_FPA_TO_SBV: m_conv.mk_to_sbv(f, num, args, result); return BR_DONE;
             case OP_FPA_TO_REAL: m_conv.mk_to_real(f, num, args, result); return BR_DONE;
             case OP_FPA_TO_IEEE_BV: m_conv.mk_to_ieee_bv(f, num, args, result); return BR_DONE;
+            case OP_FPA_INTERNAL_MIN_UNSPECIFIED: result = m_conv.mk_min_unspecified(f, args[0], args[1]); return BR_DONE;
+            case OP_FPA_INTERNAL_MAX_UNSPECIFIED: result = m_conv.mk_max_unspecified(f, args[0], args[1]); return BR_DONE;
             case OP_FPA_INTERNAL_BVWRAP: 
-            case OP_FPA_INTERNAL_BVUNWRAP:
+            case OP_FPA_INTERNAL_BVUNWRAP:                
             case OP_FPA_INTERNAL_TO_REAL_UNSPECIFIED:
             case OP_FPA_INTERNAL_TO_UBV_UNSPECIFIED: 
             case OP_FPA_INTERNAL_TO_SBV_UNSPECIFIED: return BR_FAILED;
@@ -177,21 +179,21 @@ struct fpa2bv_rewriter_cfg : public default_rewriter_cfg {
                 NOT_IMPLEMENTED_YET();
             }
         }
-
-        if (f->get_family_id() != 0 && f->get_family_id() != m_conv.fu().get_family_id())
-        {
+        else {
+            SASSERT(!m_conv.is_float_family(f));
             bool is_float_uf = m_conv.is_float(f->get_range()) || m_conv.is_rm(f->get_range());
-            
-            for (unsigned i = 0; i < num; i++)
-                is_float_uf |= m_conv.is_float(f->get_domain()[i]) || m_conv.is_rm(f->get_domain()[i]);
 
-            if (is_float_uf)
-            {
+            for (unsigned i = 0; i < f->get_arity(); i++) {
+                sort * di = f->get_domain()[i];
+                is_float_uf |= m_conv.is_float(di) || m_conv.is_rm(di);
+            }
+
+            if (is_float_uf) {
                 m_conv.mk_uninterpreted_function(f, num, args, result);
                 return BR_DONE;
             }
         }
-        
+
         return BR_FAILED;
     }
 
