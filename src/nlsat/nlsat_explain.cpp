@@ -1359,6 +1359,9 @@ namespace nlsat {
             if (x != mx_var) {
                 m_solver.restore_order();
             }
+            for (unsigned i = 0; i < result.size(); ++i) {
+                result.set(i, ~result[i]);
+            }
         }
 
         void split_literals(var x, unsigned n, literal const* ls, svector<literal>& lits, scoped_literal_vector& result) {
@@ -1383,7 +1386,7 @@ namespace nlsat {
                     lits.push_back(ls[i]);
                 }
                 else {
-                    result.push_back(ls[i]);
+                    result.push_back(~ls[i]);
                 }
             }
         }

@@ -2646,6 +2646,11 @@ namespace nlsat {
         m_imp->set_cancel(f);
     }
 
+    void solver::updt_params(params_ref const & p) {
+        m_imp->updt_params(p);
+    }
+
+
     void solver::collect_param_descrs(param_descrs & d) {
         algebraic_numbers::manager::collect_param_descrs(d);
         nlsat_params::collect_param_descrs(d);
