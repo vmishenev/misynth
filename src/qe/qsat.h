@@ -41,7 +41,7 @@ namespace qe {
         unsigned max() const {
             return max(m_ex, m_fa);
         }
-        void merge(unsigned& lvl, unsigned const& other) {
+        void merge(unsigned& lvl, unsigned other) {
             lvl = max(lvl, other);
         }
         std::ostream& display(std::ostream& out) const {
