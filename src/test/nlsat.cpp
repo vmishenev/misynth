@@ -375,10 +375,65 @@ static void tst6() {
     
 }
 
+static void tst7() {
+    params_ref      ps;
+    reslimit        rlim;
+    nlsat::solver s(rlim, ps);
+    anum_manager & am     = s.am();
+    nlsat::pmanager & pm  = s.pm();
+    nlsat::var x0, x1, x2, a, b, c, d;
+    a  = s.mk_var(false);
+    b  = s.mk_var(false);
+    c  = s.mk_var(false);
+    d  = s.mk_var(false);
+    x0 = s.mk_var(false);
+    x1 = s.mk_var(false);
+    x2 = s.mk_var(false);
+    polynomial_ref p1(pm), p2(pm), p3(pm), p4(pm), p5(pm);
+    polynomial_ref _x0(pm), _x1(pm), _x2(pm);
+    polynomial_ref _a(pm), _b(pm), _c(pm), _d(pm);
+    _x0 = pm.mk_polynomial(x0);
+    _x1 = pm.mk_polynomial(x1);
+    _x2 = pm.mk_polynomial(x2);
+    _a  = pm.mk_polynomial(a);
+    _b  = pm.mk_polynomial(b);
+    _c  = pm.mk_polynomial(c);
+    _d  = pm.mk_polynomial(d);
+
+    p1 = _x0 + _x1;
+    p2 = _x2 - _x0;
+    p3 = (-1*_x0) - _x1;
+    
+    nlsat::scoped_literal_vector lits(s);
+    lits.push_back(mk_gt(s, p1));
+    lits.push_back(mk_gt(s, p2));
+    lits.push_back(mk_gt(s, p3));
+
+    nlsat::literal_vector litsv(lits.size(), lits.c_ptr());
+    lbool res = s.check(litsv);
+    SASSERT(res == l_false);
+    for (unsigned i = 0; i < litsv.size(); ++i) {
+        s.display(std::cout, litsv[i]);
+        std::cout << " ";
+    }
+    std::cout << "\n";
+
+    litsv.reset();
+    litsv.append(2, lits.c_ptr());
+    res = s.check(litsv);
+    SASSERT(res == l_true);
+    s.display(std::cout);
+    s.am().display(std::cout, s.value(x0)); std::cout << "\n";
+    s.am().display(std::cout, s.value(x1)); std::cout << "\n";
+    s.am().display(std::cout, s.value(x2)); std::cout << "\n";
+
+}
+
 void tst_nlsat() {
+    tst7();
+    std::cout << "------------------\n";
     tst6();
     std::cout << "------------------\n";
-    return;
     tst5();
     std::cout << "------------------\n";
     tst4();

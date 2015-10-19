@@ -89,9 +89,8 @@ namespace qe {
             unsigned lvl = level();
             m_asms.reset();
             m_asms.push_back(is_exists()?m_is_true:~m_is_true);
-            if (lvl > m_preds.size()) {
-                lvl = m_preds.size();
-            }
+            TRACE("qe", tout << "model valid: " << m_model_valid << " level: " << lvl << "\n";);
+
             if (!m_model_valid) {
                 m_asms.append(m_cached_asms);
                 return;
@@ -100,8 +99,10 @@ namespace qe {
             if (lvl == 0) {
                 return;
             }
-            for (unsigned j = 0; j < m_preds[lvl - 1].size(); ++j) {
-                add_literal(m_cached_asms, m_preds[lvl-1][j]);
+            if (lvl <= m_preds.size()) {
+                for (unsigned j = 0; j < m_preds[lvl - 1].size(); ++j) {
+                    add_literal(m_cached_asms, m_preds[lvl - 1][j]);
+                }
             }
             m_asms.append(m_cached_asms);
             
@@ -118,6 +119,7 @@ namespace qe {
                 }
             }
             save_model();
+            TRACE("qe", display_assumptions(tout););
         }
 
         void add_literal(nlsat::literal_vector& lits, nlsat::literal l) {
@@ -296,7 +298,7 @@ namespace qe {
         void display(std::ostream& out) {
             display_preds(out);
             display_assumptions(out);
-            m_solver.display(out);
+            m_solver.display(out << "solver:\n");
         }
 
         void display_assumptions(std::ostream& out) {
@@ -335,9 +337,12 @@ namespace qe {
 
             goal2nlsat g2s;
 
-            expr_ref is_true(m);
+            expr_ref is_true(m), fml1(m), fml2(m);
             is_true = m.mk_fresh_const("is_true", m.mk_bool_sort());
-            fml = m.mk_iff(is_true, fml);
+            fml1 = m.mk_or(m.mk_not(is_true), fml);
+            fml2 = m.mk_or(m.mk_not(fml), is_true);
+            fml = m.mk_and(fml1, fml2);
+            TRACE("qe", tout << fml << "\n";);
             goal g(m);
             g.assert_expr(fml);
             g2s(g, m_params, m_solver, m_a2b, m_t2x);
