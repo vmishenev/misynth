@@ -30,6 +30,7 @@ Notes:
 #include "qsat.h"
 #include "expr_abstract.h"
 #include "qe.h"
+#include "label_rewriter.h"
 
 
 namespace qe {
@@ -659,6 +660,9 @@ namespace qe {
            \brief create a quantifier prefix formula.
         */
         void hoist(expr_ref& fml) {
+            proof_ref pr(m);
+            label_rewriter rw(m);
+            rw.remove_labels(fml, pr);
             quantifier_hoister hoist(m);
             app_ref_vector vars(m);
             bool is_forall = false;        
