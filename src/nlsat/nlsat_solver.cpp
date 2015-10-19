@@ -421,6 +421,32 @@ namespace nlsat {
             return x;
         }
 
+        svector<bool> m_found_vars;
+        void vars(literal l, var_vector& vs) {                
+            vs.reset();
+            atom * a = m_atoms[l.var()];
+            if (a == 0) {
+                
+            }
+            else if (a->is_ineq_atom()) {
+                unsigned sz = to_ineq_atom(a)->size();
+                var_vector new_vs;
+                for (unsigned j = 0; j < sz; j++) {
+                    m_found_vars.reset();
+                    m_pm.vars(to_ineq_atom(a)->p(j), new_vs);
+                    for (unsigned i = 0; i < new_vs.size(); ++i) {
+                        if (!m_found_vars.get(new_vs[i], false)) {
+                            m_found_vars.setx(new_vs[i], true, false);
+                            vs.push_back(new_vs[i]);
+                        }
+                    }
+                }
+            }
+            else {
+                m_pm.vars(to_root_atom(a)->p(), vs);
+            }
+        }
+
         void deallocate(ineq_atom * a) {
             unsigned obj_sz = ineq_atom::get_obj_size(a->size());
             a->~ineq_atom();
@@ -2686,6 +2712,10 @@ namespace nlsat {
 
     atom * solver::bool_var2atom(bool_var b) {
         return m_imp->m_atoms[b];
+    }
+
+    void solver::vars(literal l, var_vector& vs) {
+        m_imp->vars(l, vs);
     }
 
     atom_vector const& solver::get_atoms() {

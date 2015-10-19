@@ -124,6 +124,10 @@ namespace nlsat {
         */
         atom * bool_var2atom(bool_var b);
 
+        /**
+           \brief extract free variables from literal.
+         */
+        void vars(literal l, var_vector& vs);
 
         /**
            \brief provide access to atoms. Used by explain.

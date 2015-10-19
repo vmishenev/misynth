@@ -1365,24 +1365,10 @@ namespace nlsat {
         }
 
         void split_literals(var x, unsigned n, literal const* ls, svector<literal>& lits, scoped_literal_vector& result) {
-            for (unsigned i = 0; i < n; ++i) {                
-                atom * a = m_atoms[ls[i].var()];
-                SASSERT(a != 0);
-                bool found = false;
-                if (a->is_ineq_atom()) {
-                    unsigned sz = to_ineq_atom(a)->size();
-                    for (unsigned j = 0; !found && j < sz; j++) {
-                        var_vector vars;
-                        m_pm.vars(to_ineq_atom(a)->p(j), vars);
-                        found = vars.contains(x);
-                    }
-                }
-                else {
-                    var_vector vars;
-                    m_pm.vars(to_root_atom(a)->p(), vars);
-                    found = vars.contains(x);
-                }
-                if (found) {
+            for (unsigned i = 0; i < n; ++i) {                  
+                var_vector vs;
+                m_solver.vars(ls[i], vs);
+                if (vs.contains(x)) {
                     lits.push_back(ls[i]);
                 }
                 else {

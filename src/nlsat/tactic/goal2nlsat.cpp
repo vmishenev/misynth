@@ -264,6 +264,7 @@ struct goal2nlsat::imp {
             process(g.form(i), g.dep(i));
         }
     }
+
 };
 
 struct goal2nlsat::scoped_set_imp {
@@ -302,6 +303,7 @@ void goal2nlsat::operator()(goal const & g, params_ref const & p, nlsat::solver 
     scoped_set_imp setter(*this, local_imp);
     local_imp(g);
 }
+
     
 void goal2nlsat::set_cancel(bool f) {
     if (m_imp)
