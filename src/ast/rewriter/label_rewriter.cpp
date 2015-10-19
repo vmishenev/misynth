@@ -17,9 +17,16 @@ Notes:
 
 --*/
 
-#include "label_rewriter.h"
+#include"rewriter.h"
+#include"rewriter_def.h"
+#include"label_rewriter.h"
 
 
+label_rewriter::label_rewriter(ast_manager & m) : 
+    m_label_fid(m.get_label_family_id()),
+    m_rwr(m, false, *this) {}
+
+label_rewriter::~label_rewriter() {}
 
 br_status label_rewriter::reduce_app(
     func_decl * f, unsigned num, expr * const * args, expr_ref & result, 
@@ -43,6 +50,4 @@ void label_rewriter::remove_labels(expr_ref& fml, proof_ref& pr) {
 }
 
 
-#if 0
-template class rewriter_tpl<datalog::rule_manager::remove_label_cfg>;
-#endif
+//template class rewriter_tpl<label_rewriter>;

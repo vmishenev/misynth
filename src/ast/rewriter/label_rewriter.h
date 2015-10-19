@@ -21,21 +21,14 @@ Notes:
 
 #include"ast.h"
 #include"rewriter_types.h"
-#include"rewriter_def.h"
 
 
-/**
-   \brief Cheap rewrite rules for PB constraints
-*/
 class label_rewriter : public default_rewriter_cfg {
     family_id m_label_fid;
     rewriter_tpl<label_rewriter> m_rwr;
 public:    
-    label_rewriter(ast_manager & m) : 
-        m_label_fid(m.get_label_family_id()),
-        m_rwr(m, false, *this) {}
-
-    ~label_rewriter() {}
+    label_rewriter(ast_manager & m);
+    ~label_rewriter();
 
     br_status reduce_app(func_decl * f, unsigned num, expr * const * args, expr_ref & result, 
                          proof_ref & result_pr);

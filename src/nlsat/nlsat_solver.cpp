@@ -1240,6 +1240,7 @@ namespace nlsat {
         }
 
         lbool check(literal_vector& assumptions) {
+            undo_until_unassigned(0);
             literal_vector result;
             unsigned sz = assumptions.size();
             literal const* ptr = assumptions.c_ptr();
