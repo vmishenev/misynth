@@ -35,6 +35,12 @@ namespace nlsat {
         assignment(anum_manager & _m):m_values(_m) {}
         virtual ~assignment() {}
         anum_manager & am() const { return m_values.m(); }
+        void copy(assignment const& other) {
+            m_values.reset();
+            m_assigned.reset();
+            m_values.append(other.m_values); 
+            m_assigned.append(other.m_assigned);
+        }
         void swap(assignment & other) {
             m_values.swap(other.m_values);
             m_assigned.swap(other.m_assigned);

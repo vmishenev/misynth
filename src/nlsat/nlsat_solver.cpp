@@ -2758,8 +2758,12 @@ namespace nlsat {
         m_imp->restore_order();
     }
 
-    assignment& solver::get_assignment() {
-        return m_imp->m_assignment;
+    void solver::set_rvalues(assignment const& as) {
+        m_imp->m_assignment.copy(as);
+    }
+
+    void solver::get_rvalues(assignment& as) {
+        as.copy(m_imp->m_assignment);
     }
 
     void solver::get_bvalues(svector<lbool>& vs) {
