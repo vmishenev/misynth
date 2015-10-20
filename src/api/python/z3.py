@@ -2637,7 +2637,7 @@ def _py2expr(a, ctx=None):
         _z3_assert(False, "Python bool, int, long or float expected")
 
 def IntSort(ctx=None):
-    """Return the interger sort in the given context. If `ctx=None`, then the global context is used.
+    """Return the integer sort in the given context. If `ctx=None`, then the global context is used.
     
     >>> IntSort()
     Int
@@ -3920,8 +3920,8 @@ class ArrayRef(ExprRef):
         arg = self.domain().cast(arg)
         return _to_expr_ref(Z3_mk_select(self.ctx_ref(), self.as_ast(), arg.as_ast()), self.ctx)
 
-    def mk_default(self):  
-        return _to_expr_ref(Z3_mk_array_default(self.ctx_ref(), self.as_ast()), self.ctx)  
+    def default(self):
+	return _to_expr_ref(Z3_mk_array_default(self.ctx_ref(), self.as_ast()), self.ctx)
 
 
 def is_array(a):
@@ -4064,7 +4064,7 @@ def Default(a):
     """  
     if __debug__:  
         _z3_assert(is_array(a), "First argument must be a Z3 array expression")  
-    return a.mk_default()  
+    return a.default()  
 
 
 def Store(a, i, v):
@@ -7845,7 +7845,7 @@ class FPRef(ExprRef):
         return fpLEQ(self, other)
 
     def __lt__(self, other):
-        return fpLEQ(self, other)
+        return fpLT(self, other)
 
     def __ge__(self, other):
         return fpGEQ(self, other)
