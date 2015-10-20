@@ -580,6 +580,7 @@ struct nnf::imp {
     bool is_eq(app * t) const { return m().is_eq(t) || m().is_iff(t); }
     
     bool process_iff_xor(app * t, frame & fr) {
+        TRACE("nnf", tout << mk_ismt2_pp(t, m()) << "\n";);
         SASSERT(t->get_num_args() == 2);
         switch (fr.m_i) {
         case 0:

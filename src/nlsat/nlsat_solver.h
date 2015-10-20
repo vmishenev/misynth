@@ -156,6 +156,9 @@ namespace nlsat {
          */
         assignment& get_assignment();
 
+        void get_bvalues(svector<lbool>& vs);
+        void set_bvalues(svector<lbool> const& vs);
+
         /**
            \brief reorder variables. 
          */

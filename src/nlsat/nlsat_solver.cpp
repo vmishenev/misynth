@@ -839,6 +839,14 @@ namespace nlsat {
             SASSERT(m_bvalues[b] == l_undef);
         }
 
+        struct true_pred {
+            bool operator()() const { return true; }
+        };
+
+        void undo_until_empty() {
+            undo_until(true_pred());
+        }
+
         /**
            \brief Create a new scope level
         */
@@ -1222,7 +1230,7 @@ namespace nlsat {
         lbool check() {
             TRACE("nlsat_smt2", display_smt2(tout););
             TRACE("nlsat_fd", tout << "is_full_dimensional: " << is_full_dimensional() << "\n";);
-            m_xk = null_var;
+            init_search();
             m_explain.set_full_dimensional(is_full_dimensional());
             if (m_random_order) {
                 shuffle_vars();
@@ -1239,8 +1247,15 @@ namespace nlsat {
             return r;
         }
 
+        void init_search() {
+            undo_until_empty();
+            while (m_scope_lvl > 0) {
+                undo_new_level();
+            }
+            m_xk = null_var;
+        }
+
         lbool check(literal_vector& assumptions) {
-            undo_until_unassigned(0);
             literal_vector result;
             unsigned sz = assumptions.size();
             literal const* ptr = assumptions.c_ptr();
@@ -2745,6 +2760,16 @@ namespace nlsat {
 
     assignment& solver::get_assignment() {
         return m_imp->m_assignment;
+    }
+
+    void solver::get_bvalues(svector<lbool>& vs) {
+        vs.reset();
+        vs.append(m_imp->m_bvalues);
+    }
+
+    void solver::set_bvalues(svector<lbool> const& vs) {
+        m_imp->m_bvalues.reset();
+        m_imp->m_bvalues.append(vs);
     }
     
     var solver::mk_var(bool is_int) {
