@@ -1253,9 +1253,14 @@ namespace nlsat {
                 undo_new_level();
             }
             m_xk = null_var;
+            for (unsigned i = 0; i < m_bvalues.size(); ++i) {
+                m_bvalues[i] = l_undef;
+            }
+            TRACE("qe", tout << "trail size: " << m_trail.size() << "\n";);
         }
 
         lbool check(literal_vector& assumptions) {
+            TRACE("qe", tout << "trail size: " << m_trail.size() << "\n";);
             literal_vector result;
             unsigned sz = assumptions.size();
             literal const* ptr = assumptions.c_ptr();
@@ -2202,7 +2207,7 @@ namespace nlsat {
             }
         }
 
-        void display_bool_assignment(std::ostream & out, display_var_proc const & proc) const {
+        void display_bool_assignment(std::ostream & out) const {
             unsigned sz = m_atoms.size();
             for (bool_var b = 0; b < sz; b++) {
                 if (m_atoms[b] == 0 && m_bvalues[b] != l_undef) {
@@ -2234,9 +2239,6 @@ namespace nlsat {
             display_assignment(out, m_display_var);
         }
 
-        void display_bool_assignment(std::ostream & out) const { 
-            display_bool_assignment(out, m_display_var);
-        }
        
         void display(std::ostream & out, ineq_atom const & a, display_var_proc const & proc, bool use_star = false) const {
             unsigned sz = a.size();

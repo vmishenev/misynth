@@ -107,7 +107,8 @@ namespace qe {
             m_asms.reset();
             m_asms.push_back(is_exists()?m_is_true:~m_is_true);
             m_asms.append(m_assumptions);
-            TRACE("qe", tout << "model valid: " << m_valid_model << " level: " << lvl << "\n";);
+            TRACE("qe", tout << "model valid: " << m_valid_model << " level: " << lvl << " "; 
+                  display_assumptions(tout););
 
             if (!m_valid_model) {
                 m_asms.append(m_cached_asms);
@@ -124,6 +125,7 @@ namespace qe {
                 }
             }
             m_asms.append(m_cached_asms);
+            TRACE("qe", display_assumptions(tout););
             
             for (unsigned i = lvl + 1; i < m_preds.size(); i += 2) {
                 for (unsigned j = 0; j < m_preds[i].size(); ++j) {
@@ -154,17 +156,29 @@ namespace qe {
                 break;
             }
         }
+
+        template<class S, class T>
+        void insert_set(S& set, T const& vec) {
+            for (unsigned i = 0; i < vec.size(); ++i) {
+                set.insert(vec[i]);
+            }
+        }
         
         void mbq(unsigned level, nlsat::scoped_literal_vector& result) {
             nlsat::var_vector vars;
-            uint_set bvars;
-            for (unsigned i = level; i < m_bound_rvars.size(); ++i) {
-                vars.append(m_bound_rvars[i]);
-                for (unsigned j = 0; j < m_bound_bvars[i].size(); ++j) {
-                    bvars.insert(m_bound_bvars[i][j]);
+            uint_set fvars;
+            for (unsigned i = 0; i < m_bound_rvars.size(); ++i) {
+                if (i < level) {
+                    insert_set(fvars, m_bound_bvars[i]);
+                }
+                else {
+                    vars.append(m_bound_rvars[i]);
                 }
             }
-            bvars.insert(m_is_true.var());
+            
+            // 
+            // Also project auxiliary variables from clausification.
+            // 
             unsave_model();
             nlsat::explain& ex = m_solver.get_explain();
             nlsat::scoped_literal_vector new_result(m_solver);
@@ -172,10 +186,12 @@ namespace qe {
             // project quantified Boolean variables.
             for (unsigned i = 0; i < m_asms.size(); ++i) {
                 nlsat::literal lit = m_asms[i];
-                if (!bvars.contains(lit.var())) {
+                TRACE("qe", tout << lit << " " << fvars.contains(lit.var()) << " " << fvars << "\n";);
+                if (fvars.contains(lit.var())) {
                     result.push_back(lit);
                 }
             }
+            TRACE("qe", m_solver.display(tout, result.size(), result.c_ptr()); tout << "\n";);
             // project quantified real variables.
             for (unsigned i = 0; i < vars.size(); ++i) {
                 new_result.reset();
@@ -185,7 +201,7 @@ namespace qe {
             for (unsigned i = 0; i < result.size(); ++i) {
                 result.set(i, ~result[i]);
             }
-            TRACE("qe", m_solver.display(tout, result.size(), result.c_ptr()););
+            TRACE("qe", m_solver.display(tout, result.size(), result.c_ptr()); tout << "\n";);
         }
 
         void save_model() {
@@ -251,6 +267,7 @@ namespace qe {
             }
             m_preds[k].push_back(l);
             m_bvar2level.insert(l.var(), level);            
+            TRACE("qe", m_solver.display(tout, l); tout << ": " << level << "\n";);
         }
         
         void project() {
@@ -286,10 +303,11 @@ namespace qe {
         void project_qe() {
             SASSERT(level() >= 1 && m_mode == elim_t && m_valid_model);
             nlsat::scoped_literal_vector clause(m_solver);
-            mbq(level()-1, clause);            
+            mbq(std::max(1u, level()-1), clause);            
             
             expr_ref fml(m);
-            // clause2fml(clause, fml);
+            clause2fml(clause, fml);
+            TRACE("qe", tout << level() << ": " << fml << "\n";);
             if (level() == 1) {
                 m_answer.push_back(fml);
             }
@@ -349,6 +367,7 @@ namespace qe {
             m_assumptions.push_back(nlsat::literal(b, false));
             m_asm2fml.insert(b, fml);
             m_trail.push_back(fml);            
+            m_bvar2level.insert(b, max_level());
         }
 
         bool is_exists() const { return is_exists(level()); }
@@ -426,9 +445,7 @@ namespace qe {
             bool is_forall = false;   
             pred_abs abs(m);
             abs.get_free_vars(fml, vars);
-            for (unsigned i = 0; i < vars.size(); ++i) {
-                m_free_vars.insert(vars[i].get());
-            }
+            insert_set(m_free_vars, vars);
             qvars.push_back(vars); 
             vars.reset();    
             if (m_mode == elim_t) {
@@ -663,7 +680,47 @@ namespace qe {
             m_cancel = f;
         }
 
+        lbool interpolate(expr* a, expr* b, app_ref_vector const& vars, expr_ref& result) {
+            SASSERT(m_mode == interp_t);
+            
+            reset();
+            app_ref enableA(m), enableB(m);
+            expr_ref A(m), B(m), fml(m);
+            expr_ref_vector fmls(m);
+            
+            enableA = m.mk_const(symbol("#A"), m.mk_bool_sort());
+            enableB = m.mk_const(symbol("#B"), m.mk_bool_sort());
+            A = m.mk_implies(enableA, m.mk_not(a));
+            B = m.mk_implies(enableB, m.mk_not(b));
+            fml = m.mk_and(A, B);
+            hoist(fml);
 
+            while (true) {
+                m_mode = qsat_t;
+                // enable B
+                lbool is_sat = check_sat();
+
+                switch (is_sat) {
+                case l_undef:
+                    return l_undef;
+                case l_true:                    
+                    break;
+                case l_false:
+                    result = mk_and(m_answer);
+                    return l_true;
+                }
+
+                NOT_IMPLEMENTED_YET();
+                // disable B, enable A
+
+                m_mode = elim_t;
+                // enforce the model of not B.
+                // compute one clause that rules out this model.
+
+                // disable A
+                // add blocking clause to solver.
+            }
+        }
         
     };
 };
