@@ -1256,11 +1256,10 @@ namespace nlsat {
             for (unsigned i = 0; i < m_bvalues.size(); ++i) {
                 m_bvalues[i] = l_undef;
             }
-            TRACE("qe", tout << "trail size: " << m_trail.size() << "\n";);
+            m_assignment.reset();
         }
 
         lbool check(literal_vector& assumptions) {
-            TRACE("qe", tout << "trail size: " << m_trail.size() << "\n";);
             literal_vector result;
             unsigned sz = assumptions.size();
             literal const* ptr = assumptions.c_ptr();
@@ -2726,6 +2725,10 @@ namespace nlsat {
 
     bool_var solver::mk_bool_var() {
         return m_imp->mk_bool_var();
+    }
+    
+    literal solver::mk_true() {
+        return literal(0, false);
     }
 
     atom * solver::bool_var2atom(bool_var b) {

@@ -84,6 +84,7 @@ namespace qe {
                 check_cancel();
                 init_assumptions();   
                 lbool res = m_solver.check(m_asms);
+                TRACE("qe", tout << res << "\n";);
                 switch (res) {
                 case l_true:
                     TRACE("qe", display(tout); );
@@ -187,7 +188,7 @@ namespace qe {
             for (unsigned i = 0; i < m_asms.size(); ++i) {
                 nlsat::literal lit = m_asms[i];
                 TRACE("qe", tout << lit << " " << fvars.contains(lit.var()) << " " << fvars << "\n";);
-                if (fvars.contains(lit.var())) {
+                if (!m_b2a.contains(lit.var()) || fvars.contains(lit.var())) {
                     result.push_back(lit);
                 }
             }
@@ -234,7 +235,10 @@ namespace qe {
 
         max_level mk_clause(unsigned n, nlsat::literal const* ls) {
             nlsat::literal_vector lits(n, ls);
-            m_solver.mk_clause(n, lits.c_ptr());
+            if (lits.empty()) {
+                lits.push_back(~m_solver.mk_true()); 
+            }
+            m_solver.mk_clause(lits.size(), lits.c_ptr());
             return get_level(n, ls);
         }
 

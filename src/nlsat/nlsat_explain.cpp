@@ -1344,20 +1344,23 @@ namespace nlsat {
             split_literals(x, num, ls, lits, result);
             collect_polys(lits.size(), lits.c_ptr(), m_ps);
             var mx_var = max_var(m_ps);
-            svector<var> renaming;
-            if (x != mx_var) {
-                for (var i = 0; i < m_solver.num_vars(); ++i) {
-                    renaming.push_back(i);
+            if (!m_ps.empty()) {                
+                svector<var> renaming;
+                if (x != mx_var) {
+                    TRACE("qe", tout << "x: " << x << "max: " << mx_var << " num_vars: " << m_solver.num_vars() << "\n";);
+                    for (var i = 0; i < m_solver.num_vars(); ++i) {
+                        renaming.push_back(i);
+                    }
+                    std::swap(renaming[x], renaming[mx_var]);
+                    m_solver.reorder(renaming.size(), renaming.c_ptr());
                 }
-                std::swap(renaming[x], renaming[mx_var]);
-                m_solver.reorder(renaming.size(), renaming.c_ptr());
-            }
-            elim_vanishing(m_ps);
-            project(m_ps, mx_var);
-            reset_already_added();
-            m_result = 0;
-            if (x != mx_var) {
-                m_solver.restore_order();
+                elim_vanishing(m_ps);
+                project(m_ps, mx_var);
+                reset_already_added();
+                m_result = 0;
+                if (x != mx_var) {
+                    m_solver.restore_order();
+                }
             }
             for (unsigned i = 0; i < result.size(); ++i) {
                 result.set(i, ~result[i]);

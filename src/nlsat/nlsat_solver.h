@@ -66,7 +66,9 @@ namespace nlsat {
                   nonlinear arithmetic atom.
         */
         bool_var mk_bool_var();
-    
+   
+        literal  mk_true();
+
         /**
            \brief Create a real/integer variable.
         */
