@@ -1335,12 +1335,15 @@ namespace nlsat {
 
         void project(var x, unsigned num, literal const * ls, scoped_literal_vector & result) {
             m_result = &result;
+            svector<literal> lits;
+            TRACE("nlsat", m_solver.display(tout););
+                  
             DEBUG_CODE(
                 for (unsigned i = 0; i < num; ++i) {
+                    SASSERT(m_solver.value(ls[i]) == l_true);
                     atom* a = m_atoms[ls[i].var()];
-                    SASSERT(m_evaluator.eval(a, ls[i].sign()));
+                    SASSERT(!a || m_evaluator.eval(a, ls[i].sign()));
                 });
-            svector<literal> lits;
             split_literals(x, num, ls, lits, result);
             collect_polys(lits.size(), lits.c_ptr(), m_ps);
             var mx_var = max_var(m_ps);
