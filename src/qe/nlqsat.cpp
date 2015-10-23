@@ -84,7 +84,6 @@ namespace qe {
                 check_cancel();
                 init_assumptions();   
                 lbool res = m_solver.check(m_asms);
-                TRACE("qe", tout << res << "\n";);
                 switch (res) {
                 case l_true:
                     TRACE("qe", display(tout); );
@@ -126,7 +125,6 @@ namespace qe {
                 }
             }
             m_asms.append(m_cached_asms);
-            TRACE("qe", display_assumptions(tout););
             
             for (unsigned i = lvl + 1; i < m_preds.size(); i += 2) {
                 for (unsigned j = 0; j < m_preds[i].size(); ++j) {
@@ -140,12 +138,14 @@ namespace qe {
                     }
                 }
             }
+            TRACE("qe", display(tout););
             save_model();
-            TRACE("qe", display_assumptions(tout););
         }
 
         void add_literal(nlsat::literal_vector& lits, nlsat::literal l) {
-            switch (m_solver.value(l)) {
+            lbool r = m_solver.value(l);
+            TRACE("qe", m_solver.display(tout, l); tout << " := " << r << "\n";);
+            switch (r) {
             case l_true:
                 lits.push_back(l);
                 break;
@@ -165,7 +165,7 @@ namespace qe {
             }
         }
         
-        void mbq(unsigned level, nlsat::scoped_literal_vector& result) {
+        void mbp(unsigned level, nlsat::scoped_literal_vector& result) {
             nlsat::var_vector vars;
             uint_set fvars;
             for (unsigned i = 0; i < m_bound_rvars.size(); ++i) {
@@ -187,14 +187,16 @@ namespace qe {
             // project quantified Boolean variables.
             for (unsigned i = 0; i < m_asms.size(); ++i) {
                 nlsat::literal lit = m_asms[i];
-                TRACE("qe", tout << lit << " " << fvars.contains(lit.var()) << " " << fvars << "\n";);
                 if (!m_b2a.contains(lit.var()) || fvars.contains(lit.var())) {
                     result.push_back(lit);
                 }
             }
             TRACE("qe", m_solver.display(tout, result.size(), result.c_ptr()); tout << "\n";);
             // project quantified real variables.
-            for (unsigned i = 0; i < vars.size(); ++i) {
+            // They are sorted by size, so we project the largest variables first to avoid 
+            // renaming variables. 
+            for (unsigned i = vars.size(); i > 0;) {
+                --i;
                 new_result.reset();
                 ex.project(vars[i], result.size(), result.c_ptr(), new_result);
                 result.swap(new_result);
@@ -287,7 +289,7 @@ namespace qe {
             SASSERT(level() >= 2);
             unsigned num_scopes;
             nlsat::scoped_literal_vector clause(m_solver);
-            mbq(level()-1, clause);            
+            mbp(level()-1, clause);            
             
             max_level clevel = mk_clause(clause.size(), clause.c_ptr());
 
@@ -307,7 +309,7 @@ namespace qe {
         void project_qe() {
             SASSERT(level() >= 1 && m_mode == elim_t && m_valid_model);
             nlsat::scoped_literal_vector clause(m_solver);
-            mbq(std::max(1u, level()-1), clause);            
+            mbp(std::max(1u, level()-1), clause);            
             
             expr_ref fml(m);
             clause2fml(clause, fml);
@@ -330,36 +332,14 @@ namespace qe {
         void clause2fml(nlsat::scoped_literal_vector const& clause, expr_ref& fml) {
             expr_ref_vector fmls(m);
             expr* t;
+            nlsat2goal n2g(m);
             for (unsigned i = 0; i < clause.size(); ++i) {
-                if (m_asm2fml.find(clause[i].var(), t)) {
-                    fmls.push_back(m.mk_not(t));
-                }
-                else if (m_b2a.find(clause[i].var(), t)) {
-                    if (clause[i].sign()) {
-                        fmls.push_back(m.mk_not(t));
-                    }
-                    else {
-                        fmls.push_back(t);
-                    }
+                nlsat::literal l = clause[i];
+                if (m_asm2fml.find(l.var(), t)) {
+                    fmls.push_back(l.sign()?m.mk_not(t):t);
                 }
                 else {
-                    std::ostringstream name;
-                    m_solver.display(name, clause[i]);
-                    fml = m.mk_const(symbol(name.str().c_str()), m.mk_bool_sort());
-                    fmls.push_back(fml);
-                    continue;
-#if 0
-                    nlsat::atom const* a = m_solver.bool_var2atom(clause[i].var());
-                    SASSERT(a != 0);
-                    if (a->is_ineq_atom()) {
-                        nlsat::ineq_atom const* ia = to_ineq_atom(a);
-                        NOT_IMPLEMENTED_YET();
-                    }
-                    else {
-                        nlsat::root_atom const* ra = to_root_atom(a);
-                        NOT_IMPLEMENTED_YET();
-                    }
-#endif
+                    fmls.push_back(n2g(m_solver, m_b2a, m_x2t, l));
                 }
             }
             fml = mk_or(fmls);
@@ -469,6 +449,7 @@ namespace qe {
             }
             while (!vars.empty());
             SASSERT(qvars.back().empty()); 
+            init_expr2var(qvars);
 
             goal2nlsat g2s;
 
@@ -518,6 +499,25 @@ namespace qe {
                 }
             }
             TRACE("qe", tout << fml << "\n";);
+        }
+
+        void init_expr2var(vector<app_ref_vector> const& qvars) {
+            for (unsigned i = 0; i < qvars.size(); ++i) {
+                init_expr2var(qvars[i]);
+            }
+        }
+
+        void init_expr2var(app_ref_vector const& qvars) {
+            for (unsigned i = 0; i < qvars.size(); ++i) {
+                app* v = qvars[i];
+                if (m.is_bool(v)) {
+                    m_a2b.insert(v, m_solver.mk_bool_var());
+                }
+                else {
+                    // TODO: assert it is of type Real.
+                    m_t2x.insert(v, m_solver.mk_var(false));
+                }
+            }
         }
 
         void init_var2expr() {

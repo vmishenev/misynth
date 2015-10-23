@@ -1336,7 +1336,7 @@ namespace nlsat {
         void project(var x, unsigned num, literal const * ls, scoped_literal_vector & result) {
             m_result = &result;
             svector<literal> lits;
-            TRACE("nlsat", m_solver.display(tout););
+            TRACE("nlsat", tout << "project x" << x << "\n"; m_solver.display(tout););
                   
             DEBUG_CODE(
                 for (unsigned i = 0; i < num; ++i) {
@@ -1350,12 +1350,13 @@ namespace nlsat {
             if (!m_ps.empty()) {                
                 svector<var> renaming;
                 if (x != mx_var) {
-                    TRACE("qe", tout << "x: " << x << "max: " << mx_var << " num_vars: " << m_solver.num_vars() << "\n";);
                     for (var i = 0; i < m_solver.num_vars(); ++i) {
                         renaming.push_back(i);
                     }
                     std::swap(renaming[x], renaming[mx_var]);
                     m_solver.reorder(renaming.size(), renaming.c_ptr());
+                    TRACE("qe", tout << "x: " << x << " max: " << mx_var << " num_vars: " << m_solver.num_vars() << "\n";
+                          m_solver.display(tout););
                 }
                 elim_vanishing(m_ps);
                 project(m_ps, mx_var);
@@ -1368,6 +1369,11 @@ namespace nlsat {
             for (unsigned i = 0; i < result.size(); ++i) {
                 result.set(i, ~result[i]);
             }
+            DEBUG_CODE(
+                for (unsigned i = 0; i < num; ++i) {
+                    SASSERT(l_true == m_solver.value(result[i]));
+                });
+
         }
 
         void split_literals(var x, unsigned n, literal const* ls, svector<literal>& lits, scoped_literal_vector& result) {

@@ -261,6 +261,7 @@ namespace nlsat {
         }
 
         void inc_ref(bool_var b) {
+            TRACE("ref", tout << "inc: " << b << "\n";);
             if (b == null_bool_var)
                 return;
             if (m_atoms[b] == 0)
@@ -273,6 +274,7 @@ namespace nlsat {
         }
 
         void dec_ref(bool_var b) {
+            TRACE("ref", tout << "dec: " << b << "\n";);
             if (b == null_bool_var)
                 return;
             atom * a = m_atoms[b];
@@ -2783,6 +2785,7 @@ namespace nlsat {
     void solver::set_bvalues(svector<lbool> const& vs) {
         m_imp->m_bvalues.reset();
         m_imp->m_bvalues.append(vs);
+        m_imp->m_bvalues.resize(m_imp->m_atoms.size(), l_undef);        
     }
     
     var solver::mk_var(bool is_int) {

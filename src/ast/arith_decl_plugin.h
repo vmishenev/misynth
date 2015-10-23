@@ -397,6 +397,12 @@ public:
     void set_cancel(bool f) {
         plugin().set_cancel(f);
     }
+
+    expr_ref mk_mul_simplify(expr_ref_vector const& args);
+    expr_ref mk_mul_simplify(unsigned sz, expr* const* args);
+
+    expr_ref mk_add_simplify(expr_ref_vector const& args);
+    expr_ref mk_add_simplify(unsigned sz, expr* const* args);
 };
 
 #endif /* ARITH_DECL_PLUGIN_H_ */

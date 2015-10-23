@@ -420,10 +420,23 @@ namespace nlsat {
             scoped_anum_vector & roots = m_tmp_values;
             roots.reset();
             m_am.isolate_roots(polynomial_ref(a->p(), m_pm), undef_var_assignment(m_assignment, a->x()), roots);
+            TRACE("nlsat",
+                  tout << "Roots: ";
+                  for (unsigned i = 0; i < roots.size(); ++i) {
+                      m_am.display_interval(tout, roots[i]); tout << " "; 
+                  }
+                  tout << "\n";
+                  tout << "Index: " << a->i() << " " << (neg?"negated":"positive") << "\n";
+                  );
             SASSERT(a->i() > 0);
-            if (a->i() > roots.size())
-                return false; // p does have sufficient roots
-            int sign = m_am.compare(m_assignment.value(a->x()), roots[a->i() - 1]);
+            int sign = 0;
+            if (a->i() > roots.size()) {
+                anum const& num = m_assignment.value(a->x());
+                sign = m_am.is_pos(num)?1:(m_am.is_zero(num)?0:-1);
+            }
+            else {
+                sign = m_am.compare(m_assignment.value(a->x()), roots[a->i() - 1]);
+            }
             return satisfied(sign, k, neg);
         }
         
