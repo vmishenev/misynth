@@ -446,6 +446,8 @@ namespace nlsat {
             }
             else {
                 m_pm.vars(to_root_atom(a)->p(), vs);
+                //vs.erase(max_var(to_root_atom(a)->p()));
+                vs.push_back(to_root_atom(a)->x());
             }
         }
 
