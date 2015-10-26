@@ -1344,7 +1344,7 @@ namespace nlsat {
                     atom* a = m_atoms[ls[i].var()];
                     SASSERT(!a || m_evaluator.eval(a, ls[i].sign()));
                 });
-            split_literals(x, num, ls, lits, result);
+            split_literals(x, num, ls, lits);
             collect_polys(lits.size(), lits.c_ptr(), m_ps);
             var mx_var = max_var(m_ps);
             if (!m_ps.empty()) {                
@@ -1366,17 +1366,21 @@ namespace nlsat {
                     m_solver.restore_order();
                 }
             }
+            else {
+                reset_already_added();
+                m_result = 0;
+            }
             for (unsigned i = 0; i < result.size(); ++i) {
                 result.set(i, ~result[i]);
             }
             DEBUG_CODE(
-                for (unsigned i = 0; i < num; ++i) {
+                for (unsigned i = 0; i < result.size(); ++i) {
                     SASSERT(l_true == m_solver.value(result[i]));
                 });
 
         }
 
-        void split_literals(var x, unsigned n, literal const* ls, svector<literal>& lits, scoped_literal_vector& result) {
+        void split_literals(var x, unsigned n, literal const* ls, svector<literal>& lits) {
             for (unsigned i = 0; i < n; ++i) {                  
                 var_vector vs;
                 m_solver.vars(ls[i], vs);
@@ -1384,10 +1388,53 @@ namespace nlsat {
                     lits.push_back(ls[i]);
                 }
                 else {
-                    result.push_back(~ls[i]);
+                    add_literal(~ls[i]);
                 }
             }
         }
+
+        /**
+           Signed projection. 
+
+           Assumptions:
+           - any variable in ps is at most x.
+           
+           Effect:
+           - if x not in p, then
+              - if sign(p) < 0:   p < 0
+              - if sign(p) = 0:   p = 0
+              - if sign(p) > 0:   p > 0
+           else:
+           - let roots_j be the roots of p_j or roots_j[i] 
+           - let L = { roots_j[i] | M(roots_j[i]) < M(x) }
+           - let U = { roots_j[i] | M(roots_j[i]) > M(x) }
+           - let E = { roots_j[i] | M(roots_j[i]) = M(x) }
+           - let glb in L, s.t. forall l in L . M(glb) >= M(l)
+           - let lub in U, s.t. forall u in U . M(lub) <= M(u)
+           - if root in E, then 
+              - add E x . x = root & root > lb  for lb in L
+              - add E x . x = root & root < ub  for ub in U
+              - add E x . x = root & x = root2  for root2 in E \ { root }
+           - else 
+             - assume |L| <= |U|
+             - add E x . lb <= x & x <= glb for lb in L
+             - add E x . x = glb & x < ub  for ub in U
+         */
+
+#if 0
+        void signed_projection(var x) {
+            
+            if (m_ps.empty()) {
+                return;
+            }
+            polynomail_ref p(m_pm);
+            for (unsigned i = 0; i < m_ps.size(); ++i) {
+                p = m_ps[i];
+            }
+            NOT_IMPLEMENTED_YET();
+        }
+#endif
+
 
     };
 

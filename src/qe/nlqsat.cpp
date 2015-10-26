@@ -336,6 +336,7 @@ namespace qe {
             for (unsigned i = 0; i < clause.size(); ++i) {
                 nlsat::literal l = clause[i];
                 if (m_asm2fml.find(l.var(), t)) {
+                    SASSERT(l.sign());
                     fmls.push_back(l.sign()?m.mk_not(t):t);
                 }
                 else {
