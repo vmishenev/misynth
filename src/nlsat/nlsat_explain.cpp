@@ -1398,6 +1398,7 @@ namespace nlsat {
 
            Assumptions:
            - any variable in ps is at most x.
+           - root expressions are satisfied (positive literals)
            
            Effect:
            - if x not in p, then
@@ -1412,8 +1413,8 @@ namespace nlsat {
            - let glb in L, s.t. forall l in L . M(glb) >= M(l)
            - let lub in U, s.t. forall u in U . M(lub) <= M(u)
            - if root in E, then 
-              - add E x . x = root & root > lb  for lb in L
-              - add E x . x = root & root < ub  for ub in U
+              - add E x . x = root & x > lb  for lb in L
+              - add E x . x = root & x < ub  for ub in U
               - add E x . x = root & x = root2  for root2 in E \ { root }
            - else 
              - assume |L| <= |U|
@@ -1427,10 +1428,85 @@ namespace nlsat {
             if (m_ps.empty()) {
                 return;
             }
-            polynomail_ref p(m_pm);
+            polynomial_ref p(m_pm);
+            polynomial_ref_vector E(m_pm), I(m_pm);
             for (unsigned i = 0; i < m_ps.size(); ++i) {
                 p = m_ps[i];
+                int s = sign(p);
+                if (max_var(p) != x) {
+                    atom::kind k = (s == 0)?(atom::EQ):((s < 0)?(atom::LT):(atom::GT));
+                    add_simple_assumption(k, p, false);
+                    continue;
+                }
+                if (s == 0) {
+                    E.push_back(p);
+                }
+                else {
+                    I.push_back(p);
+                }
             }
+            if (E.empty() && I.empty()) {
+                return;
+            }
+            if (!E.empty()) {
+                p = E.back();
+                E.pop_back();
+                E.append(I);
+                for (unsigned i = 0; i < E.size(); ++i) {
+                    project_pair(x, p, E[i]);
+                }
+                return;
+            }
+            SASSERT(E.empty() && L.empty() && U.empty());
+            
+            bool glb_valid = false, lub_valid = false;
+            numeral glb, lub;
+            for (unsigned i = 0; i < I.size(); ++i) {
+                p = I[i];
+                m_am.isolate_roots(p, roots);
+                numeral lo, hi;
+                bool lo_valid = false, hi_valid = false;
+                for (unsigned j = 0; j < roots.size(); ++j) {
+                    int s = m_am.compare(x_val, roots[j]);
+                    SASSERT(s != 0);
+                    if (s < 0 && !hi_valid) {
+                        hi = roots[j];
+                        hi_valid = true;
+                        hi_index = j;
+                    }
+                    else if (s > 0) {
+                        lo = roots[j];
+                        lo_valid = true;
+                        lo_index = j;
+                    }
+                }
+                if (lo_valid) {
+                    L_val.push_back(lo);
+                    L_idx.push_back(lo_idx);
+                    L_ply.push_back(p);
+                }
+                if (hi_valid) {
+                    U_val.push_back(hi);
+                    U_idx.push_back(hi_idx);
+                    U_ply.push_back(p);
+                }
+            }
+            unsigned glb_index = 0;
+            unsigned lub_index = 0;
+            if (!L_val.empty()) {
+                anum glb = L_val[0];
+                for (unsigned i = 1; i < L_val.size(); ++i) {
+                    if (m_am.compare(glb, L_val[i]) < 0) {
+                        glb = L_val[i];
+                        glb_index = i;
+                    }
+                }                
+            }
+            // same for lub_index.
+
+            
+            
+            
             NOT_IMPLEMENTED_YET();
         }
 #endif

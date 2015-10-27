@@ -434,13 +434,10 @@ namespace nlsat {
                   tout << "Index: " << a->i() << " " << (neg?"negated":"positive") << "\n";
                   );
             SASSERT(a->i() > 0);
-            int sign = 0;
             if (a->i() > roots.size()) {
                 return neg;
             }
-            else {
-                sign = m_am.compare(m_assignment.value(a->x()), roots[a->i() - 1]);
-            }
+            int sign = m_am.compare(m_assignment.value(a->x()), roots[a->i() - 1]);            
             return satisfied(sign, k, neg);
         }
         
