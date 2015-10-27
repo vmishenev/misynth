@@ -1398,6 +1398,7 @@ namespace nlsat {
 
            Assumptions:
            - any variable in ps is at most x.
+           - root expressions are satisfied (positive literals)
            
            Effect:
            - if x not in p, then
@@ -1412,14 +1413,15 @@ namespace nlsat {
            - let glb in L, s.t. forall l in L . M(glb) >= M(l)
            - let lub in U, s.t. forall u in U . M(lub) <= M(u)
            - if root in E, then 
-              - add E x . x = root & root > lb  for lb in L
-              - add E x . x = root & root < ub  for ub in U
+              - add E x . x = root & x > lb  for lb in L
+              - add E x . x = root & x < ub  for ub in U
               - add E x . x = root & x = root2  for root2 in E \ { root }
            - else 
-             - assume |L| <= |U|
+             - assume |L| <= |U| (other case is symmetric)
              - add E x . lb <= x & x <= glb for lb in L
              - add E x . x = glb & x < ub  for ub in U
          */
+
 
 #if 0
         void signed_projection(var x) {
@@ -1427,10 +1429,79 @@ namespace nlsat {
             if (m_ps.empty()) {
                 return;
             }
-            polynomail_ref p(m_pm);
+            polynomial_ref p(m_pm);
+            polynomial_ref_vector E(m_pm), I(m_pm);
             for (unsigned i = 0; i < m_ps.size(); ++i) {
                 p = m_ps[i];
+                int s = sign(p);
+                if (max_var(p) != x) {
+                    atom::kind k = (s == 0)?(atom::EQ):((s < 0)?(atom::LT):(atom::GT));
+                    add_simple_assumption(k, p, false);
+                }
+                else if (s == 0) {
+                    E.push_back(p);
+                }
+                else {
+                    I.push_back(p);
+                }
             }
+            if (E.empty() && I.empty()) {
+                return;
+            }
+            if (!E.empty()) {
+                p = E.back();
+                E.pop_back();
+                E.append(I);
+                for (unsigned i = 0; i < E.size(); ++i) {
+                    project_pair(x, p, E[i]);
+                }
+                return;
+            }
+            SASSERT(E.empty() && !I.empty());
+            
+            unsigned num_glb = 0, num_lub = 0;
+            for (unsigned i = 0; i < I.size(); ++i) {
+                p = I[i];
+                m_am.isolate_roots(p, roots);
+                bool lo_valid = false, hi_valid = false;
+                for (unsigned j = 0; j < roots.size(); ++j) {
+                    int s = m_am.compare(x_val, roots[j]);
+                    SASSERT(s != 0);
+                    if (s < 0 && !hi_valid) {
+                        hi_valid = true;
+                        U_val.push_back(roots[j]);
+                        U_idx.push_back(j);
+                        ++num_lub;
+                    }
+                    else if (s > 0) {
+                        lo_valid = true;
+                        lo_idx = j;
+                    }
+                }
+                if (lo_valid) {
+                    L_val.push_back(roots[j]);
+                    L_idx.push_back(lo_idx);
+                    ++num_glb;
+                }
+            }
+            unsigned glb_index = 0, lub_index = 0;
+            unsigned lub_index = 0;
+            numeral glb, lub;
+
+            for (unsigned i = 1; i < num_lub; ++i) {
+                if (m_am.compare(U_val[lub_index], U_val[i]) < 0) {
+                    lub_index = i;
+                }
+            }
+            for (unsigned i = 1; i < num_glb; ++i) {
+                if (m_am.compare(L_val[glb_index], L_val[i]) > 0) {
+                    glb_index = i;
+                }
+            }
+
+            
+            
+            
             NOT_IMPLEMENTED_YET();
         }
 #endif
