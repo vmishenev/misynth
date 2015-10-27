@@ -317,13 +317,19 @@ static nlsat::literal mk_gt(nlsat::solver& s, nlsat::poly* p) {
     return s.mk_ineq_literal(nlsat::atom::GT, 1, _p, is_even);
 }
 
+static nlsat::literal mk_eq(nlsat::solver& s, nlsat::poly* p) {
+    nlsat::poly * _p[1] = { p };
+    bool is_even[1] = { false };
+    return s.mk_ineq_literal(nlsat::atom::EQ, 1, _p, is_even);
+}
+
 static void tst6() {
     params_ref      ps;
     reslimit        rlim;
     nlsat::solver s(rlim, ps);
     anum_manager & am     = s.am();
     nlsat::pmanager & pm  = s.pm();
-    nlsat::assignment& as = s.get_assignment();
+    nlsat::assignment as(am);
     nlsat::explain& ex    = s.get_explain();
     nlsat::var x0, x1, x2, a, b, c, d;
     a  = s.mk_var(false);
@@ -364,6 +370,8 @@ static void tst6() {
     as.set(4, two);
     as.set(5, one);
     as.set(6, one); 
+    s.set_rvalues(as);
+
 
     project(s, ex, x0, 2, lits.c_ptr());
     project(s, ex, x1, 3, lits.c_ptr());
@@ -429,7 +437,57 @@ static void tst7() {
 
 }
 
+static void tst8() {
+    params_ref      ps;
+    reslimit        rlim;
+    nlsat::solver s(rlim, ps);
+    anum_manager & am     = s.am();
+    nlsat::pmanager & pm  = s.pm();
+    nlsat::assignment as(am);
+    nlsat::explain& ex    = s.get_explain();
+    nlsat::var x0, x1, x2, a, b, c, d;
+    a  = s.mk_var(false);
+    b  = s.mk_var(false);
+    c  = s.mk_var(false);
+    d  = s.mk_var(false);
+    x0 = s.mk_var(false);
+    x1 = s.mk_var(false);
+    x2 = s.mk_var(false);
+
+    polynomial_ref p1(pm), p2(pm), p3(pm), p4(pm), p5(pm);
+    polynomial_ref _x0(pm), _x1(pm), _x2(pm);
+    polynomial_ref _a(pm), _b(pm), _c(pm), _d(pm);
+    _x0 = pm.mk_polynomial(x0);
+    _x1 = pm.mk_polynomial(x1);
+    _x2 = pm.mk_polynomial(x2);
+    _a  = pm.mk_polynomial(a);
+    _b  = pm.mk_polynomial(b);
+    _c  = pm.mk_polynomial(c);
+    _d  = pm.mk_polynomial(d);
+    
+    scoped_anum zero(am), one(am), two(am), six(am);
+    am.set(zero, 0);
+    am.set(one,  1);
+    am.set(two,  2);
+    am.set(six,  6);
+    as.set(0, two); // a
+    as.set(1, one); // b
+    as.set(2, six); // c
+    as.set(3, zero); // d
+    as.set(4, zero); // x0
+    as.set(5, zero); // x1
+    as.set(6, two); // x2
+    s.set_rvalues(as);
+
+    nlsat::scoped_literal_vector lits(s);
+    lits.push_back(mk_eq(s, (_a*_x2*_x2) - (_b*_x2) - _c));
+    project(s, ex, x2, 1, lits.c_ptr());
+    exit(0);
+}
+
 void tst_nlsat() {
+    tst8();
+    std::cout << "------------------\n";
     tst7();
     std::cout << "------------------\n";
     tst6();

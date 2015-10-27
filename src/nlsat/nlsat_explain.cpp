@@ -36,6 +36,7 @@ namespace nlsat {
         polynomial::cache &     m_cache;
         pmanager &              m_pm;
         polynomial_ref_vector   m_ps;
+        polynomial_ref_vector   m_ps2;
         polynomial_ref_vector   m_psc_tmp;
         polynomial_ref_vector   m_factors;
         scoped_anum_vector      m_roots_tmp;
@@ -137,6 +138,7 @@ namespace nlsat {
             m_cache(u), 
             m_pm(u.pm()),
             m_ps(m_pm),
+            m_ps2(m_pm),
             m_psc_tmp(m_pm),
             m_factors(m_pm),
             m_roots_tmp(m_am),
@@ -1359,7 +1361,11 @@ namespace nlsat {
                           m_solver.display(tout););
                 }
                 elim_vanishing(m_ps);
+#if 0
+                signed_project(m_ps, mx_var);
+#else
                 project(m_ps, mx_var);
+#endif
                 reset_already_added();
                 m_result = 0;
                 if (x != mx_var) {
@@ -1417,100 +1423,162 @@ namespace nlsat {
               - add E x . x = root & x < ub  for ub in U
               - add E x . x = root & x = root2  for root2 in E \ { root }
            - else 
-             - assume |L| <= |U|
+             - assume |L| <= |U| (other case is symmetric)
              - add E x . lb <= x & x <= glb for lb in L
              - add E x . x = glb & x < ub  for ub in U
          */
 
-#if 0
-        void signed_projection(var x) {
+
+        void signed_project(polynomial_ref_vector& ps, var x) {
             
-            if (m_ps.empty()) {
-                return;
-            }
             polynomial_ref p(m_pm);
-            polynomial_ref_vector E(m_pm), I(m_pm);
-            for (unsigned i = 0; i < m_ps.size(); ++i) {
-                p = m_ps[i];
+            unsigned eq_index = 0;
+            bool eq_valid = false;
+            for (unsigned i = 0; i < ps.size(); ++i) {
+                p = ps.get(i);
                 int s = sign(p);
                 if (max_var(p) != x) {
                     atom::kind k = (s == 0)?(atom::EQ):((s < 0)?(atom::LT):(atom::GT));
                     add_simple_assumption(k, p, false);
-                    continue;
+                    ps[i] = ps.back();
+                    ps.pop_back();
+                    --i;
                 }
-                if (s == 0) {
-                    E.push_back(p);
-                }
-                else {
-                    I.push_back(p);
+                else if (s == 0) {
+                    eq_index = i;
+                    eq_valid = true;
                 }
             }
-            if (E.empty() && I.empty()) {
+
+            if (ps.empty()) {
                 return;
             }
-            if (!E.empty()) {
-                p = E.back();
-                E.pop_back();
-                E.append(I);
-                for (unsigned i = 0; i < E.size(); ++i) {
-                    project_pair(x, p, E[i]);
-                }
+
+            if (ps.size() == 1) {
+                project_single(x, ps.get(0));
                 return;
             }
-            SASSERT(E.empty() && L.empty() && U.empty());
+
+            if (eq_valid) {
+                project_pairs(x, eq_index, ps);
+                return;
+            }
             
-            bool glb_valid = false, lub_valid = false;
-            numeral glb, lub;
-            for (unsigned i = 0; i < I.size(); ++i) {
-                p = I[i];
-                m_am.isolate_roots(p, roots);
-                numeral lo, hi;
-                bool lo_valid = false, hi_valid = false;
+            unsigned num_lub = 0, num_glb = 0;
+            unsigned glb_index = 0, lub_index = 0;
+            scoped_anum lub(m_am), glb(m_am), new_x_val(m_am), x_val(m_am);
+            x_val = m_assignment.value(x);
+            for (unsigned i = 0; i < ps.size(); ++i) {
+                p = ps.get(i);
+                scoped_anum_vector & roots = m_roots_tmp;
+                roots.reset();
+                m_am.isolate_roots(p, undef_var_assignment(m_assignment, x), roots);
+                bool glb_valid = false, lub_valid = false;
                 for (unsigned j = 0; j < roots.size(); ++j) {
                     int s = m_am.compare(x_val, roots[j]);
                     SASSERT(s != 0);
-                    if (s < 0 && !hi_valid) {
-                        hi = roots[j];
-                        hi_valid = true;
-                        hi_index = j;
+                    lub_valid |= s < 0;
+                    glb_valid |= s > 0;
+
+                    if (s < 0 && m_am.lt(roots[j], lub)) {
+                        lub_index = i;
+                        m_am.set(lub, roots[j]);
                     }
-                    else if (s > 0) {
-                        lo = roots[j];
-                        lo_valid = true;
-                        lo_index = j;
-                    }
-                }
-                if (lo_valid) {
-                    L_val.push_back(lo);
-                    L_idx.push_back(lo_idx);
-                    L_ply.push_back(p);
-                }
-                if (hi_valid) {
-                    U_val.push_back(hi);
-                    U_idx.push_back(hi_idx);
-                    U_ply.push_back(p);
-                }
-            }
-            unsigned glb_index = 0;
-            unsigned lub_index = 0;
-            if (!L_val.empty()) {
-                anum glb = L_val[0];
-                for (unsigned i = 1; i < L_val.size(); ++i) {
-                    if (m_am.compare(glb, L_val[i]) < 0) {
-                        glb = L_val[i];
+
+                    if (s > 0 && m_am.lt(glb, roots[j])) {
                         glb_index = i;
+                        m_am.set(glb, roots[j]);
                     }
-                }                
+                }
+                if (glb_valid) {
+                    ++num_glb;
+                }
+                if (lub_valid) {
+                    ++num_lub;
+                }
             }
-            // same for lub_index.
 
-            
-            
-            
-            NOT_IMPLEMENTED_YET();
+            if (num_lub == 0) {
+                project_plus_infinity(x, ps);
+                return;
+            }
+                
+            if (num_glb == 0) {
+                project_minus_infinity(x, ps);
+                return;
+            }
+
+            if (num_lub <= num_glb) {
+                glb_index = lub_index;
+                new_x_val = lub;
+            }
+            else {
+                new_x_val = glb;
+            }
+
+            // TBD redundant: const_cast<assignment&>(m_assignment).set(x, new_x_val);
+            project_pairs(x, glb_index, ps);
+            // TBD redundant: const_cast<assignment&>(m_assignment).set(x, x_val);
         }
-#endif
 
+        void project_plus_infinity(var x, polynomial_ref_vector const& ps) {
+            polynomial_ref p(m_pm), lc(m_pm);
+            for (unsigned i = 0; i < ps.size(); ++i) {
+                p = ps.get(i);
+                unsigned d = degree(p, x);
+                lc = m_pm.coeff(p, x, d);
+                if (!is_const(lc)) {
+                    unsigned s = sign(p);
+                    SASSERT(s != 0);
+                    atom::kind k = (s > 0)?(atom::GT):(atom::LT);
+                    add_simple_assumption(k, lc);
+                }
+            }
+        }
+
+        void project_minus_infinity(var x, polynomial_ref_vector const& ps) {
+            polynomial_ref p(m_pm), lc(m_pm);
+            for (unsigned i = 0; i < ps.size(); ++i) {
+                p = ps.get(i);
+                unsigned d = degree(p, x);
+                lc = m_pm.coeff(p, x, d);
+                if (!is_const(lc)) {
+                    unsigned s = sign(p);
+                    SASSERT(s != 0);
+                    atom::kind k;
+                    if (s > 0) {
+                        k = (d % 2 == 0)?(atom::GT):(atom::LT);
+                    }
+                    else {
+                        k = (d % 2 == 0)?(atom::LT):(atom::GT);
+                    }
+                    add_simple_assumption(k, lc);
+                }
+            }
+        }
+
+        void project_pairs(var x, unsigned idx, polynomial_ref_vector const& ps) {
+            polynomial_ref p(m_pm);
+            p = ps.get(idx);
+            for (unsigned i = 0; i < ps.size(); ++i) {
+                if (i != idx) {
+                    project_pair(x, ps.get(i), p);
+                }
+            }
+        }
+
+        void project_pair(var x, polynomial::polynomial* p1, polynomial::polynomial* p2) {
+            m_ps2.reset();
+            m_ps2.push_back(p1);
+            m_ps2.push_back(p2);
+            project(m_ps2, x);
+        }
+
+        void project_single(var x, polynomial::polynomial* p) {
+            m_ps2.reset();
+            m_ps2.push_back(p);
+            project(m_ps2, x);
+        }
 
     };
 
