@@ -63,22 +63,26 @@ namespace nlsat {
 
         
         /**
-           \brief projection without minimization and for a given variable.
+           \brief projection for a given variable.
 
              Given:    M |= l1[x] /\ ... /\ ln[x]
            
-             Find:     M |= s1, ..., sn
+             Find:     M |= s1, ..., sm
 
-             Such that:  |= ~s1 \/ ... \/ ~sn \/ E x. l1[x] /\ ... /\ ln[x]
+             Such that:  |= ~s1 \/ ... \/ ~sm \/ E x. l1[x] /\ ... /\ ln[x]
 
            Contrast this with with the core-based projection above:
 
-             Given:     M |= A x . ~l1[x] \/  ... \/ ~ln[x]
+             Given:     M |= A x . l1[x] \/  ... \/ ln[x]
            
-             Find:      M |= ~s1, ..., ~sn.
+             Find:      M |= s1, ..., sm.
 
-             Such that:   |= s1 \/ ... \/ sn \/ A x . ~l1[x] \/  ... \/ ~ln[x]           
+             Such that:   |= ~s1 \/ ... \/ ~sm \/ A x . l1[x] \/  ... \/ ln[x]           
 
+           Claim: the two compute the same solutions if the projection operators are independent of the value of x.
+           Claim: A complete, convergent projection operator can be obtained from M in a way that is independent of x.
+
+           
          */
         void project(var x, unsigned n, literal const * ls, scoped_literal_vector & result);
 

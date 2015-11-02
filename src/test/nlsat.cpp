@@ -485,6 +485,44 @@ static void tst8() {
     exit(0);
 }
 
+static void tst9() {
+    params_ref      ps;
+    reslimit        rlim;
+    nlsat::solver s(rlim, ps);
+    anum_manager & am     = s.am();
+    nlsat::pmanager & pm  = s.pm();
+    unsigned num_lo = 4;
+    unsigned num_hi = 5;
+    polynomail_ref_vector los(pm), his(pm);
+    for (unsigned i = 0; i < num_lo; ++i) {
+        los.push_back(pm.mk_polynomial(s.mk_var(false)));
+        scoped_anum num(am);
+        am.set(num, i + 1);
+        am.set(i, num);
+    }
+    for (unsigned i = 0; i < num_hi; ++i) {
+        his.push_back(pm.mk_polynomial(s.mk_var(false)));
+        scoped_anum num(am);
+        am.set(num, i + 1);
+        am.set(num_lo + i, num);
+    }
+    nlsat::var _x = s.mk_var(false);
+    polynomial_ref x(pm);
+    x = pm.mk_polynomial(_x);
+    scoped_anum val(am);
+    am.set(val, 0);
+    as.set(num_lo + num_hi, val);
+    s.set_rvalues(as);
+    nlsat::scoped_literal_vector lits(s);
+    for (unsigned i = 0; i < num_lo; ++i) {
+        lits.push_back(mk_gt(s, x - pm.mk_polynomial(los[i])));
+    }
+    for (unsigned i = 0; i < num_hi; ++i) {
+        lits.push_back(mk_gt(s, pm.mk_polynomial(his[i]) - x));
+    }
+    
+}
+
 void tst_nlsat() {
     tst8();
     std::cout << "------------------\n";
