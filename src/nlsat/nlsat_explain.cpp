@@ -44,6 +44,7 @@ namespace nlsat {
         bool                    m_full_dimensional;
         bool                    m_minimize_cores;
         bool                    m_factor;
+        bool                    m_signed_project;
 
         struct todo_set {
             polynomial::cache  &    m_cache;
@@ -150,6 +151,7 @@ namespace nlsat {
             m_simplify_cores   = false;
             m_full_dimensional = false;
             m_minimize_cores   = false;
+            m_signed_project   = false;
         }
         
         ~imp() {
@@ -1361,11 +1363,12 @@ namespace nlsat {
                           m_solver.display(tout););
                 }
                 elim_vanishing(m_ps);
-#if 0
-                signed_project(m_ps, mx_var);
-#else
-                project(m_ps, mx_var);
-#endif
+                if (m_signed_project) {
+                    signed_project(m_ps, mx_var);
+                }
+                else {
+                    project(m_ps, mx_var);
+                }
                 reset_already_added();
                 m_result = 0;
                 if (x != mx_var) {
@@ -1610,6 +1613,10 @@ namespace nlsat {
 
     void explain::set_factor(bool f) {
         m_imp->m_factor = f;
+    }
+
+    void explain::set_signed_project(bool f) {
+        m_imp->m_signed_project = f;
     }
 
     void explain::operator()(unsigned n, literal const * ls, scoped_literal_vector & result) {

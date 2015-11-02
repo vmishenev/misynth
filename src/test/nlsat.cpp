@@ -304,10 +304,11 @@ static void tst5() {
 
 
 static void project(nlsat::solver& s, nlsat::explain& ex, nlsat::var x, unsigned num, nlsat::literal const* lits) {
+    std::cout << "Project\n";
     s.display(std::cout, num, lits);
     nlsat::scoped_literal_vector result(s);
     ex.project(x, num, lits, result);
-    s.display(std::cout << " ==> ", result.size(), result.c_ptr());
+    s.display(std::cout << "\n==>\n", result.size(), result.c_ptr());
     std::cout << "\n";
 }
 
@@ -482,7 +483,6 @@ static void tst8() {
     nlsat::scoped_literal_vector lits(s);
     lits.push_back(mk_eq(s, (_a*_x2*_x2) - (_b*_x2) - _c));
     project(s, ex, x2, 1, lits.c_ptr());
-    exit(0);
 }
 
 static void tst9() {
@@ -491,39 +491,58 @@ static void tst9() {
     nlsat::solver s(rlim, ps);
     anum_manager & am     = s.am();
     nlsat::pmanager & pm  = s.pm();
-    unsigned num_lo = 4;
-    unsigned num_hi = 5;
-    polynomail_ref_vector los(pm), his(pm);
-    for (unsigned i = 0; i < num_lo; ++i) {
-        los.push_back(pm.mk_polynomial(s.mk_var(false)));
+    nlsat::assignment as(am);
+    nlsat::explain& ex    = s.get_explain();
+    int num_lo = 4;
+    int num_hi = 5;
+    svector<nlsat::var> los, his;
+    for (int i = 0; i < num_lo; ++i) {
+        los.push_back(s.mk_var(false));
+        scoped_anum num(am);
+        am.set(num, - i - 1);
+        as.set(i, num);
+    }
+    for (int i = 0; i < num_hi; ++i) {
+        his.push_back(s.mk_var(false));
         scoped_anum num(am);
         am.set(num, i + 1);
-        am.set(i, num);
+        as.set(num_lo + i, num);
     }
-    for (unsigned i = 0; i < num_hi; ++i) {
-        his.push_back(pm.mk_polynomial(s.mk_var(false)));
-        scoped_anum num(am);
-        am.set(num, i + 1);
-        am.set(num_lo + i, num);
-    }
+    nlsat::var _z = s.mk_var(false);
     nlsat::var _x = s.mk_var(false);
-    polynomial_ref x(pm);
+    polynomial_ref x(pm), z(pm);
     x = pm.mk_polynomial(_x);
     scoped_anum val(am);
     am.set(val, 0);
     as.set(num_lo + num_hi, val);
+    as.set(num_lo + num_hi + 1, val);
     s.set_rvalues(as);
     nlsat::scoped_literal_vector lits(s);
-    for (unsigned i = 0; i < num_lo; ++i) {
-        lits.push_back(mk_gt(s, x - pm.mk_polynomial(los[i])));
+    for (int i = 0; i < num_lo; ++i) {
+        polynomial_ref y(pm);
+        y = pm.mk_polynomial(los[i]);
+        lits.push_back(mk_gt(s, x - y));
     }
-    for (unsigned i = 0; i < num_hi; ++i) {
-        lits.push_back(mk_gt(s, pm.mk_polynomial(his[i]) - x));
+    for (int i = 0; i < num_hi; ++i) {
+        polynomial_ref y(pm);
+        y = pm.mk_polynomial(his[i]);
+        lits.push_back(mk_gt(s, y - x));
     }
-    
+    z = pm.mk_polynomial(_z);
+    lits.push_back(mk_eq(s, x - z));
+
+    project(s, ex, _x, lits.size()-1, lits.c_ptr());
+    project(s, ex, _x, lits.size(), lits.c_ptr());  
+    ex.set_signed_project(true);
+    project(s, ex, _x, lits.size()-1, lits.c_ptr());
+    project(s, ex, _x, lits.size(), lits.c_ptr());  
+
 }
 
 void tst_nlsat() {
+    tst9();
+    std::cout << "------------------\n";
+    exit(0);
     tst8();
     std::cout << "------------------\n";
     tst7();
