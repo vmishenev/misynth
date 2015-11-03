@@ -304,7 +304,7 @@ static void tst5() {
 
 
 static void project(nlsat::solver& s, nlsat::explain& ex, nlsat::var x, unsigned num, nlsat::literal const* lits) {
-    std::cout << "Project\n";
+    std::cout << "Project ";
     s.display(std::cout, num, lits);
     nlsat::scoped_literal_vector result(s);
     ex.project(x, num, lits, result);
@@ -485,6 +485,8 @@ static void tst8() {
     project(s, ex, x2, 1, lits.c_ptr());
 }
 
+
+
 static void tst9() {
     params_ref      ps;
     reslimit        rlim;
@@ -518,6 +520,7 @@ static void tst9() {
     as.set(num_lo + num_hi + 1, val);
     s.set_rvalues(as);
     nlsat::scoped_literal_vector lits(s);
+
     for (int i = 0; i < num_lo; ++i) {
         polynomial_ref y(pm);
         y = pm.mk_polynomial(los[i]);
@@ -531,12 +534,56 @@ static void tst9() {
     z = pm.mk_polynomial(_z);
     lits.push_back(mk_eq(s, x - z));
 
-    project(s, ex, _x, lits.size()-1, lits.c_ptr());
-    project(s, ex, _x, lits.size(), lits.c_ptr());  
-    ex.set_signed_project(true);
-    project(s, ex, _x, lits.size()-1, lits.c_ptr());
-    project(s, ex, _x, lits.size(), lits.c_ptr());  
+#define TEST_ON_OFF()                                   \
+    std::cout << "Off ";                                \
+    ex.set_signed_project(false);                       \
+    project(s, ex, _x, lits.size()-1, lits.c_ptr());    \
+    std::cout << "On ";                                 \
+    ex.set_signed_project(true);                        \
+    project(s, ex, _x, lits.size()-1, lits.c_ptr());    \
+    std::cout << "Off ";                                \
+    ex.set_signed_project(false);                       \
+    project(s, ex, _x, lits.size(), lits.c_ptr());      \
+    std::cout << "On ";                                 \
+    ex.set_signed_project(true);                        \
+    project(s, ex, _x, lits.size(), lits.c_ptr())       \
 
+    TEST_ON_OFF();
+
+    lits.reset();
+    polynomial_ref u(pm);
+    u = pm.mk_polynomial(his[1]);
+    for (int i = 0; i < num_lo; ++i) {
+        polynomial_ref y(pm);
+        y = pm.mk_polynomial(los[i]);
+        lits.push_back(mk_gt(s, u*x - y));
+    }
+    for (int i = 0; i < num_hi; ++i) {
+        polynomial_ref y(pm);
+        y = pm.mk_polynomial(his[i]);
+        lits.push_back(mk_gt(s, y - u*x));
+    }
+    z = pm.mk_polynomial(_z);
+    lits.push_back(mk_eq(s, u*x - z));
+
+    TEST_ON_OFF();
+
+    lits.reset();
+    u = pm.mk_polynomial(los[1]);
+    for (int i = 0; i < num_lo; ++i) {
+        polynomial_ref y(pm);
+        y = pm.mk_polynomial(los[i]);
+        lits.push_back(mk_gt(s, u*x - y));
+    }
+    for (int i = 0; i < num_hi; ++i) {
+        polynomial_ref y(pm);
+        y = pm.mk_polynomial(his[i]);
+        lits.push_back(mk_gt(s, y - u*x));
+    }
+    z = pm.mk_polynomial(_z);
+    lits.push_back(mk_eq(s, x - z));
+
+    TEST_ON_OFF();
 }
 
 void tst_nlsat() {
