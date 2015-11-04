@@ -766,6 +766,10 @@ void th_rewriter::operator()(expr * n, unsigned num_bindings, expr * const * bin
     m_imp->operator()(n, num_bindings, bindings, result);
 }
 
+void th_rewriter::mk_app(func_decl * f, unsigned num_args, expr * const * args, expr_ref & result) {
+    m_imp->mk_app(f, num_args, args, result);
+}
+
 void th_rewriter::set_substitution(expr_substitution * s) {
     m_imp->reset(); // reset the cache
     m_imp->cfg().set_substitution(s);

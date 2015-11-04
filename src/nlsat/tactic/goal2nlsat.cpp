@@ -336,9 +336,13 @@ public:
                 nlsat::ineq_atom const* ia = to_ineq_atom(at);
                 unsigned sz = ia->size();
                 expr_ref_vector ps(m);
+                bool is_int = true;
+                for (unsigned i = 0; is_int && i < sz; ++i) {
+                    is_int = poly_is_int(ia->p(i));
+                }
                 for (unsigned i = 0; i < sz; ++i) {
                     polynomial::polynomial* p = ia->p(i);
-                    expr_ref t = poly2expr(s, p);
+                    expr_ref t = poly2expr(s, p, is_int);
                     if (ia->is_even(i)) {
                         t = a.mk_power(t, a.mk_numeral(rational(2), a.is_int(t)));
                     }
@@ -390,27 +394,27 @@ public:
         return result;
     }
 
-    expr_ref poly2expr(nlsat::solver& s, polynomial::polynomial* p) {
+    expr_ref poly2expr(nlsat::solver& s, polynomial::polynomial* p, bool is_int) {
         expr_ref result(m);
         unsigned sz = polynomial::manager::size(p);
         expr_ref_vector args(m);
         for (unsigned i = 0; i < sz; ++i) {
-            args.push_back(mono2expr(s, polynomial::manager::coeff(p, i), polynomial::manager::get_monomial(p, i)));
+            args.push_back(mono2expr(s, 
+                                     polynomial::manager::coeff(p, i), 
+                                     polynomial::manager::get_monomial(p, i), is_int));
         }
         result = a.mk_add_simplify(args);
         return result;
     }
 
-    expr_ref mono2expr(nlsat::solver& s, polynomial::numeral const& c, polynomial::monomial* mon) {
+    expr_ref mono2expr(nlsat::solver& s, polynomial::numeral const& c, polynomial::monomial* mon, bool is_int) {
         expr_ref result(m);
         expr_ref_vector args(m);
         unsigned sz = polynomial::manager::size(mon);
-        bool is_int = true;
         for (unsigned i = 0; i < sz; ++i) {
             unsigned d = polynomial::manager::degree(mon, i);
             expr* t = m_x2t->find(polynomial::manager::get_var(mon, i));
             SASSERT(d >= 1);
-            is_int &= a.is_int(t);
             if (d == 1) {
                 args.push_back(t);
             }
@@ -423,6 +427,24 @@ public:
         }
         result = a.mk_mul_simplify(args);
         return result;
+    }
+
+    bool poly_is_int(polynomial::polynomial* p) {
+        bool is_int = true;
+        unsigned sz = polynomial::manager::size(p);
+        for (unsigned i = 0; is_int && i < sz; ++i) {
+            is_int = mono_is_int(polynomial::manager::get_monomial(p, i));
+        }
+        return is_int;
+    }
+
+    bool mono_is_int(polynomial::monomial* mon) {
+        bool is_int = true;
+        unsigned sz = polynomial::manager::size(mon);
+        for (unsigned i = 0; is_int && i < sz; ++i) {
+            is_int = a.is_int(m_x2t->find(polynomial::manager::get_var(mon, i)));
+        }
+        return is_int;
     }
 };
 

@@ -352,6 +352,7 @@ public:
         set_inv_bindings(num_bindings, bindings);
         operator()(n, result);
     }
+    void mk_app(func_decl* f, unsigned num_args, expr * const* args, expr_ref & result);
 
     void resume(expr_ref & result, proof_ref & result_pr);
     void resume(expr_ref & result) { resume(result, m_pr); }

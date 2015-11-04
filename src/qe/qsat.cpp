@@ -578,6 +578,7 @@ namespace qe {
                 switch (res) {
                 case l_true:
                     k.get_model(m_model);
+                    SASSERT(validate_model(asms));
                     TRACE("qe", k.display(tout); display(tout << "\n", *m_model.get()); display(tout, asms); );
                     push();
                 break;
@@ -755,6 +756,7 @@ namespace qe {
             expr_ref fml(m);
             model& mdl = *m_model.get();
             get_core(core, m_level);
+            SASSERT(validate_core(core));
             get_vars(m_level);
             m_mbp(m_force_elim, m_avars, mdl, core);
             fml = negate_core(core);
@@ -767,13 +769,15 @@ namespace qe {
         void project(expr_ref_vector& core) {
             get_core(core, m_level);
             TRACE("qe", display(tout); display(tout << "core\n", core););
+            SASSERT(validate_core(core));
             SASSERT(m_level >= 2);
             expr_ref fml(m); 
-            expr_ref_vector defs(m);
+            expr_ref_vector defs(m), core_save(m);
             max_level level;
             model& mdl = *m_model.get();
             
             get_vars(m_level-1);
+            SASSERT(validate_project(mdl, core));
             m_mbp(m_force_elim, m_avars, mdl, core);
             m_free_vars.append(m_avars);
             fml = negate_core(core);
@@ -792,6 +796,9 @@ namespace qe {
                 SASSERT(level.max() + 2 <= m_level);
                 num_scopes = m_level - level.max();
                 SASSERT(num_scopes >= 2);
+                if ((num_scopes % 2) != 0) {
+                    --num_scopes;
+                }
             }
             
             pop(num_scopes); 
@@ -926,6 +933,82 @@ namespace qe {
             else {
                 return expr_ref(_fml, m);
             }
+        }
+
+        bool validate_core(expr_ref_vector const& core) {
+            TRACE("qe", tout << "Validate core\n";);
+            smt::kernel& k = get_kernel(m_level).k();
+            expr_ref_vector fmls(m);
+            fmls.append(core.size(), core.c_ptr());
+            fmls.append(k.size(), k.get_formulas());
+            return check_fmls(fmls);
+        }
+
+        bool check_fmls(expr_ref_vector const& fmls) {
+            smt_params p;
+            smt::kernel solver(m, p);
+            for (unsigned i = 0; i < fmls.size(); ++i) {
+                solver.assert_expr(fmls[i]);
+            }
+            lbool is_sat = solver.check();
+            return (is_sat == l_false);
+        }
+
+        bool validate_model(expr_ref_vector const& asms) {
+            TRACE("qe", tout << "Validate model\n";);
+            smt::kernel& k = get_kernel(m_level).k();
+            return 
+                validate_model(*m_model, asms.size(), asms.c_ptr()) &&
+                validate_model(*m_model, k.size(), k.get_formulas());
+        }
+
+        bool validate_model(model& mdl, unsigned sz, expr* const* fmls) {
+            expr_ref val(m);
+            for (unsigned i = 0; i < sz; ++i) {
+                if (!m_model->eval(fmls[i], val) || !m.is_true(val)) return false;
+            }               
+            return true;
+        }
+
+        // validate the following:
+        //  proj is true in model.
+        //  core is true in model.
+        //  proj does not contain vars.
+        //  proj => exists vars . core
+        //  (core[model(vars)/vars] => proj)
+              
+        bool validate_project(model& mdl, expr_ref_vector const& core) {
+            TRACE("qe", tout << "Validate projection\n";);
+            if (!validate_model(mdl, core.size(), core.c_ptr())) return false;
+
+            expr_ref_vector proj(core);
+            app_ref_vector vars(m_avars);
+            m_mbp(false, vars, mdl, proj);
+            if (!vars.empty()) {
+                TRACE("qe", tout << "Not validating partial projection\n";);
+                return true;
+            }
+            if (!validate_model(mdl, proj.size(), proj.c_ptr())) return false;
+            for (unsigned i = 0; i < m_avars.size(); ++i) {
+                contains_app cont(m, m_avars[i].get());
+                if (cont(proj)) return false;
+            }
+
+            //
+            //  TBD: proj => exists vars . core, 
+            //  e.g., extract and use realizer functions from mbp.
+            //
+
+            //  (core[model(vars)/vars] => proj)            
+            expr_ref_vector fmls(m);
+            fmls.append(core.size(), core.c_ptr());
+            for (unsigned i = 0; i < m_avars.size(); ++i) {
+                expr_ref val(m);
+                VERIFY(mdl.eval(m_avars[i].get(), val));
+                fmls.push_back(m.mk_eq(m_avars[i].get(), val));
+            }
+            fmls.push_back(m.mk_not(mk_and(proj)));
+            return check_fmls(fmls);
         }
 
     public:

@@ -642,3 +642,12 @@ void rewriter_tpl<Config>::resume(expr_ref & result, proof_ref & result_pr) {
     else
         resume_core<false>(result, result_pr);
 }
+
+template<typename Config>
+void rewriter_tpl<Config>::mk_app(func_decl* f, unsigned num_args, expr * const* args, expr_ref & result) {
+    proof_ref pr(m());
+    br_status st = m_cfg.reduce_app(f, num_args, args, result, pr);
+    if (st == BR_FAILED) {
+        result = m().mk_app(f, num_args, args);
+    }
+}

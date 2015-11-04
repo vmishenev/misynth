@@ -29,6 +29,7 @@ Revision History:
 #include "uint_set.h"
 #include "ast_util.h"
 #include "tseitin_cnf_tactic.h"
+#include "expr_safe_replace.h"
 
 namespace qe {
 
@@ -74,6 +75,7 @@ namespace qe {
         statistics                           m_st;
         obj_hashtable<expr>                  m_free_vars;
         expr_ref_vector                      m_answer;
+        expr_safe_replace                    m_answer_simplify;
         nlsat::literal_vector                m_assumptions;
         u_map<expr*>                         m_asm2fml;
         expr_ref_vector                      m_trail;
@@ -299,6 +301,9 @@ namespace qe {
             else {
                 SASSERT(clevel.max() + 2 <= level());
                 num_scopes = level() - clevel.max();
+                if ((num_scopes % 2) != 0) {
+                    --num_scopes;
+                }
                 SASSERT(num_scopes >= 2);
             }
             
@@ -315,7 +320,7 @@ namespace qe {
             clause2fml(clause, fml);
             TRACE("qe", tout << level() << ": " << fml << "\n";);
             if (level() == 1) {
-                m_answer.push_back(fml);
+                add_to_answer(fml);
             }
 
             add_assumption_literal(clause, fml);            
@@ -327,6 +332,18 @@ namespace qe {
             else {
                 pop(2);
             }
+        }
+
+        void add_to_answer(expr_ref& fml) {
+            m_answer_simplify(fml);
+            expr* e;
+            if (m.is_not(fml, e)) {
+                m_answer_simplify.insert(e, m.mk_false());
+            }
+            else {
+                m_answer_simplify.insert(fml, m.mk_true());
+            }
+            m_answer.push_back(fml);
         }
 
         void clause2fml(nlsat::scoped_literal_vector const& clause, expr_ref& fml) {
@@ -387,6 +404,7 @@ namespace qe {
             m_solver.collect_statistics(m_st);
             m_free_vars.reset();
             m_answer.reset();
+            m_answer_simplify.reset();
             m_assumptions.reset();
             m_asm2fml.reset();
             m_trail.reset();
@@ -587,6 +605,7 @@ namespace qe {
             m_t2x(m),
             m_cancel(false),
             m_answer(m),
+            m_answer_simplify(m),
             m_trail(m)
         {
             m_nftactic = mk_tseitin_cnf_tactic(m);
