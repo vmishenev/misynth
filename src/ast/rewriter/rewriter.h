@@ -352,8 +352,6 @@ public:
         set_inv_bindings(num_bindings, bindings);
         operator()(n, result);
     }
-    void mk_app(func_decl* f, unsigned num_args, expr * const* args, expr_ref & result);
-
     void resume(expr_ref & result, proof_ref & result_pr);
     void resume(expr_ref & result) { resume(result, m_pr); }
 
@@ -370,7 +368,8 @@ struct default_rewriter_cfg {
     bool max_frames_exceeded(unsigned num_frames) const { return false; }
     bool max_steps_exceeded(unsigned num_steps) const { return false; }
     bool pre_visit(expr * t) { return true; }
-    br_status reduce_app(func_decl * f, unsigned num, expr * const * args, expr_ref & result, proof_ref & result_pr) { return BR_FAILED; }
+    br_status reduce_app(family_id fid, decl_kind k, unsigned num_args, expr * const* args, unsigned np, parameter const* params, expr_ref & result, proof_ref& pr) { return BR_FAILED; }
+    br_status reduce_app(func_decl* f, unsigned num_args, expr* const* args, expr_ref& result, proof_ref& pr) { return BR_FAILED; }
     bool reduce_quantifier(quantifier * old_q, 
                            expr * new_body, 
                            expr * const * new_patterns, 

@@ -25,13 +25,17 @@ Notes:
 factor_rewriter::factor_rewriter(ast_manager & m): m_manager(m), m_arith(m), m_factors(m) {
 }
 
+
 br_status factor_rewriter::mk_app_core(
-    func_decl * f, unsigned num_args, expr * const * args, expr_ref & result) {
+    family_id fid, decl_kind k, unsigned num_args, expr * const * args, 
+    unsigned np, parameter const* params, expr_ref & result) {
+    if (fid == m().get_basic_family_id() && k == OP_EQ) { 
+        SASSERT(num_args == 2);  
+        return mk_eq(args[0], args[1], result); 
+    }
 
-    if (m().is_eq(f)) { SASSERT(num_args == 2);  return mk_eq(args[0], args[1], result); }
-
-    if(f->get_family_id() == a().get_family_id()) {
-        switch (f->get_decl_kind()) {
+    if (fid == a().get_family_id()) {
+        switch (k) {
         case OP_LE:   SASSERT(num_args == 2); return mk_le(args[0], args[1], result);
         case OP_GE:   SASSERT(num_args == 2); return mk_ge(args[0], args[1], result);
         case OP_LT:   SASSERT(num_args == 2); return mk_lt(args[0], args[1], result);
@@ -40,6 +44,12 @@ br_status factor_rewriter::mk_app_core(
         }
     }
     return BR_FAILED;
+
+}
+
+br_status factor_rewriter::mk_app_core(
+    func_decl * f, unsigned num_args, expr * const * args, expr_ref & result) {
+    return mk_app_core(f->get_family_id(), f->get_decl_kind(), num_args, args, f->get_num_parameters(), f->get_parameters(), result);
 }
 
 br_status factor_rewriter::mk_eq(expr * arg1, expr * arg2, expr_ref & result) {

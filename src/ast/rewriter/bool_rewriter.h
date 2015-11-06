@@ -96,6 +96,8 @@ public:
     // and result.get == 0.
     
     br_status mk_app_core(func_decl * f, unsigned num_args, expr * const * args, expr_ref & result);
+    br_status mk_app_core(family_id fid, decl_kind k, unsigned num_args, expr * const * args, 
+                          unsigned np, parameter const* params, expr_ref & result);
     void mk_app(func_decl * f, unsigned num_args, expr * const * args, expr_ref & result) {
         if (mk_app_core(f, num_args, args, result) == BR_FAILED)
             result = m().mk_app(f, num_args, args);
@@ -186,6 +188,7 @@ struct bool_rewriter_cfg : public default_rewriter_cfg {
             return BR_FAILED;
         return m_r.mk_app_core(f, num, args, result);
     }
+
     bool_rewriter_cfg(ast_manager & m, params_ref const & p):m_r(m, p) {}
 };
 

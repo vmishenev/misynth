@@ -201,14 +201,9 @@ bool pb_util::is_at_least_k(expr *a, rational& k) const {
 }
 
 rational pb_util::get_k(func_decl *a) const {
+    SASSERT(is_le(a) || is_ge(a) || is_eq(a) || is_at_most_k(a) || is_at_least_k(a));
     parameter const& p = a->get_parameter(0);
-    if (is_at_most_k(a) || is_at_least_k(a)) {
-        return to_rational(p);
-    }
-    else {
-        SASSERT(is_le(a) || is_ge(a) || is_eq(a));
-        return to_rational(p);
-    }
+    return to_rational(p);
 }
 
 

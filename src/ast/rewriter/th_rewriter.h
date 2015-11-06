@@ -50,8 +50,7 @@ public:
     void set_cancel(bool f);
     void cleanup();
     void reset();
-    void mk_app(func_decl * f, unsigned num_args, expr * const * args, expr_ref & result);
-
+    void mk_app(family_id fid, decl_kind k, unsigned num_args, expr * const * args, unsigned np, parameter const* params, expr_ref& result);
     void set_substitution(expr_substitution * s);
     
     // Dependency tracking is very coarse. 

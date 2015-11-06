@@ -91,6 +91,7 @@ struct ac_rewriter_cfg : public default_rewriter_cfg {
         result_pr = 0;
         return m_r.mk_app_core(f, num, args, result);
     }
+
     ac_rewriter_cfg(ast_manager & m):m_r(m) {}
 };
 

@@ -41,6 +41,7 @@ public:
     bool        m_smtlib2_compliant; // it must be here because it enable/disable the use of coercions in the ast_manager.
     unsigned    m_timeout;
     unsigned    m_rlimit;
+    bool        m_simplify_on_expr_create;
 
     context_params();
     void set(char const * param, char const * value);

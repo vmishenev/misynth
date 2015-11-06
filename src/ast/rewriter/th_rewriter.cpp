@@ -158,8 +158,15 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
         if (fid == null_family_id)
             return BR_FAILED;
         br_status st = BR_FAILED;
+        decl_kind k = f->get_decl_kind();
+        return reduce_app_core(fid, k, num, args, f->get_num_parameters(), f->get_parameters(), result);       
+    }
+
+    br_status reduce_app_core(family_id fid, decl_kind k, unsigned num, expr* const* args, 
+                              unsigned np, parameter const* params, expr_ref& result) {
+
+        br_status st = BR_FAILED;
         if (fid == m_b_rw.get_fid()) {
-            decl_kind k = f->get_decl_kind();
             if (k == OP_EQ) {
                 // theory dispatch for =
                 SASSERT(num == 2);
@@ -184,22 +191,23 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
                 if (st != BR_FAILED)
                     return st;
             }
-            return m_b_rw.mk_app_core(f, num, args, result);
+            return m_b_rw.mk_app_core(fid, k, num, args, np, params, result);
         }
+
         if (fid == m_a_rw.get_fid())
-            return m_a_rw.mk_app_core(f, num, args, result);
+            return m_a_rw.mk_app_core(fid, k, num, args, np, params, result);
         if (fid == m_bv_rw.get_fid())
-            return m_bv_rw.mk_app_core(f, num, args, result);
+            return m_bv_rw.mk_app_core(fid, k, num, args, np, params, result);
         if (fid == m_ar_rw.get_fid())
-            return m_ar_rw.mk_app_core(f, num, args, result);
+            return m_ar_rw.mk_app_core(fid, k, num, args, np, params, result);
         if (fid == m_dt_rw.get_fid())
-            return m_dt_rw.mk_app_core(f, num, args, result);
+            return m_dt_rw.mk_app_core(fid, k, num, args, np, params, result);
         if (fid == m_f_rw.get_fid())
-            return m_f_rw.mk_app_core(f, num, args, result);
+            return m_f_rw.mk_app_core(fid, k, num, args, np, params, result);
         if (fid == m_dl_rw.get_fid())
-            return m_dl_rw.mk_app_core(f, num, args, result);
+            return m_dl_rw.mk_app_core(fid, k, num, args, np, params, result);
         if (fid == m_pb_rw.get_fid())
-            return m_pb_rw.mk_app_core(f, num, args, result);
+            return m_pb_rw.mk_app_core(fid, k, num, args, np, params, result);
         return BR_FAILED;
     }
 
@@ -511,9 +519,8 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
     //
     // These transformations are useful for bit-vector problems, since
     // they will minimize the number of adders/multipliers/etc
-    br_status push_ite(func_decl * f, unsigned num, expr * const * args, expr_ref & result) {
-        if (!m().is_ite(f))
-            return BR_FAILED;
+    br_status push_ite(family_id fid, decl_kind k, unsigned num, expr * const * args, expr_ref & result) {
+        if (fid != m().get_basic_family_id() || k != OP_ITE) return BR_FAILED;
         expr * c = args[0];
         expr * t = args[1];
         expr * e = args[2];
@@ -535,15 +542,17 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
     br_status push_ite(expr_ref & result) {
         expr * t = result.get();
         if (m().is_ite(t)) {
-            br_status st = push_ite(to_app(t)->get_decl(), to_app(t)->get_num_args(), to_app(t)->get_args(), result);
+            app* a = to_app(t);
+            br_status st = push_ite(a->get_family_id(), a->get_decl_kind(), a->get_num_args(), a->get_args(), result);
             if (st != BR_FAILED)
                 return st;
         }
         return BR_DONE;
     }
 
-    br_status reduce_app(func_decl * f, unsigned num, expr * const * args, expr_ref & result, proof_ref & result_pr) {
+    br_status reduce_app(func_decl* f, unsigned num, expr * const * args, expr_ref& result, proof_ref& result_pr) {
         result_pr = 0;
+        
         br_status st = reduce_app_core(f, num, args, result);
         if (st != BR_DONE && st != BR_FAILED) {
             CTRACE("th_rewriter_step", st != BR_FAILED, 
@@ -554,7 +563,7 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
         }
         if (m_push_ite_bv || m_push_ite_arith) {
             if (st == BR_FAILED)
-                st = push_ite(f, num, args, result);
+                st = push_ite(f->get_family_id(), f->get_decl_kind(), num, args, result);
             else
                 st = push_ite(result);
         }
@@ -569,7 +578,26 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
                for (unsigned i = 0; i < num; i++) tout << mk_ismt2_pp(args[i], m()) << "\n";
                tout << "---------->\n" << mk_ismt2_pp(result, m()) << "\n";);
         return st;
+
     }
+
+    br_status reduce_app(family_id fid, decl_kind k, unsigned num, expr * const * args, unsigned np, parameter const* params, expr_ref & result, proof_ref & result_pr) {
+        result_pr = 0;
+        
+        br_status st = reduce_app_core(fid, k, num, args, np, params, result);
+        if (st != BR_DONE && st != BR_FAILED) {
+            return st;
+        }
+        if (m_push_ite_bv || m_push_ite_arith) {
+            if (st == BR_FAILED)
+                st = push_ite(fid, k, num, args, result);
+            else
+                st = push_ite(result);
+        }
+        return st;
+    }
+
+
 
     bool reduce_quantifier(quantifier * old_q, 
                            expr * new_body, 
@@ -766,8 +794,14 @@ void th_rewriter::operator()(expr * n, unsigned num_bindings, expr * const * bin
     m_imp->operator()(n, num_bindings, bindings, result);
 }
 
-void th_rewriter::mk_app(func_decl * f, unsigned num_args, expr * const * args, expr_ref & result) {
-    m_imp->mk_app(f, num_args, args, result);
+void th_rewriter::mk_app(family_id fid, decl_kind k, unsigned num_args, expr * const * args, unsigned np, parameter const* params, expr_ref& result) {
+    ast_manager& m = m_imp->cfg().m();
+    proof_ref pr(m);
+    br_status st = m_imp->cfg().reduce_app(fid, k, num_args, args, np, params, result, pr);
+    if (st == BR_FAILED) {
+        func_decl* f = m.mk_func_decl(fid, k, np, params, num_args, args, 0);
+        result = m.mk_app(f, num_args, args);
+    }
 }
 
 void th_rewriter::set_substitution(expr_substitution * s) {

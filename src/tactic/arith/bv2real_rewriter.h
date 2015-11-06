@@ -96,6 +96,8 @@ public:
     //
     bool is_pos_ltf(func_decl* f) const { return f == m_pos_lt; }
     bool is_pos_lef(func_decl* f) const { return f == m_pos_le; }
+    bool is_pos_ltf(family_id fid, decl_kind k) const { return m_pos_lt->get_family_id() == fid && m_pos_lt->get_decl_kind() == k; }
+    bool is_pos_lef(family_id fid, decl_kind k) const { return m_pos_le->get_family_id() == fid && m_pos_le->get_decl_kind() == k; }
     bool is_pos_lt(expr const* e) const { return is_app(e) && is_pos_ltf(to_app(e)->get_decl()); }
     bool is_pos_le(expr const* e) const { return is_app(e) && is_pos_lef(to_app(e)->get_decl()); }
     MATCH_BINARY(is_pos_lt);
@@ -152,6 +154,7 @@ public:
     bv2real_rewriter(ast_manager & m, bv2real_util& util);
 
     br_status mk_app_core(func_decl * f, unsigned num_args, expr * const * args, expr_ref & result);
+    br_status mk_app_core(family_id fid, decl_kind k, unsigned num_args, expr * const * args, unsigned np, parameter const* ps, expr_ref & result);
 
 private:
     ast_manager & m() const { return m_manager; }
@@ -208,6 +211,7 @@ public:
     bv2real_elim_rewriter(bv2real_util& util) : m_util(util) {}
 
     br_status mk_app_core(func_decl * f, unsigned num_args, expr * const * args, expr_ref & result);
+
 };
 
 

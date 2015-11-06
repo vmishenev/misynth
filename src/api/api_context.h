@@ -34,6 +34,7 @@ Revision History:
 #include"tactic_manager.h"
 #include"context_params.h"
 #include"api_polynomial.h"
+#include"th_rewriter.h"
 
 namespace smtlib {
     class parser;
@@ -59,6 +60,7 @@ namespace api {
         datalog::dl_decl_util      m_datalog_util;
         fpa_util                   m_fpa_util;
 	datatype_util              m_dtutil;
+        th_rewriter                m_th;
 
         // Support for old solver API
         smt_params                 m_fparams;
@@ -118,6 +120,7 @@ namespace api {
         bool use_auto_config() const { return m_params.m_auto_config; }
         unsigned get_timeout() const { return m_params.m_timeout; }
         unsigned get_rlimit() const { return m_params.m_rlimit; }
+        bool simplify() const { return m_params.m_simplify_on_expr_create; }
         arith_util & autil() { return m_arith_util; }
         bv_util & bvutil() { return m_bv_util; }
         datalog::dl_decl_util & datalog_util() { return m_datalog_util; }
@@ -153,6 +156,10 @@ namespace api {
         
         // Return a conjuction that will be exposed to the "external" world.
         expr * mk_and(unsigned num_exprs, expr * const * exprs);
+
+
+        expr * mk_app(family_id fid, decl_kind k, unsigned num_parameters = 0, parameter const * parameters = 0, 
+                      unsigned num_args = 0, expr * const * args = 0);
 
         // Hack for preventing an AST for being GC when ref-count is not used
         void persist_ast(ast * n, unsigned num_scopes);

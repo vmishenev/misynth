@@ -18,9 +18,18 @@ Notes:
 --*/
 #include"datatype_rewriter.h"
 
+
 br_status datatype_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr * const * args, expr_ref & result) {
-    SASSERT(f->get_family_id() == get_fid());
-    switch(f->get_decl_kind()) {
+    return mk_app_core(f->get_family_id(), f->get_decl_kind(), num_args, args, f->get_num_parameters(), f->get_parameters(), result);
+}
+
+br_status datatype_rewriter::mk_app_core(
+    family_id fid, decl_kind _k, unsigned num_args, expr * const * args, 
+    unsigned np, parameter const* params, expr_ref & result) {
+    datatype_op_kind k = static_cast<datatype_op_kind>(_k);
+
+    SASSERT(fid == get_fid());
+    switch(k) {
     case OP_DT_CONSTRUCTOR: return BR_FAILED;
     case OP_DT_RECOGNISER:
         //
@@ -30,7 +39,7 @@ br_status datatype_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr 
         SASSERT(num_args == 1);
         if (!is_app(args[0]) || !m_util.is_constructor(to_app(args[0])))
             return BR_FAILED;
-        if (to_app(args[0])->get_decl() == m_util.get_recognizer_constructor(f))
+        if (m_util.is_constructor_of(np, params, to_app(args[0])->get_decl()))
             result = m().mk_true();
         else
             result = m().mk_false();
@@ -45,13 +54,13 @@ br_status datatype_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr 
         
         app * a = to_app(args[0]);
         func_decl * c_decl = a->get_decl();
-        if (c_decl != m_util.get_accessor_constructor(f))
+        if (!m_util.is_constructor_of(np, params, c_decl)) 
             return BR_FAILED;
         ptr_vector<func_decl> const * acc = m_util.get_constructor_accessors(c_decl);
         SASSERT(acc && acc->size() == a->get_num_args());
         unsigned num = acc->size();
         for (unsigned i = 0; i < num; ++i) {
-            if (f == (*acc)[i]) {
+            if (m_util.is_func_decl(k, np, params, (*acc)[i])) {
                 // found it.
                 result = a->get_arg(i);
                 return BR_DONE;
@@ -66,7 +75,7 @@ br_status datatype_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr 
             return BR_FAILED;
         app * a = to_app(args[0]);
         func_decl * c_decl = a->get_decl();
-        if (c_decl != m_util.get_accessor_constructor(f)) {
+        if (!m_util.is_constructor_of(np, params, c_decl)) {
             result = a;
             return BR_DONE;
         }
@@ -76,7 +85,7 @@ br_status datatype_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr 
         ptr_buffer<expr> new_args;
         for (unsigned i = 0; i < num; ++i) {
             
-            if (f == (*acc)[i]) {
+            if (m_util.is_func_decl(k, np, params, (*acc)[i])) {
                 new_args.push_back(args[1]);
             }
             else {

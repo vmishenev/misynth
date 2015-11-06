@@ -90,6 +90,7 @@ namespace api {
         m_datalog_util(m()),
         m_fpa_util(m()),
         m_dtutil(m()),
+        m_th(m()),
         m_last_result(m()),
         m_ast_trail(m()),
         m_replay_stack() {
@@ -136,6 +137,20 @@ namespace api {
         }
         reset_parser();
         dealloc(m_solver);
+    }
+
+    expr* context::mk_app(family_id fid, decl_kind k, unsigned np, parameter const * params, 
+                          unsigned num_args, expr * const * args) {
+        expr_ref result(m());
+        if (m_params.m_simplify_on_expr_create) {
+            m_th.mk_app(fid, k, num_args, args, np, params, result);
+        }
+        else {
+            result = m().mk_app(fid, k, np, params, num_args, args);
+        }
+        save_ast_trail(result);
+        check_sorts(result);
+        return result;
     }
 
     void context::interrupt() {

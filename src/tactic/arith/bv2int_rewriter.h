@@ -61,6 +61,8 @@ public:
     ast_manager & m() const { return m_manager; }
 
     br_status mk_app_core(func_decl * f, unsigned num_args, expr * const * args, expr_ref & result);
+    br_status mk_app_core(family_id fid, decl_kind k, unsigned num_args, expr * const * args, unsigned np, parameter const* ps, expr_ref & result);
+
     void mk_app(func_decl * f, unsigned num_args, expr * const * args, expr_ref & result) {
         if (mk_app_core(f, num_args, args, result) == BR_FAILED)
             result = m().mk_app(f, num_args, args);
@@ -106,6 +108,7 @@ struct bv2int_rewriter_cfg : public default_rewriter_cfg {
         result_pr = 0;
         return m_r.mk_app_core(f, num, args, result);
     }
+
     bv2int_rewriter_cfg(ast_manager & m, bv2int_rewriter_ctx& ctx):m_r(m, ctx) {}
 };
 

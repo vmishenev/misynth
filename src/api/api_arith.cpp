@@ -78,9 +78,7 @@ extern "C" {
             k = OP_DIV;
         }
         expr * args[2] = { to_expr(n1), to_expr(n2) };                         
-        ast* a = mk_c(c)->m().mk_app(mk_c(c)->get_arith_fid(), k, 0, 0, 2, args);       
-        mk_c(c)->save_ast_trail(a);                                         
-        check_sorts(c, a);                                                  
+        ast* a = mk_c(c)->mk_app(mk_c(c)->get_arith_fid(), k, 0, 0, 2, args);       
         RETURN_Z3(of_ast(a));
         Z3_CATCH_RETURN(0);
     }
@@ -104,8 +102,7 @@ extern "C" {
         expr* r = to_expr(args[0]);
         for (unsigned i = 1; i < num_args; ++i) {
             expr* args1[2] = { r, to_expr(args[i]) };
-            r = mk_c(c)->m().mk_app(mk_c(c)->get_arith_fid(), OP_SUB, 0, 0, 2, args1);
-            check_sorts(c, r);
+            r = mk_c(c)->mk_app(mk_c(c)->get_arith_fid(), OP_SUB, 0, 0, 2, args1);
         }
         mk_c(c)->save_ast_trail(r);
         RETURN_Z3(of_expr(r));

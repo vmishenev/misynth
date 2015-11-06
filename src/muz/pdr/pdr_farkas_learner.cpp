@@ -415,6 +415,7 @@ namespace pdr {
                 return false;
             }
         }
+
     };
 
     class collect_pure_proc {

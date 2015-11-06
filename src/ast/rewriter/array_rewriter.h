@@ -47,6 +47,8 @@ public:
     static void get_param_descrs(param_descrs & r);
 
     br_status mk_app_core(func_decl * f, unsigned num_args, expr * const * args, expr_ref & result);
+    br_status mk_app_core(family_id fid, decl_kind k, unsigned num_args, expr * const * args, 
+                          unsigned np, parameter const* params, expr_ref & result);
 
     br_status mk_store_core(unsigned num_args, expr * const * args, expr_ref & result);
     br_status mk_select_core(unsigned num_args, expr * const * args, expr_ref & result);

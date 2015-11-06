@@ -39,6 +39,8 @@ public:
     arith_util & a() { return m_arith; }
 
     br_status mk_app_core(func_decl * f, unsigned num_args, expr * const * args, expr_ref & result);
+    br_status mk_app_core(family_id fid, decl_kind k, unsigned num_args, expr * const * args, 
+                          unsigned np, parameter const* params, expr_ref & result);
 
 private:
     br_status mk_eq(expr * arg1, expr * arg2, expr_ref & result);

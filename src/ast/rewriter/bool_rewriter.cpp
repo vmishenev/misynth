@@ -36,8 +36,14 @@ void bool_rewriter::get_param_descrs(param_descrs & r) {
 }
 
 br_status bool_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr * const * args, expr_ref & result) {
-    SASSERT(f->get_family_id() == m().get_basic_family_id());
-    switch (f->get_decl_kind()) {
+    return mk_app_core(f->get_family_id(), f->get_decl_kind(), num_args, args, f->get_num_parameters(), f->get_parameters(), result);
+}
+
+br_status bool_rewriter::mk_app_core(family_id fid, decl_kind k, unsigned num_args, expr * const * args, 
+                      unsigned np, parameter const* params, expr_ref & result) {
+
+    SASSERT(fid == m().get_basic_family_id());
+    switch (k) {
     case OP_EQ:
     case OP_IFF:
         SASSERT(num_args == 2);

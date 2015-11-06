@@ -362,8 +362,14 @@ br_status bv2real_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr *
               tout << mk_pp(args[i], m()) << " ";
           }
           tout << "\n";);
-    if(f->get_family_id() == m_arith.get_family_id()) {
-        switch (f->get_decl_kind()) {
+    return mk_app_core(f->get_family_id(), f->get_decl_kind(), num_args, args, f->get_num_parameters(), f->get_parameters(), result);
+}
+
+br_status bv2real_rewriter::mk_app_core(family_id fid, decl_kind k, unsigned num_args, expr * const * args, 
+                                       unsigned np, parameter const* ps, expr_ref & result) {
+
+    if(fid == m_arith.get_family_id()) {
+        switch (k) {
         case OP_NUM:     return BR_FAILED;
         case OP_LE:      SASSERT(num_args == 2); return mk_le(args[0], args[1], result);
         case OP_GE:      SASSERT(num_args == 2); return mk_ge(args[0], args[1], result);
@@ -383,18 +389,18 @@ br_status bv2real_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr *
         default:         return BR_FAILED;
         }
     }
-    if (f->get_family_id() == m().get_basic_family_id()) {
-        switch (f->get_decl_kind()) {
+    if (fid == m().get_basic_family_id()) {
+        switch (k) {
         case OP_EQ: SASSERT(num_args == 2); return mk_eq(args[0], args[1], result);
         case OP_ITE: SASSERT(num_args == 3); return mk_ite(args[0], args[1], args[2], result); 
         default: return BR_FAILED;
         }
     }
-    if (u().is_pos_ltf(f)) {
+    if (u().is_pos_ltf(fid, k)) {
         SASSERT(num_args == 2);
         return mk_lt_pos(args[0], args[1], result);
     }
-    if (u().is_pos_lef(f)) {
+    if (u().is_pos_lef(fid, k)) {
         SASSERT(num_args == 2);
         return mk_le_pos(args[0], args[1], result);        
     }

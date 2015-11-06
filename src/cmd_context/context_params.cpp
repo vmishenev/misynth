@@ -36,6 +36,7 @@ context_params::context_params() {
     m_well_sorted_check = false;
     m_timeout = UINT_MAX;
     m_rlimit  = UINT_MAX;
+    m_simplify_on_expr_create = false;
     updt_params();
 }
 
@@ -69,6 +70,9 @@ void context_params::set(char const * param, char const * value) {
     else if (p == "rlimit") {
         long val = strtol(value, 0, 10);
         m_rlimit = static_cast<unsigned>(val);
+    }
+    else if (p == "simplify_on_expr_create") {
+        set_bool(m_simplify_on_expr_create, param, value);
     }
     else if (p == "type_check" || p == "well_sorted_check") {
         set_bool(m_well_sorted_check, param, value);
@@ -121,6 +125,7 @@ void context_params::updt_params() {
 void context_params::updt_params(params_ref const & p) {
     m_timeout           = p.get_uint("timeout", m_timeout);
     m_rlimit            = p.get_uint("rlimit", m_rlimit);
+    m_simplify_on_expr_create = p.get_bool("simplify_on_expr_create", m_simplify_on_expr_create);
     m_well_sorted_check = p.get_bool("type_check", p.get_bool("well_sorted_check", m_well_sorted_check));
     m_auto_config       = p.get_bool("auto_config", m_auto_config);
     m_proof             = p.get_bool("proof", m_proof);
@@ -146,6 +151,7 @@ void context_params::collect_param_descrs(param_descrs & d) {
     d.insert("trace_file_name", CPK_STRING, "trace out file name (see option 'trace')", "z3.log");
     d.insert("debug_ref_count", CPK_BOOL, "debug support for AST reference counting", "false");
     d.insert("smtlib2_compliant", CPK_BOOL, "enable/disable SMT-LIB 2.0 compliance", "false");
+    d.insert("simplify_on_expr_create", CPK_BOOL, "simplify expressions when they are created", "false");
     collect_solver_param_descrs(d);
 }
 

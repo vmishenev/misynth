@@ -48,10 +48,11 @@ void arith_rewriter::get_param_descrs(param_descrs & r) {
     arith_rewriter_params::collect_param_descrs(r);
 }
 
-br_status arith_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr * const * args, expr_ref & result) {
+br_status arith_rewriter::mk_app_core(family_id fid, decl_kind k, unsigned num_args, expr * const * args, 
+                                      unsigned np, parameter const* params, expr_ref & result) {
     br_status st = BR_FAILED;
-    SASSERT(f->get_family_id() == get_fid());
-    switch (f->get_decl_kind()) {
+    SASSERT(fid == get_fid());
+    switch (k) {
     case OP_NUM: st = BR_FAILED; break;
     case OP_IRRATIONAL_ALGEBRAIC_NUM: st = BR_FAILED; break;
     case OP_LE:  SASSERT(num_args == 2); st = mk_le_core(args[0], args[1], result); break;
@@ -82,6 +83,11 @@ br_status arith_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr * c
     case OP_TANH: SASSERT(num_args == 1); st = mk_tanh_core(args[0], result); break;
     default: st = BR_FAILED; break;
     }
+    return st;
+}
+
+br_status arith_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr * const * args, expr_ref & result) {
+    br_status st = mk_app_core(f->get_family_id(), f->get_decl_kind(), num_args, args, f->get_num_parameters(), f->get_parameters(), result);
     CTRACE("arith_rewriter", st != BR_FAILED, tout << mk_pp(f, m());
             for (unsigned i = 0; i < num_args; ++i) tout << mk_pp(args[i], m()) << " ";
             tout << "\n==>\n" << mk_pp(result.get(), m()) << "\n";);

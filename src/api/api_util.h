@@ -106,9 +106,7 @@ inline param_descrs * to_param_descrs_ptr(Z3_param_descrs p) { return p == 0 ? 0
     RESET_ERROR_CODE();                                         \
     EXTRA_CODE;                                                 \
     expr * _n = to_expr(n);                                     \
-    ast* a = mk_c(c)->m().mk_app(FID, OP, 0, 0, 1, &_n);        \
-    mk_c(c)->save_ast_trail(a);                                 \
-    check_sorts(c, a);                                          \
+    ast* a = mk_c(c)->mk_app(FID, OP, 0, 0, 1, &_n);            \
     RETURN_Z3(of_ast(a));                                       \
     Z3_CATCH_RETURN(0);
 
@@ -123,9 +121,7 @@ Z3_ast Z3_API NAME(Z3_context c, Z3_ast n) {    \
     RESET_ERROR_CODE();                                         \
     EXTRA_CODE;                                                 \
     expr * args[2] = { to_expr(n1), to_expr(n2) };              \
-    ast* a = mk_c(c)->m().mk_app(FID, OP, 0, 0, 2, args);       \
-    mk_c(c)->save_ast_trail(a);                                 \
-    check_sorts(c, a);                                          \
+    ast* a = mk_c(c)->mk_app(FID, OP, 0, 0, 2, args);           \
     RETURN_Z3(of_ast(a));                                       \
     Z3_CATCH_RETURN(0);
  
@@ -136,14 +132,12 @@ Z3_ast Z3_API NAME(Z3_context c, Z3_ast n1, Z3_ast n2) {        \
 }
 
 #define MK_NARY(NAME, FID, OP, EXTRA_CODE)                              \
-Z3_ast Z3_API NAME(Z3_context c, unsigned num_args, Z3_ast const* args) { \
+    Z3_ast Z3_API NAME(Z3_context c, unsigned num_args, Z3_ast const* args) { \
     Z3_TRY;                                                             \
     LOG_ ## NAME(c, num_args, args);                                    \
     RESET_ERROR_CODE();                                                 \
     EXTRA_CODE;                                                         \
-    ast* a = mk_c(c)->m().mk_app(FID, OP, 0, 0, num_args, to_exprs(args)); \
-    mk_c(c)->save_ast_trail(a);                                         \
-    check_sorts(c, a);                                                  \
+    ast* a = mk_c(c)->mk_app(FID, OP, 0, 0, num_args, to_exprs(args));  \
     RETURN_Z3(of_ast(a));                                               \
     Z3_CATCH_RETURN(0);                                                 \
 }

@@ -196,31 +196,48 @@ void pb_rewriter::dump_pb_rewrite(expr* fml) {
 }
 
 br_status pb_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr * const * args, expr_ref & result) {
+    br_status st = mk_app_core(f->get_family_id(), f->get_decl_kind(), num_args, args, f->get_num_parameters(), f->get_parameters(), result);
+
+    CTRACE("pb", st == BR_DONE, 
+           expr_ref tmp(result.get_manager());
+           tmp = result.get_manager().mk_app(f, num_args, args);
+           tout << tmp << "\n";
+           tout << result << "\n";
+           );
+    CTRACE("pb_validate", st == BR_DONE, 
+           validate_rewrite(f, num_args, args, result););
+          
+    return st;
+}
+
+br_status pb_rewriter::mk_app_core(family_id fid, decl_kind k, unsigned num_args, expr * const * args, 
+                      unsigned np, parameter const* params, expr_ref & result) {
+
     ast_manager& m = result.get_manager();
     rational sum(0), maxsum(0);
     for (unsigned i = 0; i < num_args; ++i) {
+        rational c = m_util.to_rational(params[i+1]);
         if (m.is_true(args[i])) {
-            sum += m_util.get_coeff(f, i);
-            maxsum += m_util.get_coeff(f, i);
+            sum += c;
+            maxsum += c;
         }
         else if (!m.is_false(args[i])) {
-            maxsum += m_util.get_coeff(f, i);            
+            maxsum += c;
         }
     }
-    rational k = m_util.get_k(f);
-
+    rational bound = m_util.to_rational(params[0]);
     vector<std::pair<expr*,rational> > vec;
     for (unsigned i = 0; i < num_args; ++i) {
-        vec.push_back(std::make_pair(args[i], m_util.get_coeff(f, i)));
+        vec.push_back(std::make_pair(args[i], m_util.to_rational(params[i + 1])));
     }
     
-    switch(f->get_decl_kind()) {
+    switch(k) {
     case OP_AT_MOST_K:
     case OP_PB_LE:
         for (unsigned i = 0; i < num_args; ++i) {
             vec[i].second.neg();
         }
-        k.neg();
+        bound.neg();
         break;
     case OP_AT_LEAST_K:
     case OP_PB_GE:
@@ -231,14 +248,14 @@ br_status pb_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr * cons
         return BR_FAILED;
     }    
 
-    bool is_eq = f->get_decl_kind() == OP_PB_EQ;
+    bool is_eq = k == OP_PB_EQ;
     
     pb_ast_rewriter_util pbu(m);
     pb_rewriter_util<pb_ast_rewriter_util> util(pbu);
 
-    util.unique(vec, k, is_eq);
-    lbool is_sat = util.normalize(vec, k, is_eq);
-    util.prune(vec, k, is_eq);
+    util.unique(vec, bound, is_eq);
+    lbool is_sat = util.normalize(vec, bound, is_eq);
+    util.prune(vec, bound, is_eq);
     switch (is_sat) {
     case l_true:
         result = m.mk_true();
@@ -257,29 +274,20 @@ br_status pb_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr * cons
             all_unit &= m_coeffs.back().is_one();
         }
         if (is_eq) {
-            result = m_util.mk_eq(sz, m_coeffs.c_ptr(), m_args.c_ptr(), k);
+            result = m_util.mk_eq(sz, m_coeffs.c_ptr(), m_args.c_ptr(), bound);
         }
-        else if (all_unit && k.is_one()) {
+        else if (all_unit && bound.is_one()) {
             result = mk_or(m, sz, m_args.c_ptr());
         }
-        else if (all_unit && k == rational(sz)) {
+        else if (all_unit && bound == rational(sz)) {
             result = mk_and(m, sz, m_args.c_ptr());
         }
         else {
-            result = m_util.mk_ge(sz, m_coeffs.c_ptr(), m_args.c_ptr(), k);
+            result = m_util.mk_ge(sz, m_coeffs.c_ptr(), m_args.c_ptr(), bound);
         }
         break;
     }
     }
-    TRACE("pb",
-          expr_ref tmp(m);
-          tmp = m.mk_app(f, num_args, args);
-          tout << tmp << "\n";
-          tout << result << "\n";
-          );
-    TRACE("pb_validate",
-          validate_rewrite(f, num_args, args, result););
-          
     return BR_DONE;
 }
 

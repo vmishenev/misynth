@@ -44,6 +44,8 @@ public:
     static void get_param_descrs(param_descrs & r);
 
     br_status mk_app_core(func_decl * f, unsigned num_args, expr * const * args, expr_ref & result);
+    br_status mk_app_core(family_id fid, decl_kind k, unsigned num_args, expr * const * args, 
+                          unsigned np, parameter const* params, expr_ref & result);
     br_status mk_eq_core(expr * arg1, expr * arg2, expr_ref & result);
     
     br_status mk_add(expr * arg1, expr * arg2, expr * arg3, expr_ref & result);
@@ -75,18 +77,18 @@ public:
 
     br_status mk_to_ieee_bv(expr * arg1, expr_ref & result);
 
-    br_status mk_to_fp(func_decl * f, unsigned num_args, expr * const * args, expr_ref & result);
-    br_status mk_to_fp_unsigned(func_decl * f, expr * arg1, expr * arg2, expr_ref & result);
+    br_status mk_to_fp(parameter const& p1, parameter const& p2, unsigned num_args, expr * const * args, expr_ref & result);
+    br_status mk_to_fp_unsigned(parameter const& p1, parameter const& p2, expr * arg1, expr * arg2, expr_ref & result);
     br_status mk_fp(expr * arg1, expr * arg2, expr * arg3, expr_ref & result);
     br_status mk_to_fp_unsigned(expr * arg1, expr * arg2, expr_ref & result);
-    br_status mk_to_ubv(func_decl * f, expr * arg1, expr * arg2, expr_ref & result);
-    br_status mk_to_sbv(func_decl * f, expr * arg1, expr * arg2, expr_ref & result);
-    br_status mk_to_ieee_bv(func_decl * f, expr * arg, expr_ref & result);
+    br_status mk_to_ubv(parameter const& p, expr * arg1, expr * arg2, expr_ref & result);
+    br_status mk_to_sbv(parameter const& p, expr * arg1, expr * arg2, expr_ref & result);
+    br_status mk_to_ieee_bv(parameter const& p, expr * arg, expr_ref & result);
     br_status mk_to_real(expr * arg, expr_ref & result);
 
-    br_status mk_to_ubv_unspecified(func_decl * f, expr_ref & result);
-    br_status mk_to_sbv_unspecified(func_decl * f, expr_ref & result);
-    br_status mk_to_ieee_bv_unspecified(func_decl * f, expr_ref & result);
+    br_status mk_to_ubv_unspecified(parameter const& p, expr_ref & result);
+    br_status mk_to_sbv_unspecified(parameter const& p, expr_ref & result);
+    br_status mk_to_ieee_bv_unspecified(parameter const& p, expr_ref & result);
     br_status mk_to_real_unspecified(expr_ref & result);
 };
 

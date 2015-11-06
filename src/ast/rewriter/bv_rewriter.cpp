@@ -83,9 +83,15 @@ void bv_rewriter::get_param_descrs(param_descrs & r) {
 }
 
 br_status bv_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr * const * args, expr_ref & result) {
-    SASSERT(f->get_family_id() == get_fid());
+    return mk_app_core(f->get_family_id(), f->get_decl_kind(), num_args, args, f->get_num_parameters(), f->get_parameters(), result);
+}
+
+br_status bv_rewriter::mk_app_core(family_id fid, decl_kind k, unsigned num_args, expr * const * args, 
+                                   unsigned np, parameter const* params, expr_ref & result) {
+
+    SASSERT(fid == get_fid());
     
-    switch(f->get_decl_kind()) {
+    switch(k) {
     case OP_BIT0: SASSERT(num_args == 0); result = m_util.mk_numeral(0, 1); return BR_DONE;
     case OP_BIT1: SASSERT(num_args == 0); result = m_util.mk_numeral(1, 1); return BR_DONE;
     case OP_ULEQ:      
@@ -167,16 +173,20 @@ br_status bv_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr * cons
         return mk_concat(num_args, args, result);
     case OP_EXTRACT:
         SASSERT(num_args == 1);
-        return mk_extract(m_util.get_extract_high(f), m_util.get_extract_low(f), args[0], result);
+        SASSERT(np == 1);
+        return mk_extract(params[0].get_int(), params[1].get_int(), args[0], result);
     case OP_REPEAT:
         SASSERT(num_args == 1);
-        return mk_repeat(f->get_parameter(0).get_int(), args[0], result);
+        SASSERT(np == 1);
+        return mk_repeat(params[0].get_int(), args[0], result);
     case OP_ZERO_EXT:
         SASSERT(num_args == 1);
-        return mk_zero_extend(f->get_parameter(0).get_int(), args[0], result);
+        SASSERT(np == 1);
+        return mk_zero_extend(params[0].get_int(), args[0], result);
     case OP_SIGN_EXT:
         SASSERT(num_args == 1);
-        return mk_sign_extend(f->get_parameter(0).get_int(), args[0], result);
+        SASSERT(np == 1);
+        return mk_sign_extend(params[0].get_int(), args[0], result);
     case OP_BOR:
         return mk_bv_or(num_args, args, result);
     case OP_BXOR:
@@ -194,10 +204,12 @@ br_status bv_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr * cons
         return mk_bv_xnor(num_args, args, result);
     case OP_ROTATE_LEFT:
         SASSERT(num_args == 1); 
-        return mk_bv_rotate_left(f->get_parameter(0).get_int(), args[0], result); 
+        SASSERT(np == 1);
+        return mk_bv_rotate_left(params[0].get_int(), args[0], result); 
     case OP_ROTATE_RIGHT: 
         SASSERT(num_args == 1); 
-        return mk_bv_rotate_right(f->get_parameter(0).get_int(), args[0], result);
+        SASSERT(np == 1);
+        return mk_bv_rotate_right(params[0].get_int(), args[0], result);
     case OP_EXT_ROTATE_LEFT:
         SASSERT(num_args == 2);
         return mk_bv_ext_rotate_left(args[0], args[1], result);
@@ -209,7 +221,8 @@ br_status bv_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr * cons
         return mk_bv2int(args[0], result);
     case OP_INT2BV:
         SASSERT(num_args == 1);
-        return mk_int2bv(m_util.get_bv_size(f->get_range()), args[0], result);
+        SASSERT(np == 1);
+        return mk_int2bv(m_util.get_int2bv_size(params[0]), args[0], result);
     case OP_BREDOR:    
         SASSERT(num_args == 1); 
         return mk_bv_redor(args[0], result); 

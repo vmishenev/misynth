@@ -33,21 +33,27 @@ void array_rewriter::get_param_descrs(param_descrs & r) {
 }
 
 br_status array_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr * const * args, expr_ref & result) {
-    SASSERT(f->get_family_id() == get_fid());
     TRACE("array_rewriter", tout << mk_pp(f, m()) << "\n";
           for (unsigned i = 0; i < num_args; ++i) {
               tout << mk_pp(args[i], m()) << "\n";
           });
-    switch (f->get_decl_kind()) {
+    return mk_app_core(f->get_family_id(), f->get_decl_kind(), num_args, args, f->get_num_parameters(), f->get_parameters(), result);
+}
+
+br_status array_rewriter::mk_app_core(family_id fid, decl_kind k, unsigned num_args, expr * const * args, 
+                      unsigned np, parameter const* params, expr_ref & result) {
+
+    SASSERT(fid == get_fid());
+    switch (k) {
     case OP_SELECT:
         return mk_select_core(num_args, args, result);
     case OP_STORE:
         return mk_store_core(num_args, args, result);
     case OP_ARRAY_MAP:
-        SASSERT(f->get_num_parameters() == 1);
-        SASSERT(f->get_parameter(0).is_ast());
-        SASSERT(is_func_decl(f->get_parameter(0).get_ast()));
-        return mk_map_core(to_func_decl(f->get_parameter(0).get_ast()), num_args, args, result);
+        SASSERT(np == 1);
+        SASSERT(params[0].is_ast());
+        SASSERT(is_func_decl(params[0].get_ast()));
+        return mk_map_core(to_func_decl(params[0].get_ast()), num_args, args, result);
     case OP_SET_UNION:
         return mk_set_union(num_args, args, result);
     case OP_SET_INTERSECT:
