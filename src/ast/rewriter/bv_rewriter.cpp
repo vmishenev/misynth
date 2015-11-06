@@ -173,7 +173,7 @@ br_status bv_rewriter::mk_app_core(family_id fid, decl_kind k, unsigned num_args
         return mk_concat(num_args, args, result);
     case OP_EXTRACT:
         SASSERT(num_args == 1);
-        SASSERT(np == 1);
+        SASSERT(np == 2);
         return mk_extract(params[0].get_int(), params[1].get_int(), args[0], result);
     case OP_REPEAT:
         SASSERT(num_args == 1);
