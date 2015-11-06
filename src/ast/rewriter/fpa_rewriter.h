@@ -39,7 +39,7 @@ public:
 
     ast_manager & m() const { return m_util.m(); }
     family_id get_fid() const { return m_util.get_fid(); }
-    
+
     void updt_params(params_ref const & p);
     static void get_param_descrs(param_descrs & r);
 
@@ -47,7 +47,7 @@ public:
     br_status mk_app_core(family_id fid, decl_kind k, unsigned num_args, expr * const * args, 
                           unsigned np, parameter const* params, expr_ref & result);
     br_status mk_eq_core(expr * arg1, expr * arg2, expr_ref & result);
-    
+
     br_status mk_add(expr * arg1, expr * arg2, expr * arg3, expr_ref & result);
     br_status mk_sub(expr * arg1, expr * arg2, expr * arg3, expr_ref & result);
     br_status mk_mul(expr * arg1, expr * arg2, expr * arg3, expr_ref & result);
@@ -77,6 +77,7 @@ public:
 
     br_status mk_to_ieee_bv(expr * arg1, expr_ref & result);
 
+    br_status mk_rm(expr * arg, expr_ref & result);
     br_status mk_to_fp(parameter const& p1, parameter const& p2, unsigned num_args, expr * const * args, expr_ref & result);
     br_status mk_to_fp_unsigned(parameter const& p1, parameter const& p2, expr * arg1, expr * arg2, expr_ref & result);
     br_status mk_fp(expr * arg1, expr * arg2, expr * arg3, expr_ref & result);

@@ -284,6 +284,9 @@ class AstRef(Z3PPObject):
     def __repr__(self):
         return obj_to_string(self)
 
+    def __hash__(self):
+        return self.hash()
+
     def sexpr(self):
         """Return an string representing the AST node in s-expression notation.
         
@@ -3921,7 +3924,7 @@ class ArrayRef(ExprRef):
         return _to_expr_ref(Z3_mk_select(self.ctx_ref(), self.as_ast(), arg.as_ast()), self.ctx)
 
     def default(self):
-	return _to_expr_ref(Z3_mk_array_default(self.ctx_ref(), self.as_ast()), self.ctx)
+        return _to_expr_ref(Z3_mk_array_default(self.ctx_ref(), self.as_ast()), self.ctx)
 
 
 def is_array(a):
@@ -7313,6 +7316,44 @@ def Product(*args):
         _args, sz = _to_ast_array(args)
         return ArithRef(Z3_mk_mul(ctx.ref(), sz, _args), ctx)
 
+def AtMost(*args):
+    """Create an at-most Pseudo-Boolean k constraint.
+
+    >>> a, b, c = Bools('a b c')
+    >>> f = AtMost(a, b, c, 2)
+    """
+    args  = _get_args(args)
+    if __debug__:
+        _z3_assert(len(args) > 1, "Non empty list of arguments expected")
+    ctx   = _ctx_from_ast_arg_list(args)
+    if __debug__:
+        _z3_assert(ctx != None, "At least one of the arguments must be a Z3 expression")
+    args1 = _coerce_expr_list(args[:-1], ctx)
+    k = args[-1]
+    _args, sz = _to_ast_array(args1)
+    return BoolRef(Z3_mk_atmost(ctx.ref(), sz, _args, k), ctx)
+
+def PbLe(args, k):
+    """Create a Pseudo-Boolean inequality k constraint.
+
+    >>> a, b, c = Bools('a b c')
+    >>> f = PbLe(((a,1),(b,3),(c,2)), 3)
+    """
+    args  = _get_args(args)
+    args, coeffs = zip(*args)
+    if __debug__:
+        _z3_assert(len(args) > 0, "Non empty list of arguments expected")
+    ctx   = _ctx_from_ast_arg_list(args)
+    if __debug__:
+        _z3_assert(ctx != None, "At least one of the arguments must be a Z3 expression")
+    args = _coerce_expr_list(args, ctx)
+    _args, sz = _to_ast_array(args)
+    _coeffs = (ctypes.c_int * len(coeffs))()
+    for i in range(len(coeffs)):
+        _coeffs[i] = coeffs[i]
+    return BoolRef(Z3_mk_pble(ctx.ref(), sz, _args, _coeffs, k), ctx)
+
+
 def solve(*args, **keywords):
     """Solve the constraints `*args`.
     
@@ -7530,7 +7571,7 @@ def Interpolant(a,ctx=None):
     The argument is an interpolation pattern (see tree_interpolant). 
 
     >>> x = Int('x')
-    >>> print Interpolant(x>0)
+    >>> print(Interpolant(x>0))
     interp(x > 0)
     """
     ctx = _get_ctx(_ctx_from_ast_arg_list([a], ctx))
@@ -7570,19 +7611,23 @@ def tree_interpolant(pat,p=None,ctx=None):
     If pat is satisfiable, raises an object of class ModelRef
     that represents a model of pat.
 
+    If neither a proof of unsatisfiability nor a model is obtained
+    (for example, because of a timeout, or because models are disabled)
+    then None is returned.
+
     If parameters p are supplied, these are used in creating the
     solver that determines satisfiability.
 
     >>> x = Int('x')
     >>> y = Int('y')
-    >>> print tree_interpolant(And(Interpolant(x < 0), Interpolant(y > 2), x == y))
+    >>> print(tree_interpolant(And(Interpolant(x < 0), Interpolant(y > 2), x == y)))
     [Not(x >= 0), Not(y <= 2)]
 
-    >>> g = And(Interpolant(x<0),x<2)
-    >>> try:
-    ...     print tree_interpolant(g).sexpr()
-    ... except ModelRef as m:
-    ...     print m.sexpr()
+    # >>> g = And(Interpolant(x<0),x<2)
+    # >>> try:
+    # ...     print tree_interpolant(g).sexpr()
+    # ... except ModelRef as m:
+    # ...     print m.sexpr()
     (define-fun x () Int
       (- 1))
     """
@@ -7595,7 +7640,9 @@ def tree_interpolant(pat,p=None,ctx=None):
     res = Z3_compute_interpolant(ctx.ref(),f.as_ast(),p.params,ptr,mptr)
     if res == Z3_L_FALSE:
         return AstVector(ptr[0],ctx)
-    raise ModelRef(mptr[0], ctx)
+    if mptr[0]:
+        raise ModelRef(mptr[0], ctx)
+    return None
 
 def binary_interpolant(a,b,p=None,ctx=None):
     """Compute an interpolant for a binary conjunction.
@@ -7610,6 +7657,10 @@ def binary_interpolant(a,b,p=None,ctx=None):
     If a & b is satisfiable, raises an object of class ModelRef
     that represents a model of a &b.
 
+    If neither a proof of unsatisfiability nor a model is obtained
+    (for example, because of a timeout, or because models are disabled)
+    then None is returned.
+
     If parameters p are supplied, these are used in creating the
     solver that determines satisfiability.
 
@@ -7618,7 +7669,8 @@ def binary_interpolant(a,b,p=None,ctx=None):
     Not(x >= 0)
     """
     f = And(Interpolant(a),b)
-    return tree_interpolant(f,p,ctx)[0]
+    ti = tree_interpolant(f,p,ctx)
+    return ti[0] if ti != None else None
 
 def sequence_interpolant(v,p=None,ctx=None):
     """Compute interpolant for a sequence of formulas.
@@ -7636,12 +7688,16 @@ def sequence_interpolant(v,p=None,ctx=None):
     If a & b is satisfiable, raises an object of class ModelRef
     that represents a model of a & b.
 
+    If neither a proof of unsatisfiability nor a model is obtained
+    (for example, because of a timeout, or because models are disabled)
+    then None is returned.
+
     If parameters p are supplied, these are used in creating the
     solver that determines satisfiability.
 
     >>> x = Int('x')
     >>> y = Int('y')
-    >>> print sequence_interpolant([x < 0, y == x , y > 2])
+    >>> print(sequence_interpolant([x < 0, y == x , y > 2]))
     [Not(x >= 0), Not(y >= 0)]
     """
     f = v[0]
@@ -7766,7 +7822,7 @@ def Float64(ctx=None):
     ctx = _get_ctx(ctx)
     return FPSortRef(Z3_mk_fpa_sort_64(ctx.ref()), ctx)
 
-def FloatSingle(ctx=None):
+def FloatDouble(ctx=None):
     """Floating-point 64-bit (double) sort."""
     ctx = _get_ctx(ctx)
     return FPSortRef(Z3_mk_fpa_sort_double(ctx.ref()), ctx)
@@ -7776,7 +7832,7 @@ def Float128(ctx=None):
     ctx = _get_ctx(ctx)
     return FPSortRef(Z3_mk_fpa_sort_128(ctx.ref()), ctx)
 
-def FloatSingle(ctx=None):
+def FloatQuadruple(ctx=None):
     """Floating-point 128-bit (quadruple) sort."""
     ctx = _get_ctx(ctx)
     return FPSortRef(Z3_mk_fpa_sort_quadruple(ctx.ref()), ctx)
@@ -8636,13 +8692,13 @@ def fpToSBV(rm, x, s):
 
     >>> x = FP('x', FPSort(8, 24))
     >>> y = fpToSBV(RTZ(), x, BitVecSort(32))
-    >>> print is_fp(x)
+    >>> print(is_fp(x))
     True
-    >>> print is_bv(y)
+    >>> print(is_bv(y))
     True
-    >>> print is_fp(y)
+    >>> print(is_fp(y))
     False
-    >>> print is_bv(x)
+    >>> print(is_bv(x))
     False
     """
     if __debug__:
@@ -8656,13 +8712,13 @@ def fpToUBV(rm, x, s):
 
     >>> x = FP('x', FPSort(8, 24))
     >>> y = fpToUBV(RTZ(), x, BitVecSort(32))
-    >>> print is_fp(x)
+    >>> print(is_fp(x))
     True
-    >>> print is_bv(y)
+    >>> print(is_bv(y))
     True
-    >>> print is_fp(y)
+    >>> print(is_fp(y))
     False
-    >>> print is_bv(x)
+    >>> print(is_bv(x))
     False
     """
     if __debug__:
@@ -8676,13 +8732,13 @@ def fpToReal(x):
 
     >>> x = FP('x', FPSort(8, 24))
     >>> y = fpToReal(x)
-    >>> print is_fp(x)
+    >>> print(is_fp(x))
     True
-    >>> print is_real(y)
+    >>> print(is_real(y))
     True
-    >>> print is_fp(y)
+    >>> print(is_fp(y))
     False
-    >>> print is_real(x)
+    >>> print(is_real(x))
     False
     """
     if __debug__:
@@ -8700,13 +8756,13 @@ def fpToIEEEBV(x):
 
     >>> x = FP('x', FPSort(8, 24))
     >>> y = fpToIEEEBV(x)
-    >>> print is_fp(x)
+    >>> print(is_fp(x))
     True
-    >>> print is_bv(y)
+    >>> print(is_bv(y))
     True
-    >>> print is_fp(y)
+    >>> print(is_fp(y))
     False
-    >>> print is_bv(x)
+    >>> print(is_bv(x))
     False
     """
     if __debug__:

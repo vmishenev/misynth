@@ -1082,8 +1082,10 @@ public:
             return best_coeff;
         }
         else
-            if(op(t) != Numeral)
+            if(op(t) != Numeral){
+                v = get_linear_var(t);
                 return(get_coeff(t));
+            }
         return rational(0);
     }
 
@@ -1092,10 +1094,10 @@ public:
         rational xcoeff = get_first_coefficient(arg(x,0),xvar);
         rational ycoeff = get_first_coefficient(arg(y,0),yvar);
         if(xcoeff == rational(0) || ycoeff == rational(0) || xvar != yvar)
-            throw iz3_exception("bad assign-bounds lemma");
+            throw unsupported();  // can be caused by non-linear arithmetic
         rational ratio = xcoeff/ycoeff;
         if(denominator(ratio) != rational(1))
-            throw iz3_exception("bad assign-bounds lemma");
+            throw unsupported(); // can this ever happen?
         return make_int(ratio); // better be integer!
     }
 
@@ -1104,7 +1106,7 @@ public:
         get_assign_bounds_coeffs(proof,farkas_coeffs);
         int nargs = num_args(con);
         if(nargs != (int)(farkas_coeffs.size()))
-            throw iz3_exception("bad assign-bounds theory lemma");
+            throw unsupported(); // should never happen
 #if 0
         if(farkas_coeffs[0] != make_int(rational(1)))
             farkas_coeffs[0] = make_int(rational(1));
@@ -1201,9 +1203,12 @@ public:
         ast t = arg(my_con,0);
         ast c = arg(my_con,1);
         ast d = gcd_of_coefficients(t);
+        /*
         t = z3_simplify(mk_idiv(t,d));
         c = z3_simplify(mk_idiv(c,d));
         ast cut_con = make(op(my_con),t,c);
+        */
+        ast cut_con = con;
         return iproof->make_cut_rule(my_con,d,cut_con,res);
     }
 

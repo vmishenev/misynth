@@ -75,7 +75,7 @@ VER_MAJOR=None
 VER_MINOR=None
 VER_BUILD=None
 VER_REVISION=None
-PREFIX=os.path.split(os.path.split(os.path.split(PYTHON_PACKAGE_DIR)[0])[0])[0]
+PREFIX=sys.prefix
 GMP=False
 FOCI2=False
 FOCI2LIB=''
@@ -90,7 +90,7 @@ FPMATH="Default"
 FPMATH_FLAGS="-mfpmath=sse -msse -msse2"
 
 def check_output(cmd):
-    return str(subprocess.Popen(cmd, stdout=subprocess.PIPE).communicate()[0]).rstrip('\r\n')
+    return (subprocess.Popen(cmd, stdout=subprocess.PIPE).communicate()[0]).decode("utf-8").rstrip('\r\n')
 
 def git_hash():
     try:
@@ -512,7 +512,7 @@ def dos2unix_tree_core(pattern, dir, files):
                 dos2unix(fname)
 
 def dos2unix_tree():
-    os.path.walk('src', dos2unix_tree_core, '*')
+    os.walk('src', dos2unix_tree_core, '*')
 
 def check_eol():
     if not IS_WINDOWS:
@@ -531,6 +531,7 @@ if os.name == 'nt':
 elif os.name == 'posix':
     if os.uname()[0] == 'Darwin':
         IS_OSX=True
+        PREFIX="/usr/local"
     elif os.uname()[0] == 'Linux':
         IS_LINUX=True
     elif os.uname()[0] == 'FreeBSD':
@@ -1578,20 +1579,22 @@ class CppExampleComponent(ExampleComponent):
     def mk_makefile(self, out):
         dll_name = get_component(Z3_DLL_COMPONENT).dll_name
         dll = '%s$(SO_EXT)' % dll_name
+
+        objfiles = ''
+        for cppfile in self.src_files():
+            objfile = '%s$(OBJ_EXT)' % (cppfile[:cppfile.rfind('.')])
+            objfiles = objfiles + ('%s ' % objfile)
+            out.write('%s: %s\n' % (objfile, os.path.join(self.to_ex_dir, cppfile)));
+            out.write('\t%s $(CXXFLAGS) $(OS_DEFINES) $(EXAMP_DEBUG_FLAG) $(CXX_OUT_FLAG)%s $(LINK_FLAGS)' % (self.compiler(), objfile))
+            # Add include dir components
+            out.write(' -I%s' % get_component(API_COMPONENT).to_src_dir)
+            out.write(' -I%s' % get_component(CPP_COMPONENT).to_src_dir)
+            out.write(' %s' % os.path.join(self.to_ex_dir, cppfile))
+            out.write('\n')            
+        
         exefile = '%s$(EXE_EXT)' % self.name
-        out.write('%s: %s' % (exefile, dll))
-        for cppfile in self.src_files():
-            out.write(' ')
-            out.write(os.path.join(self.to_ex_dir, cppfile))
-        out.write('\n')
-        out.write('\t%s $(OS_DEFINES) $(EXAMP_DEBUG_FLAG) $(LINK_OUT_FLAG)%s $(LINK_FLAGS)' % (self.compiler(), exefile))
-        # Add include dir components
-        out.write(' -I%s' % get_component(API_COMPONENT).to_src_dir)
-        out.write(' -I%s' % get_component(CPP_COMPONENT).to_src_dir)
-        for cppfile in self.src_files():
-            out.write(' ')
-            out.write(os.path.join(self.to_ex_dir, cppfile))
-        out.write(' ')
+        out.write('%s: %s %s\n' % (exefile, dll, objfiles))
+        out.write('\t$(LINK) $(LINK_OUT_FLAG)%s $(LINK_FLAGS) %s ' % (exefile, objfiles))
         if IS_WINDOWS:
             out.write('%s.lib' % dll_name)
         else:
@@ -1982,6 +1985,7 @@ def mk_config():
             print('Prefix:         %s' % PREFIX)
             print('64-bit:         %s' % is64())
             print('FP math:        %s' % FPMATH)
+            print("Python pkg dir: %s" % PYTHON_PACKAGE_DIR)
             if GPROF:
                 print('gprof:          enabled')
             print('Python version: %s' % distutils.sysconfig.get_python_version())
@@ -2072,8 +2076,6 @@ def mk_makefile():
     # Finalize
     if VERBOSE:
         print("Makefile was successfully generated.")
-        if not IS_WINDOWS:
-            print("  python packages dir: %s" % PYTHON_PACKAGE_DIR)
         if DEBUG_MODE:
             print("  compilation mode: Debug")
         else:
