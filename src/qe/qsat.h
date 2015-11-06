@@ -78,7 +78,7 @@ namespace qe {
 
         template <typename T>
         void dec_keys(obj_map<expr, T*>& map) {
-            obj_map<expr, T*>::iterator it = map.begin(), end = map.end();
+            typename obj_map<expr, T*>::iterator it = map.begin(), end = map.end();
             for (; it != end; ++it) {
                 m.dec_ref(it->m_key);
             }
