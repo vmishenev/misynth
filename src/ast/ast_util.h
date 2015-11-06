@@ -130,7 +130,7 @@ expr * mk_not(ast_manager & m, expr * arg);
 /**
    Negate and push over conjunction or disjunction.
  */
-expr_ref push_not(expr_ref& arg);
+expr_ref push_not(const expr_ref& arg);
 
 /**
    Return the expression (and (not (= args[0] args[1])) (not (= args[0] args[2])) ... (not (= args[num_args-2] args[num_args-1])))
