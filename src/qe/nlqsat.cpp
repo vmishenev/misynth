@@ -110,7 +110,8 @@ namespace qe {
             m_asms.push_back(is_exists()?m_is_true:~m_is_true);
             m_asms.append(m_assumptions);
             TRACE("qe", tout << "model valid: " << m_valid_model << " level: " << lvl << " "; 
-                  display_assumptions(tout););
+                  display_assumptions(tout);
+                  m_solver.display(tout););
 
             if (!m_valid_model) {
                 m_asms.append(m_cached_asms);
@@ -140,13 +141,15 @@ namespace qe {
                     }
                 }
             }
-            TRACE("qe", display(tout););
+            TRACE("qe", display(tout);
+                  for (unsigned i = 0; i < m_asms.size(); ++i) {
+                      m_solver.display(tout, m_asms[i]); tout << "\n";
+                  });
             save_model();
         }
 
         void add_literal(nlsat::literal_vector& lits, nlsat::literal l) {
             lbool r = m_solver.value(l);
-            TRACE("qe", m_solver.display(tout, l); tout << " := " << r << "\n";);
             switch (r) {
             case l_true:
                 lits.push_back(l);
@@ -264,17 +267,18 @@ namespace qe {
             for (unsigned i = 0; i < vs.size(); ++i) {
                 level.merge(m_rvar2level[vs[i]]);
             }
-            set_level(l, level);
+            set_level(l.var(), level);
             return level;
         }
 
-        void set_level(nlsat::literal l, max_level const& level) {
+        void set_level(nlsat::bool_var v, max_level const& level) {
             unsigned k = level.max();
             while (m_preds.size() <= k) {
                 m_preds.push_back(nlsat::scoped_literal_vector(m_solver));
             }
+            nlsat::literal l(v, false);
             m_preds[k].push_back(l);
-            m_bvar2level.insert(l.var(), level);            
+            m_bvar2level.insert(v, level);            
             TRACE("qe", m_solver.display(tout, l); tout << ": " << level << "\n";);
         }
         
@@ -504,7 +508,7 @@ namespace qe {
                         SASSERT(m.is_bool(v));
                         nlsat::bool_var b = m_a2b.to_var(v);
                         m_bound_bvars.back().push_back(b);
-                        set_level(nlsat::literal(b, false), lvl);
+                        set_level(b, lvl);
                     }
                     else if (m_t2x.is_var(v)) {
                         nlsat::var w = m_t2x.to_var(v);
@@ -620,7 +624,10 @@ namespace qe {
         }
 
         void updt_params(params_ref const & p) {
-            m_solver.updt_params(p);
+            params_ref p2(p);
+            p2.set_bool("factor", false);
+            p2.set_bool("reorder", false);
+            m_solver.updt_params(p2);
         }
         
         void collect_param_descrs(param_descrs & r) {

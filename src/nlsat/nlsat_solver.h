@@ -227,6 +227,8 @@ namespace nlsat {
 
         void display(std::ostream & out, unsigned n, literal const* ls) const;
 
+        void display(std::ostream & out, atom const& a) const;
+
         /**
            \brief Display variable
         */

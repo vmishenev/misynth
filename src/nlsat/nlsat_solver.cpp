@@ -167,7 +167,7 @@ namespace nlsat {
             m_am(m_qm, p, &m_allocator),
             m_asm(*this, m_allocator),
             m_assignment(m_am),
-            m_evaluator(m_assignment, m_pm, m_allocator), 
+            m_evaluator(s, m_assignment, m_pm, m_allocator), 
             m_ism(m_evaluator.ism()),
             m_num_bool_vars(0),
             m_display_var(m_perm),
@@ -209,6 +209,7 @@ namespace nlsat {
             m_explain.set_minimize_cores(min_cores);
             m_explain.set_factor(p.factor());
             m_am.updt_params(p.p);
+            std::cout << m_reorder << "\n";
         }
 
         void reset() {
@@ -922,9 +923,11 @@ namespace nlsat {
             var max = a->max_var();
             if (!m_assignment.is_assigned(max))
                 return l_undef;
-            TRACE("value_bug", tout << "value of: "; display(tout, l); tout << "\n"; tout << "xk: " << m_xk << ", a->max_var(): " << a->max_var() << "\n";
+            val = to_lbool(m_evaluator.eval(a, l.sign()));
+            TRACE("value_bug", tout << "value of: "; display(tout, l); tout << " := " << val << "\n"; 
+                  tout << "xk: " << m_xk << ", a->max_var(): " << a->max_var() << "\n";
                   display_assignment(tout););
-            return to_lbool(m_evaluator.eval(a, l.sign()));
+            return val;
         }
 
         /**
@@ -933,8 +936,10 @@ namespace nlsat {
         bool is_satisfied(clause const & cls) const {
             unsigned sz = cls.size();
             for (unsigned i = 0; i < sz; i++) {
-                if (const_cast<imp*>(this)->value(cls[i]) == l_true)
+                if (const_cast<imp*>(this)->value(cls[i]) == l_true) {
+                    TRACE("value_bug:", tout << cls[i] << " := true\n";);
                     return true;
+                }
             }
             return false;
         }
@@ -1037,8 +1042,10 @@ namespace nlsat {
            If satisfy_learned is true, then learned clauses are satisfied even if m_lazy > 0
         */
         bool process_arith_clause(clause const & cls, bool satisfy_learned) {
-            if (!satisfy_learned && m_lazy >= 2 && cls.is_learned())
+            if (!satisfy_learned && m_lazy >= 2 && cls.is_learned()) {
+                TRACE("nlsat", tout << "skip learned\n";);
                 return true; // ignore lemmas in super lazy mode
+            }
             SASSERT(m_xk == max_var(cls));
             unsigned num_undef   = 0;                // number of undefined literals
             unsigned first_undef = UINT_MAX;         // position of the first undefined literal
@@ -1117,7 +1124,7 @@ namespace nlsat {
            If satisfy_learned is true, then (arithmetic) learned clauses are satisfied even if m_lazy > 0
         */
         bool process_clause(clause const & cls, bool satisfy_learned) {
-            TRACE("nlsat", tout << "processing clause:\n"; display(tout, cls); tout << "\n";);
+            TRACE("nlsat", tout << "processing clause: "; display(tout, cls); tout << "\n";);
             if (is_satisfied(cls))
                 return true;
             if (m_xk == null_var)
@@ -1956,6 +1963,14 @@ namespace nlsat {
                     SASSERT(m_watches[x].empty());
                 }
             });
+            DEBUG_CODE({
+                    // none of the atoms are roots (because reordering does not work with root atoms.
+                    for (unsigned i = 0; i < m_atoms.size(); ++i) {
+                        if (m_atoms[i]) {
+                            SASSERT(!m_atoms[i]->is_root_atom());
+                        }
+                    }
+                });
             // update m_perm mapping
             for (unsigned ext_x = 0; ext_x < sz; ext_x++) {
                 // p: internal -> new pos
@@ -2846,6 +2861,10 @@ namespace nlsat {
 
     void solver::display(std::ostream & out, var x) const {
         m_imp->m_display_var(out, x);
+    }
+
+    void solver::display(std::ostream & out, atom const& a) const {
+        m_imp->display(out, a, m_imp->m_display_var);
     }
 
     display_var_proc const & solver::display_proc() const {

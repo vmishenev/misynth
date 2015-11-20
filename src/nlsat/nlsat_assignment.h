@@ -74,6 +74,15 @@ namespace nlsat {
             std::swap(m_assigned[x], m_assigned[y]);
             std::swap(m_values[x], m_values[y]);
         }
+        void display(std::ostream& out) const {
+            for (unsigned i = 0; i < m_assigned.size(); ++i) {
+                if (m_assigned[i]) {
+                    out << "x" << i << " := ";
+                    m_values.m().display(tout, m_values[i]);
+                    tout << "\n";
+                }
+            }
+        }
     };
     
     /**
