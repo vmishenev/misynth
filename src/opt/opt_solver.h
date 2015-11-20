@@ -82,10 +82,12 @@ namespace opt {
         static unsigned     m_dump_count;
         statistics          m_stats;
         bool                m_first;
+        bool                m_was_unknown;
     public:
         opt_solver(ast_manager & m, params_ref const & p, filter_model_converter& fm);
         virtual ~opt_solver();
 
+        virtual solver* translate(ast_manager& m, params_ref const& p);
         virtual void updt_params(params_ref & p);
         virtual void collect_param_descrs(param_descrs & r);
         virtual void collect_statistics(statistics & st) const;
@@ -116,6 +118,8 @@ namespace opt {
             return m_valid_objectives[obj_index];
         }
 
+        bool was_unknown() const { return m_was_unknown; }
+
         vector<inf_eps> const& get_objective_values();
         expr_ref mk_ge(unsigned obj_index, inf_eps const& val);
 
@@ -135,6 +139,7 @@ namespace opt {
     private:
         lbool decrement_value(unsigned i, inf_eps& val);
         void set_model(unsigned i);
+        lbool adjust_result(lbool r);
     };
 }
 
