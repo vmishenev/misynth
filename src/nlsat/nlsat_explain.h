@@ -76,9 +76,9 @@ namespace nlsat {
 
              Given:     M |= A x . l1[x] \/  ... \/ ln[x]
            
-             Find:      M |= s1, ..., sm.
+             Find:      M |= ~s1, ..., ~sm.
 
-             Such that:   |= ~s1 \/ ... \/ ~sm \/ A x . l1[x] \/  ... \/ ln[x]           
+             Such that:   |= s1 \/ ... \/ sm \/ A x . l1[x] \/  ... \/ ln[x]           
 
            Claim: the two compute the same solutions if the projection operators are independent of the value of x.
            Claim: A complete, convergent projection operator can be obtained from M in a way that is independent of x.

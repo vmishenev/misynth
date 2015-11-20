@@ -66,7 +66,6 @@ namespace nlsat {
         typedef polynomial::cache cache;
         typedef ptr_vector<interval_set> interval_set_vector;
 
-        solver &               m_solver;
         reslimit&              m_rlimit;
         small_object_allocator m_allocator;
         unsynch_mpq_manager    m_qm;
@@ -160,8 +159,7 @@ namespace nlsat {
         unsigned               m_stages;
         unsigned               m_irrational_assignments; // number of irrational witnesses
 
-        imp(solver & s, reslimit& rlim, params_ref const & p):
-            m_solver(s),
+        imp(solver& s, reslimit& rlim, params_ref const & p):
             m_rlimit(rlim),
             m_allocator("nlsat"),
             m_pm(m_qm, &m_allocator),
@@ -185,12 +183,7 @@ namespace nlsat {
         }
         
         ~imp() {
-            m_explain.reset();
-            m_lemma.reset();
-            m_lazy_clause.reset();
-            undo_until_size(0);
-            del_clauses();
-            del_unref_atoms();
+            reset();
         }
 
         void mk_true_bvar() {
@@ -216,6 +209,19 @@ namespace nlsat {
             m_explain.set_minimize_cores(min_cores);
             m_explain.set_factor(p.factor());
             m_am.updt_params(p.p);
+        }
+
+        void reset() {
+            m_explain.reset();
+            m_lemma.reset();
+            m_lazy_clause.reset();
+            undo_until_size(0);
+            del_clauses();
+            del_unref_atoms();
+#if 0
+            m_cache.reset();
+            m_assignment.reset();
+#endif
         }
 
         void set_cancel(bool f) {
@@ -1247,6 +1253,7 @@ namespace nlsat {
             if (m_reorder)
                 restore_order();
             CTRACE("nlsat_model", r == l_true, tout << "model\n"; display_assignment(tout););
+            CTRACE("nlsat", r == l_false, display(tout););
             return r;
         }
 
@@ -2691,6 +2698,10 @@ namespace nlsat {
 
     lbool solver::check(literal_vector& assumptions) {
         return m_imp->check(assumptions);
+    }
+
+    void solver::reset() {
+        m_imp->reset();
     }
 
     void solver::set_cancel(bool f) {

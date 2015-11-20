@@ -316,8 +316,7 @@ namespace qe {
             nlsat::scoped_literal_vector clause(m_solver);
             mbp(std::max(1u, level()-1), clause);            
             
-            expr_ref fml(m);
-            clause2fml(clause, fml);
+            expr_ref fml = clause2fml(clause);
             TRACE("qe", tout << level() << ": " << fml << "\n";);
             if (level() == 1) {
                 add_to_answer(fml);
@@ -346,21 +345,27 @@ namespace qe {
             m_answer.push_back(fml);
         }
 
-        void clause2fml(nlsat::scoped_literal_vector const& clause, expr_ref& fml) {
+        expr_ref clause2fml(nlsat::scoped_literal_vector const& clause) {
             expr_ref_vector fmls(m);
+            expr_ref fml(m);
             expr* t;
             nlsat2goal n2g(m);
             for (unsigned i = 0; i < clause.size(); ++i) {
                 nlsat::literal l = clause[i];
                 if (m_asm2fml.find(l.var(), t)) {
+                    fml = t;
+                    if (l.sign()) {
+                        fml = push_not(fml);
+                    }
                     SASSERT(l.sign());
-                    fmls.push_back(l.sign()?m.mk_not(t):t);
+                    fmls.push_back(fml);
                 }
                 else {
                     fmls.push_back(n2g(m_solver, m_b2a, m_x2t, l));
                 }
             }
             fml = mk_or(fmls);
+            return fml;
         }
 
         void add_assumption_literal(nlsat::scoped_literal_vector& clause, expr* fml) {

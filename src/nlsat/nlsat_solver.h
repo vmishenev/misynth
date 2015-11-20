@@ -203,6 +203,7 @@ namespace nlsat {
         void updt_params(params_ref const & p);
         static void collect_param_descrs(param_descrs & d);
 
+        void reset();
         void set_cancel(bool f);
         void collect_statistics(statistics & st);
         void reset_statistics();
