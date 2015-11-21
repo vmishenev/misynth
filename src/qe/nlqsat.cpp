@@ -626,7 +626,6 @@ namespace qe {
         void updt_params(params_ref const & p) {
             params_ref p2(p);
             p2.set_bool("factor", false);
-            p2.set_bool("reorder", false);
             m_solver.updt_params(p2);
         }
         
