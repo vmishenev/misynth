@@ -209,7 +209,6 @@ namespace nlsat {
             m_explain.set_minimize_cores(min_cores);
             m_explain.set_factor(p.factor());
             m_am.updt_params(p.p);
-            std::cout << m_reorder << "\n";
         }
 
         void reset() {

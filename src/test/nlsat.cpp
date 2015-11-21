@@ -275,7 +275,7 @@ static void tst5() {
     nlsat::assignment           as(am);
     small_object_allocator      allocator;
     nlsat::interval_set_manager ism(am, allocator);
-    nlsat::evaluator            ev(as, pm, allocator);
+    nlsat::evaluator            ev(s, as, pm, allocator);
     nlsat::var                  x0, x1;
     x0 = pm.mk_var();
     x1 = pm.mk_var();
