@@ -87,6 +87,11 @@ namespace nlsat {
          */
         void project(var x, unsigned n, literal const * ls, scoped_literal_vector & result);
 
+
+        /**
+           Unit test routine.
+         */
+        void test_root_literal(atom::kind k, var y, unsigned i, poly* p, scoped_literal_vector & result);
     };
 
 };

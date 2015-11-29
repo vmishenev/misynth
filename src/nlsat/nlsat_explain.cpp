@@ -216,7 +216,7 @@ namespace nlsat {
            max_var(p) must be assigned in the current interpretation.
         */
         int sign(polynomial_ref const & p) {
-            TRACE("nlsat_explain", tout << "p: " << p << "\n";);
+            TRACE("nlsat_explain", tout << "p: " << p << " var: " << max_var(p) << "\n";);
             SASSERT(max_var(p) == null_var || m_assignment.is_assigned(max_var(p)));
             return m_am.eval_sign_at(p, m_assignment);
         }
@@ -701,39 +701,163 @@ namespace nlsat {
             }
         }
 
+        void test_root_literal(atom::kind k, var y, unsigned i, poly * p, scoped_literal_vector& result) {
+            m_result = &result;
+            add_root_literal(k, y, i, p);
+            reset_already_added();
+            m_result = 0;
+        }
+
         void add_root_literal(atom::kind k, var y, unsigned i, poly * p) {
+            polynomial_ref pr(p, m_pm);
+            TRACE("nlsat_explain", 
+                  display(tout << "x" << y << " " << k << "[" << i << "](", pr); tout << ")\n";);
+
+            if (!mk_linear_root(k, y, i, p) &&
+                //!mk_plinear_root(k, y, i, p) &&
+                !mk_quadratic_root(k, y, i, p)&&
+                true) {                
+                bool_var b = m_solver.mk_root_atom(k, y, i, p);
+                literal l(b, true);
+                TRACE("nlsat_explain", tout << "adding literal\n"; display(tout, l); tout << "\n";);
+                add_literal(l);
+            }
+        }
+
+        /**
+         * literal can be expressed using a linear ineq_atom
+         */
+        bool mk_linear_root(atom::kind k, var y, unsigned i, poly * p) {
             scoped_mpz c(m_pm.m());
-            bool_var b;
-            bool     lsign = false;
             if (m_pm.degree(p, y) == 1 && m_pm.const_coeff(p, y, 1, c)) {
                 SASSERT(!m_pm.m().is_zero(c));
-                // literal can be expressed using a linear ineq_atom
-                polynomial_ref p_prime(m_pm);
-                p_prime = p;
-                if (m_pm.m().is_neg(c)) 
-                    p_prime = neg(p_prime);
-                p = p_prime.get();
-                switch (k) {
-                case atom::ROOT_EQ: k = atom::EQ; lsign = false; break;
-                case atom::ROOT_LT: k = atom::LT; lsign = false; break;
-                case atom::ROOT_GT: k = atom::GT; lsign = false; break;
-                case atom::ROOT_LE: k = atom::GT; lsign = true; break;
-                case atom::ROOT_GE: k = atom::LT; lsign = true; break;
-                default:
-                    UNREACHABLE();
-                    break;
-                }
-                bool is_even = false;
-                b = m_solver.mk_ineq_atom(k, 1, &p, &is_even);
+                mk_linear_root(k, y, i, p, m_pm.m().is_neg(c));
+                return true;
             }
-            else {
-                b   = m_solver.mk_root_atom(k, y, i, p);
-                lsign = false;
+            return false;
+        }
+
+
+        /**
+           Create pseudo-linear root depending on the sign of the coefficient to y.
+         */
+        bool mk_plinear_root(atom::kind k, var y, unsigned i, poly * p) {
+            if (m_pm.degree(p, y) != 1) {
+                return false;
             }
-            lsign = !lsign; // adding as an assumption
-            literal l(b, lsign);
-            TRACE("nlsat_explain", tout << "adding literal\n"; display(tout, l); tout << "\n";);
-            add_literal(l);
+            polynomial_ref c(m_pm);
+            c = m_pm.coeff(p, y, 1);
+            int s = sign(c);
+            if (s == 0) {
+                return false;
+            }
+            ensure_sign(c);
+            mk_linear_root(k, y, i, p, s < 0);                
+            return true;
+        }
+
+        /**
+           Encode root conditions for quadratic polynomials.
+           
+           Basically implements Thom's theorem. The roots are characterized by the sign of polynomials and their derivatives.
+
+           b^2 - 4ac = 0:
+              - there is only one root, which is -b/2a.
+              - relation to root is a function of the sign of 
+              - 2ax + b
+           b^2 - 4ac > 0:
+              - assert i == 1 or i == 2
+              - relation to root is a function of the signs of:
+                - 2ax + b
+                - ax^2 + bx + c
+         */
+
+        bool mk_quadratic_root(atom::kind k, var y, unsigned i, poly * p) {
+            if (m_pm.degree(p, y) != 2) {
+                return false;
+            }
+            if (i != 1 && i != 2) {
+                return false;
+            }
+
+            SASSERT(m_assignment.is_assigned(y));
+            polynomial_ref A(m_pm), B(m_pm), C(m_pm), q(m_pm), p_diff(m_pm), yy(m_pm);
+            A = m_pm.coeff(p, y, 2);
+            B = m_pm.coeff(p, y, 1);
+            C = m_pm.coeff(p, y, 0);
+            // TBD throttle based on degree of q?
+            q = (B*B) - (4*A*C);
+            yy = m_pm.mk_polynomial(y);
+            p_diff = 2*A*yy + B;
+            p_diff = m_pm.normalize(p_diff);
+            int sq = ensure_sign(q); 
+            if (sq < 0) {
+                return false;
+            }
+            int sa = ensure_sign(A);
+            if (sa == 0) {
+                q = B*yy + C;
+                return mk_plinear_root(k, y, i, q);
+            } 
+            ensure_sign(p_diff);
+            if (sq > 0) {
+                polynomial_ref pr(p, m_pm);
+                ensure_sign(pr);
+            }
+            return true;
+        }
+
+        int ensure_sign(polynomial_ref & p) {
+#if 0
+            polynomial_ref f(m_pm);
+            factor(p, m_factors);
+            m_is_even.reset();
+            unsigned num_factors = m_factors.size();
+            int s = 1;
+            for (unsigned i = 0; i < num_factors; i++) {
+                f = m_factors.get(i);
+                s *= sign(f);
+                m_is_even.push_back(false);
+            } 
+            if (num_factors > 0) {
+                atom::kind k = atom::EQ;
+                if (s == 0) k = atom::EQ;
+                if (s < 0)  k = atom::LT;
+                if (s > 0)  k = atom::GT;
+                bool_var b = m_solver.mk_ineq_atom(k, num_factors, m_factors.c_ptr(), m_is_even.c_ptr());
+                add_literal(literal(b, true));
+            }
+            return s;
+#else
+            int s = sign(p);
+            if (!is_const(p)) {
+                add_simple_assumption(s == 0 ? atom::EQ : (s < 0 ? atom::LT : atom::GT), p);
+            }
+            return s;
+#endif
+        }
+
+        /**
+           Auxiliary function to linear roots.
+         */
+        void mk_linear_root(atom::kind k, var y, unsigned i, poly * p, bool mk_neg) {
+            polynomial_ref p_prime(m_pm);
+            p_prime = p;
+            bool lsign = false;
+            if (mk_neg)
+                p_prime = neg(p_prime);
+            p = p_prime.get();
+            switch (k) {
+            case atom::ROOT_EQ: k = atom::EQ; lsign = false; break;
+            case atom::ROOT_LT: k = atom::LT; lsign = false; break;
+            case atom::ROOT_GT: k = atom::GT; lsign = false; break;
+            case atom::ROOT_LE: k = atom::GT; lsign = true; break;
+            case atom::ROOT_GE: k = atom::LT; lsign = true; break;
+            default:
+                UNREACHABLE();
+                break;
+            }
+            add_simple_assumption(k, p, lsign);
         }
 
         /**
@@ -1337,6 +1461,7 @@ namespace nlsat {
             CASSERT("nlsat", check_already_added());
         }
 
+
         void project(var x, unsigned num, literal const * ls, scoped_literal_vector & result) {
             m_result = &result;
             svector<literal> lits;
@@ -1390,8 +1515,9 @@ namespace nlsat {
         }
 
         void split_literals(var x, unsigned n, literal const* ls, svector<literal>& lits) {
+            var_vector vs;
             for (unsigned i = 0; i < n; ++i) {                  
-                var_vector vs;
+                vs.reset();
                 m_solver.vars(ls[i], vs);
                 if (vs.contains(x)) {
                     lits.push_back(ls[i]);
@@ -1434,9 +1560,11 @@ namespace nlsat {
 
         void signed_project(polynomial_ref_vector& ps, var x) {
             
+            TRACE("nlsat_explain", tout << "Signed projection\n";);
             polynomial_ref p(m_pm);
             unsigned eq_index = 0;
             bool eq_valid = false;
+            unsigned eq_degree = 0;
             for (unsigned i = 0; i < ps.size(); ++i) {
                 p = ps.get(i);
                 int s = sign(p);
@@ -1448,8 +1576,11 @@ namespace nlsat {
                     --i;
                 }
                 else if (s == 0) {
-                    eq_index = i;
-                    eq_valid = true;
+                    if (!eq_valid || degree(p, x) < eq_degree) {
+                        eq_index = i;
+                        eq_valid = true;
+                        eq_degree = degree(p, x);
+                    }
                 }
             }
 
@@ -1462,14 +1593,26 @@ namespace nlsat {
                 return;
             }
 
+            // ax + b = 0, p(x) > 0 -> 
+
             if (eq_valid) {
-                project_pairs(x, eq_index, ps);
+                p = ps.get(eq_index);
+                if (degree(p, x) == 1) {
+                    // ax + b = 0
+                    // let d be maximal degree of x in p.
+                    // p(x) -> a^d*p(-b/a), a
+                    // perform virtual substitution with equality.
+                    solve_eq(x, eq_index, ps);
+                }
+                else {
+                    project_pairs(x, eq_index, ps);
+                }
                 return;
             }
             
             unsigned num_lub = 0, num_glb = 0;
             unsigned glb_index = 0, lub_index = 0;
-            scoped_anum lub(m_am), glb(m_am), new_x_val(m_am), x_val(m_am);
+            scoped_anum lub(m_am), glb(m_am), x_val(m_am);
             x_val = m_assignment.value(x);
             for (unsigned i = 0; i < ps.size(); ++i) {
                 p = ps.get(i);
@@ -1490,7 +1633,7 @@ namespace nlsat {
 
                     if (s > 0 && m_am.lt(glb, roots[j])) {
                         glb_index = i;
-                        m_am.set(glb, roots[j]);
+                        m_am.set(glb, roots[j]);                        
                     }
                 }
                 if (glb_valid) {
@@ -1513,15 +1656,9 @@ namespace nlsat {
 
             if (num_lub <= num_glb) {
                 glb_index = lub_index;
-                new_x_val = lub;
-            }
-            else {
-                new_x_val = glb;
             }
 
-            // TBD redundant: const_cast<assignment&>(m_assignment).set(x, new_x_val);
             project_pairs(x, glb_index, ps);
-            // TBD redundant: const_cast<assignment&>(m_assignment).set(x, x_val);
         }
 
         void project_plus_infinity(var x, polynomial_ref_vector const& ps) {
@@ -1530,7 +1667,7 @@ namespace nlsat {
                 p = ps.get(i);
                 unsigned d = degree(p, x);
                 lc = m_pm.coeff(p, x, d);
-                if (!is_const(lc)) {
+                if (!is_const(lc)) {                    
                     unsigned s = sign(p);
                     SASSERT(s != 0);
                     atom::kind k = (s > 0)?(atom::GT):(atom::LT);
@@ -1583,6 +1720,46 @@ namespace nlsat {
             project(m_ps2, x);
         }
 
+        void solve_eq(var x, unsigned idx, polynomial_ref_vector const& ps) {
+            polynomial_ref p(m_pm), A(m_pm), B(m_pm), C(m_pm), D(m_pm), E(m_pm), q(m_pm), r(m_pm);
+            polynomial_ref_vector qs(m_pm);
+            p = ps.get(idx);
+            SASSERT(degree(p, x) == 1);
+            A = m_pm.coeff(p, x, 1);
+            B = m_pm.coeff(p, x, 0);
+            B = neg(B);
+            TRACE("nlsat_explain", tout << "p: " << p << " A: " << A << " B: " << B << "\n";);
+            // x = B/A
+            for (unsigned i = 0; i < ps.size(); ++i) {
+                if (i != idx) {
+                    q = ps.get(i);
+                    unsigned d = degree(q, x);
+                    D = m_pm.mk_const(rational(1));
+                    E = D;
+                    r = m_pm.mk_zero();
+                    for (unsigned j = 0; j <= d; ++j) {                       
+                        qs.push_back(D);
+                        D = D*A;
+                    }
+                    for (unsigned j = 0; j <= d; ++j) {
+                        // A^d*p0 + A^{d-1}*B*p1 + ... + B^j*A^{d-j}*pj + ... + B^d*p_d
+                        C = m_pm.coeff(q, x, j);
+                        if (!is_zero(C)) {
+                            D = qs.get(d-j);
+                            r = r + D*E*C;
+                        }
+                        E = E*B;
+                    }
+                    TRACE("nlsat_explain", tout << "q: " << q << " r: " << r << "\n";);
+                    ensure_sign(r);
+                }
+                else {
+                    ensure_sign(A);
+                }
+            }
+
+        }
+
     };
 
     explain::explain(solver & s, assignment const & x2v, polynomial::cache & u, 
@@ -1627,6 +1804,10 @@ namespace nlsat {
         m_imp->project(x, n, ls, result);
     }
 
+    void explain::test_root_literal(atom::kind k, var y, unsigned i, poly* p, scoped_literal_vector & result) {
+        m_imp->test_root_literal(k, y, i, p, result);
+    }
+
 };
 
 #ifdef Z3DEBUG
@@ -1656,4 +1837,77 @@ void pp_lit(nlsat::explain::imp & ex, nlsat::literal l) {
     ex.display(std::cout, l);
     std::cout << std::endl;
 }
+#endif
+
+
+
+#if 0
+            if (i == 1) {
+                switch (k) {
+                case atom::ROOT_EQ:   // x < -b/2a, p = 0
+                    add_simple_assumption(atom::EQ, p, false);
+                    break;
+                case atom::ROOT_LT:   // x < -b/2a, sa*p > 0
+                    mk_gt(k, lsign); 
+                    add_simple_assumption(k, p, lsign);
+                    break;
+                case atom::ROOT_LE:   // x < -b/2a, sa*p >= 0
+                    mk_ge(k, lsign); 
+                    add_simple_assumption(k, p, lsign);
+                    break;
+                case atom::ROOT_GT:   // x < -b/2a, sa*p < 0 or x >= -b/2a
+                    if (sa*sr < 0) {
+                        mk_lt(k, lsign); 
+                        add_simple_assumption(k, p, lsign);
+                    }
+                    break;
+                case atom::ROOT_GE:   // x < -b/2a, sa*p <= 0 or x >= -b/2a
+                    if (sa*sr < 0) {
+                        mk_le(k, lsign);  
+                        add_simple_assumption(k, p, lsign);
+                    }
+                    break;
+                default:
+                    break;
+                }
+            }
+            else {
+                switch (k) {
+                case atom::ROOT_EQ:   // x > -b/2a, p = 0
+                    add_simple_assumption(atom::EQ, p, false);
+                    break;
+                case atom::ROOT_LT:   // x > -b/2a, sa*p < 0 or x < -b/2a
+                    if (sa*sr > 0) {
+                        mk_lt(k, lsign);
+                        add_simple_assumption(k, p, lsign);
+                    }
+                    k = k2;       lsign = false; break;
+                case atom::ROOT_LE:   // x > -b/2a, sa*p <= 0 or x < -b/2a
+                    k = k1;       lsign = true;  break;
+                case atom::ROOT_GT:   // x > -b/2a, sa*p > 0 
+                    k  = k1;      lsign = false; break;
+                case atom::ROOT_GE:   // x > -b/2a, sa*p >= 0
+                    k = k2;       lsign = true;  break;
+                default:
+                    break;
+                }
+            }
+                switch (k) {
+                case atom::ROOT_EQ: SASSERT(sr != 0); k = atom::EQ; lsign = false; break;
+                    // TBD
+                case atom::ROOT_LT: NOT_IMPLEMENTED_YET(); k = atom::LT; lsign = false; break;
+                case atom::ROOT_GT: NOT_IMPLEMENTED_YET(); k = atom::GT; lsign = false; break;
+                case atom::ROOT_LE: NOT_IMPLEMENTED_YET(); k = atom::GT; lsign = true; break;
+                case atom::ROOT_GE: NOT_IMPLEMENTED_YET(); k = atom::LT; lsign = true; break;
+                default:
+                    UNREACHABLE();
+                    break;
+                }
+            }
+            b = m_solver.mk_ineq_atom(k, 1, &p, &is_even);
+
+        void mk_ge(atom::kind& k, bool& lsign) { k = atom::LT; lsign = true; }
+        void mk_gt(atom::kind& k, bool& lsign) { k = atom::GT; lsign = false; }
+        void mk_le(atom::kind& k, bool& lsign) { k = atom::GT; lsign = true; }
+        void mk_lt(atom::kind& k, bool& lsign) { k = atom::LT; lsign = false; }
 #endif

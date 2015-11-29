@@ -42,6 +42,7 @@ namespace qe {
     class nlqsat : public tactic {
 
         typedef unsigned_vector assumption_vector;
+        typedef nlsat::scoped_literal_vector clause;
 
         struct stats {
             unsigned m_num_rounds;        
@@ -159,7 +160,7 @@ namespace qe {
                 break;
             default:
                 UNREACHABLE();
-                break;
+                break; 
             }
         }
 
@@ -205,11 +206,11 @@ namespace qe {
                 new_result.reset();
                 ex.project(vars[i], result.size(), result.c_ptr(), new_result);
                 result.swap(new_result);
+                TRACE("qe", m_solver.display(tout, result.size(), result.c_ptr()); tout << "\n";);
             }
             for (unsigned i = 0; i < result.size(); ++i) {
                 result.set(i, ~result[i]);
             }
-            TRACE("qe", m_solver.display(tout, result.size(), result.c_ptr()); tout << "\n";);
         }
 
         void save_model() {
@@ -240,13 +241,14 @@ namespace qe {
             return m_cached_asms_lim.size();
         }
 
-        max_level mk_clause(unsigned n, nlsat::literal const* ls) {
-            nlsat::literal_vector lits(n, ls);
-            if (lits.empty()) {
-                lits.push_back(~m_solver.mk_true()); 
-            }
+        void add_clause(clause const& cl) {
+            nlsat::literal_vector lits(cl.size(), cl.c_ptr());
+            lits.push_back(is_exists()?~m_is_true:m_is_true);
             m_solver.mk_clause(lits.size(), lits.c_ptr());
-            return get_level(n, ls);
+        }
+
+        max_level get_level(clause const& cl) {
+            return get_level(cl.size(), cl.c_ptr());
         }
 
         max_level get_level(unsigned n, nlsat::literal const* ls) {
@@ -294,10 +296,11 @@ namespace qe {
             }
             SASSERT(level() >= 2);
             unsigned num_scopes;
-            nlsat::scoped_literal_vector clause(m_solver);
-            mbp(level()-1, clause);            
+            clause cl(m_solver);
+            mbp(level()-1, cl);            
             
-            max_level clevel = mk_clause(clause.size(), clause.c_ptr());
+            max_level clevel = get_level(cl);
+            add_clause(cl);
 
             if (clevel.max() == UINT_MAX) {
                 num_scopes = 2*(level()/2);
@@ -317,17 +320,17 @@ namespace qe {
 
         void project_qe() {
             SASSERT(level() >= 1 && m_mode == elim_t && m_valid_model);
-            nlsat::scoped_literal_vector clause(m_solver);
-            mbp(std::max(1u, level()-1), clause);            
+            clause cl(m_solver);
+            mbp(std::max(1u, level()-1), cl);            
             
-            expr_ref fml = clause2fml(clause);
+            expr_ref fml = clause2fml(cl);
             TRACE("qe", tout << level() << ": " << fml << "\n";);
-            if (level() == 1) {
+            max_level clevel = get_level(cl);
+            add_assumption_literal(cl, clevel, fml);           
+            add_clause(cl);
+            if (clevel.max() == UINT_MAX) {
                 add_to_answer(fml);
             }
-
-            add_assumption_literal(clause, fml);            
-            mk_clause(clause.size(), clause.c_ptr());                            
 
             if (level() == 1) {
                 pop(1);
@@ -372,13 +375,13 @@ namespace qe {
             return fml;
         }
 
-        void add_assumption_literal(nlsat::scoped_literal_vector& clause, expr* fml) {
+        void add_assumption_literal(clause& clause, max_level clevel, expr* fml) {
             nlsat::bool_var b = m_solver.mk_bool_var();
             clause.push_back(nlsat::literal(b, true));
-            m_assumptions.push_back(nlsat::literal(b, false));
+            m_assumptions.push_back(nlsat::literal(b, false)); // TBD: check with respect to parity.
             m_asm2fml.insert(b, fml);
             m_trail.push_back(fml);            
-            m_bvar2level.insert(b, max_level());
+            m_bvar2level.insert(b, clevel);
         }
 
         bool is_exists() const { return is_exists(level()); }
@@ -617,6 +620,7 @@ namespace qe {
             m_answer_simplify(m),
             m_trail(m)
         {
+            m_solver.get_explain().set_signed_project(true);
             m_nftactic = mk_tseitin_cnf_tactic(m);
         }
 
