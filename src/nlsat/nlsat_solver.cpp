@@ -209,7 +209,6 @@ namespace nlsat {
             m_explain.set_minimize_cores(min_cores);
             m_explain.set_factor(p.factor());
             m_am.updt_params(p.p);
-            std::cout << m_reorder << "\n";
         }
 
         void reset() {
@@ -219,10 +218,8 @@ namespace nlsat {
             undo_until_size(0);
             del_clauses();
             del_unref_atoms();
-#if 0
             m_cache.reset();
             m_assignment.reset();
-#endif
         }
 
         void set_cancel(bool f) {
@@ -1248,16 +1245,22 @@ namespace nlsat {
             TRACE("nlsat_fd", tout << "is_full_dimensional: " << is_full_dimensional() << "\n";);
             init_search();
             m_explain.set_full_dimensional(is_full_dimensional());
-            if (m_random_order) {
+            bool reordered = false;
+            if (!can_reorder()) {
+
+            }
+            else if (m_random_order) {
                 shuffle_vars();
+                reordered = true;
             }
             else if (m_reorder) {
                 heuristic_reorder();
+                reordered = true;
             }
             sort_watched_clauses();
             lbool r = search();
             CTRACE("nlsat_model", r == l_true, tout << "model before restore order\n"; display_assignment(tout););
-            if (m_reorder)
+            if (reordered)
                 restore_order();
             CTRACE("nlsat_model", r == l_true, tout << "model\n"; display_assignment(tout););
             CTRACE("nlsat", r == l_false, display(tout););
@@ -1934,6 +1937,15 @@ namespace nlsat {
             reorder(p.size(), p.c_ptr());
         }
 
+        bool can_reorder() const {
+            for (unsigned i = 0; i < m_atoms.size(); ++i) {
+                if (m_atoms[i]) {
+                    if (m_atoms[i]->is_root_atom()) return false;
+                }
+            }
+            return true;
+        }
+
         /**
            \brief Reorder variables using the giving permutation.
            p maps internal variables to their new positions
@@ -1963,14 +1975,6 @@ namespace nlsat {
                     SASSERT(m_watches[x].empty());
                 }
             });
-            DEBUG_CODE({
-                    // none of the atoms are roots (because reordering does not work with root atoms.
-                    for (unsigned i = 0; i < m_atoms.size(); ++i) {
-                        if (m_atoms[i]) {
-                            SASSERT(!m_atoms[i]->is_root_atom());
-                        }
-                    }
-                });
             // update m_perm mapping
             for (unsigned ext_x = 0; ext_x < sz; ext_x++) {
                 // p: internal -> new pos

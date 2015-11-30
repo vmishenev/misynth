@@ -78,8 +78,8 @@ namespace nlsat {
             for (unsigned i = 0; i < m_assigned.size(); ++i) {
                 if (m_assigned[i]) {
                     out << "x" << i << " := ";
-                    m_values.m().display(tout, m_values[i]);
-                    tout << "\n";
+                    m_values.m().display(out, m_values[i]);
+                    out << "\n";
                 }
             }
         }

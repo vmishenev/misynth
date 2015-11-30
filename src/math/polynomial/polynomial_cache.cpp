@@ -192,6 +192,9 @@ namespace polynomial {
                 factors fs(m);
                 m.factor(p, fs);
                 unsigned sz = fs.distinct_factors();
+                if (sz == 0) {
+                    return;
+                }
                 entry->m_result_sz = sz;
                 entry->m_result    = static_cast<polynomial**>(m_allocator.allocate(sizeof(polynomial*)*sz));
                 for (unsigned i = 0; i < sz; i++) {

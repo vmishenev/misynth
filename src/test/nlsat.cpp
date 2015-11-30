@@ -275,7 +275,7 @@ static void tst5() {
     nlsat::assignment           as(am);
     small_object_allocator      allocator;
     nlsat::interval_set_manager ism(am, allocator);
-    nlsat::evaluator            ev(as, pm, allocator);
+    nlsat::evaluator            ev(s, as, pm, allocator);
     nlsat::var                  x0, x1;
     x0 = pm.mk_var();
     x1 = pm.mk_var();
@@ -586,7 +586,117 @@ static void tst9() {
     TEST_ON_OFF();
 }
 
+
+#if 0
+
+
+#endif
+
+static void test_root_literal(nlsat::solver& s, nlsat::explain& ex, nlsat::var x, nlsat::atom::kind k, unsigned i, nlsat::poly* p) {
+    nlsat::scoped_literal_vector result(s);
+    ex.test_root_literal(k, x, 1, p, result);
+    nlsat::bool_var b = s.mk_root_atom(k, x, i, p);
+    s.display(std::cout, nlsat::literal(b, false));
+    s.display(std::cout << " ==> ", result.size(), result.c_ptr());
+    std::cout << "\n";
+}
+
+static bool satisfies_root(nlsat::solver& s, nlsat::atom::kind k, nlsat::poly* p) {
+    nlsat::pmanager & pm  = s.pm();
+    anum_manager & am     = s.am();
+    nlsat::assignment as(am);
+    s.get_rvalues(as);
+    polynomial_ref pr(p, pm);
+    switch (k) {
+    case nlsat::atom::ROOT_EQ: return am.eval_sign_at(pr, as) == 0; 
+    case nlsat::atom::ROOT_LE: return am.eval_sign_at(pr, as) <= 0;
+    case nlsat::atom::ROOT_LT: return am.eval_sign_at(pr, as) <  0;
+    case nlsat::atom::ROOT_GE: return am.eval_sign_at(pr, as) >= 0;
+    case nlsat::atom::ROOT_GT: return am.eval_sign_at(pr, as) >  0;
+    default:
+        UNREACHABLE();
+        return false;
+    }
+}
+
+static void tst10() {
+    params_ref      ps;
+    reslimit        rlim;
+    nlsat::solver s(rlim, ps);
+    anum_manager & am     = s.am();
+    nlsat::pmanager & pm  = s.pm();
+    nlsat::assignment as(am);
+    nlsat::explain& ex    = s.get_explain();
+    nlsat::var _a = s.mk_var(false);
+    nlsat::var _b = s.mk_var(false);
+    nlsat::var _c = s.mk_var(false);
+    nlsat::var _x = s.mk_var(false);
+
+    polynomial_ref x(pm), a(pm), b(pm), c(pm), p(pm);
+    x = pm.mk_polynomial(_x);
+    a = pm.mk_polynomial(_a);
+    b = pm.mk_polynomial(_b);
+    c = pm.mk_polynomial(_c);
+    p = a*x*x + b*x + c;
+    scoped_anum one(am), two(am), three(am), mone(am), mtwo(am), mthree(am), zero(am), one_a_half(am);
+    am.set(zero, 0);
+    am.set(one, 1);
+    am.set(two, 2);
+    am.set(three, 3);
+    am.set(mone, -1);
+    am.set(mtwo, -2);
+    am.set(mthree, -3);
+    rational oah(1,2);
+    am.set(one_a_half, oah.to_mpq());
+    
+ 
+    scoped_anum_vector nums(am);
+    nums.push_back(one);
+    nums.push_back(two);
+    nums.push_back(one_a_half);
+    nums.push_back(mone);
+    nums.push_back(three);
+
+    // a = 1, b = -3, c = 2: 
+    // has roots x = 2, x = 1:
+    //  2^2 - 3*2 + 2 = 0
+    //  1 - 3 + 2 = 0
+    as.set(_a, one);
+    as.set(_b, mthree);
+    as.set(_c, two);
+
+    for (unsigned i = 0; i < nums.size(); ++i) {
+        as.set(_x, nums[i]);
+        s.set_rvalues(as);
+        std::cout << p << "\n";
+        as.display(std::cout);
+        for (unsigned k = nlsat::atom::ROOT_EQ; k <= nlsat::atom::ROOT_GE; ++k) {
+            if (satisfies_root(s, (nlsat::atom::kind) k, p)) {
+                test_root_literal(s, ex, _x, (nlsat::atom::kind) k, 1, p);
+            }
+        }
+    }
+    as.set(_a, mone);
+    as.set(_b, three);
+    as.set(_c, mtwo);
+    for (unsigned i = 0; i < nums.size(); ++i) {
+        as.set(_x, nums[i]);
+        s.set_rvalues(as);
+        std::cout << p << "\n";
+        as.display(std::cout);
+        for (unsigned k = nlsat::atom::ROOT_EQ; k <= nlsat::atom::ROOT_GE; ++k) {
+            if (satisfies_root(s, (nlsat::atom::kind) k, p)) {
+                test_root_literal(s, ex, _x, (nlsat::atom::kind) k, 1, p);
+            }
+        }
+    }
+    std::cout << "\n";
+}
+
 void tst_nlsat() {
+    tst10();
+    std::cout << "------------------\n";
+    exit(0);
     tst9();
     std::cout << "------------------\n";
     exit(0);
