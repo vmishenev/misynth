@@ -149,7 +149,7 @@ protected:
     func_decl * m_mod_0_decl;
     func_decl * m_u_asin_decl;
     func_decl * m_u_acos_decl;
-   
+  
     ptr_vector<app> m_small_ints;
     ptr_vector<app> m_small_reals;
 
