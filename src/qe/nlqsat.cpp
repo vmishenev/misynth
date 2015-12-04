@@ -882,19 +882,27 @@ namespace qe {
             hoist(fml);
             nlsat::literal_vector lits;
             lbool is_sat = l_true;
-            nlsat::var x;  // TBD convert x to variable.
+            nlsat::var x = m_t2x.to_var(_x);  
+            m_mode = qsat_t;
             while (is_sat == l_true) {
                 is_sat = check_sat();
                 if (is_sat == l_true) {
-                    // TBD: extract minimal set of sufficient literals. Use the dual propagation trick.
+                    // m_asms is minimized set of literals that satisfy formula.
                     nlsat::explain& ex = m_solver.get_explain();
-                    ex.maximize(x, lits.size(), lits.c_ptr(), result, unbounded);
+                    polynomial::manager& pm = m_solver.pm();
+                    anum_manager& am = m_solver.am();
+                    ex.maximize(x, m_asms.size(), m_asms.c_ptr(), result, unbounded);
                     if (unbounded) {
                         break;
                     }
                     // TBD: assert the new bound on x using the result.
                     bool is_even = false;
-                    polynomial::polynomial* p = 0; // TBD: x - result
+                    polynomial::polynomial_ref pr(pm);
+                    pr = pm.mk_polynomial(x);
+                    rational r;
+                    am.get_upper(result, r);
+                    // result is algebraic numeral, but polynomials are not defined over extension field.
+                    polynomial::polynomial* p = pr;
                     nlsat::bool_var b = m_solver.mk_ineq_atom(nlsat::atom::GT, 1, &p, &is_even);
                     nlsat::literal bound(b, false);
                     m_solver.mk_clause(1, &bound);
