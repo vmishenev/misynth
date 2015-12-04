@@ -1760,6 +1760,29 @@ namespace nlsat {
 
         }
 
+        void maximize(var x, unsigned num, literal const * ls, scoped_anum& val, bool& unbounded) {
+            svector<literal> lits;
+            polynomial_ref p(m_pm);
+            split_literals(x, num, ls, lits);
+            collect_polys(lits.size(), lits.c_ptr(), m_ps);
+            unbounded = true;
+            scoped_anum x_val(m_am);
+            x_val = m_assignment.value(x);
+            for (unsigned i = 0; i < m_ps.size(); ++i) {
+                p = m_ps.get(i);
+                scoped_anum_vector & roots = m_roots_tmp;
+                roots.reset();
+                m_am.isolate_roots(p, undef_var_assignment(m_assignment, x), roots);
+                for (unsigned j = 0; j < roots.size(); ++j) {
+                    int s = m_am.compare(x_val, roots[j]);
+                    if (s <= 0 && (unbounded || m_am.compare(roots[j], val) <= 0)) {
+                        unbounded = false;
+                        val = roots[j];
+                    }
+                }
+            }
+        }
+
     };
 
     explain::explain(solver & s, assignment const & x2v, polynomial::cache & u, 
@@ -1802,6 +1825,10 @@ namespace nlsat {
 
     void explain::project(var x, unsigned n, literal const * ls, scoped_literal_vector & result) {
         m_imp->project(x, n, ls, result);
+    }
+
+    void explain::maximize(var x, unsigned n, literal const * ls, scoped_anum& val, bool& unbounded) {
+        m_imp->maximize(x, n, ls, val, unbounded);
     }
 
     void explain::test_root_literal(atom::kind k, var y, unsigned i, poly* p, scoped_literal_vector & result) {

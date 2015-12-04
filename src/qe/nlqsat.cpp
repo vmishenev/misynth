@@ -875,6 +875,33 @@ namespace qe {
                 }
             }
         }
+
+        lbool maximize(app* _x, expr* _fml, scoped_anum& result, bool& unbounded) {
+            expr_ref fml(_fml, m);
+            reset();
+            hoist(fml);
+            nlsat::literal_vector lits;
+            lbool is_sat = l_true;
+            nlsat::var x;  // TBD convert x to variable.
+            while (is_sat == l_true) {
+                is_sat = check_sat();
+                if (is_sat == l_true) {
+                    // TBD: extract minimal set of sufficient literals. Use the dual propagation trick.
+                    nlsat::explain& ex = m_solver.get_explain();
+                    ex.maximize(x, lits.size(), lits.c_ptr(), result, unbounded);
+                    if (unbounded) {
+                        break;
+                    }
+                    // TBD: assert the new bound on x using the result.
+                    bool is_even = false;
+                    polynomial::polynomial* p = 0; // TBD: x - result
+                    nlsat::bool_var b = m_solver.mk_ineq_atom(nlsat::atom::GT, 1, &p, &is_even);
+                    nlsat::literal bound(b, false);
+                    m_solver.mk_clause(1, &bound);
+                }
+            }
+            return is_sat;
+        }
         
     };
 };
