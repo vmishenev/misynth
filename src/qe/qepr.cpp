@@ -66,7 +66,6 @@ namespace qe {
         pred_abs                   m_pred_abs;
         smt_params                 m_smtp;
         model_ref                  m_model;
-        volatile bool              m_cancel;
         statistics                 m_st;
         qe::mbp                    m_mbp;
         smt::kernel                m_fa;
@@ -113,8 +112,8 @@ namespace qe {
         }
 
         void check_cancel() {
-            if (m_cancel) {
-                throw tactic_exception(TACTIC_CANCELED_MSG);
+            if (m.canceled()) {
+                throw tactic_exception(m.limit().get_cancel_msg());
             }
         }
 
@@ -585,7 +584,6 @@ namespace qe {
             m(m),            
             m_params(p),
             m_pred_abs(m),
-            m_cancel(false),
             m_mbp(m),
             m_fa(m, m_smtp),
             m_ex(m, m_smtp),
@@ -604,12 +602,6 @@ namespace qe {
         virtual ~qepr() {
             reset();
         }
-
-        virtual void set_cancel(bool f) {
-            m_fa.set_cancel(f);        
-            m_ex.set_cancel(f);        
-            m_cancel = f;
-        }
         
         virtual tactic* translate(ast_manager& m) {
             return alloc(qepr, m, m_params);
@@ -623,7 +615,6 @@ namespace qe {
 
         void cleanup() {
             reset();
-            set_cancel(false);
         }
 
         void collect_statistics(statistics & st) const {
@@ -701,7 +692,6 @@ namespace qe {
             m_pred_abs.reset();
             m_fa.reset();
             m_ex.reset();        
-            m_cancel = false;            
             m_asms.reset();
         }
     };

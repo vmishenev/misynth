@@ -30,6 +30,7 @@ Revision History:
 #include"theory_dummy.h"
 #include"theory_dl.h"
 #include"theory_seq_empty.h"
+#include"theory_seq.h"
 #include"theory_pb.h"
 #include"theory_fpa.h"
 #include"theory_special_relations.h"
@@ -201,7 +202,7 @@ namespace smt {
     void setup::setup_QF_BVRE() {
         setup_QF_BV();
         setup_QF_LIA();
-        m_context.register_plugin(alloc(smt::theory_seq_empty, m_manager));
+        setup_seq();
     }
 
     void setup::setup_QF_UF(static_features const & st) {

@@ -728,7 +728,6 @@ namespace qe {
 
         void cleanup() {
             reset();
-            set_cancel(false);
         }
         
         void set_logic(symbol const & l) {
@@ -741,10 +740,6 @@ namespace qe {
             return alloc(nlqsat, m, m_mode, m_params);
         }
         
-        virtual void set_cancel(bool f) {
-            m_solver.set_cancel(f);      
-            m_cancel = f;
-        }
 
         /**
          

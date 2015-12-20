@@ -204,7 +204,6 @@ namespace nlsat {
         static void collect_param_descrs(param_descrs & d);
 
         void reset();
-        void set_cancel(bool f);
         void collect_statistics(statistics & st);
         void reset_statistics();
         void display_status(std::ostream & out) const;

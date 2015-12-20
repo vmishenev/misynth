@@ -555,7 +555,6 @@ namespace qe {
         vector<app_ref_vector>     m_vars;       // variables from alternating prefixes.
         unsigned                   m_level;
         model_ref                  m_model;
-        volatile bool              m_cancel;
         bool                       m_qelim;       // perform quantifier elimination
         bool                       m_force_elim;  // force elimination of variables during projection.
         app_ref_vector             m_avars;       // variables to project
@@ -653,7 +652,6 @@ namespace qe {
             m_model = 0;
             m_fa.k().reset();
             m_ex.k().reset();        
-            m_cancel = false;
             m_free_vars.reset();
         }    
         
@@ -713,8 +711,8 @@ namespace qe {
         }
         
         void check_cancel() {
-            if (m_cancel) {
-                throw tactic_exception(TACTIC_CANCELED_MSG);
+            if (m.canceled()) {
+                throw tactic_exception(m.limit().get_cancel_msg());
             }
         }
         
@@ -1022,7 +1020,6 @@ namespace qe {
             m_answer(m),
             m_asms(m),
             m_level(0),
-            m_cancel(false),
             m_qelim(qelim),
             m_force_elim(force_elim),
             m_avars(m),
@@ -1129,7 +1126,6 @@ namespace qe {
         
         void cleanup() {
             reset();
-            set_cancel(false);
         }
         
         void set_logic(symbol const & l) {
@@ -1142,11 +1138,6 @@ namespace qe {
             return alloc(qsat, m, m_params, m_qelim, m_force_elim);
         }
         
-        virtual void set_cancel(bool f) {
-            m_fa.k().set_cancel(f);        
-            m_ex.k().set_cancel(f);        
-            m_cancel = f;
-        }
         
     };
     
