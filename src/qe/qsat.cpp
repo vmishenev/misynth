@@ -951,6 +951,8 @@ namespace qe {
                 solver.assert_expr(fmls[i]);
             }
             lbool is_sat = solver.check();
+            CTRACE("qe", is_sat != l_false, 
+                   tout << fmls << "\nare not unsat\n";);
             return (is_sat == l_false);
         }
 
@@ -965,7 +967,14 @@ namespace qe {
         bool validate_model(model& mdl, unsigned sz, expr* const* fmls) {
             expr_ref val(m);
             for (unsigned i = 0; i < sz; ++i) {
-                if (!m_model->eval(fmls[i], val) || !m.is_true(val)) return false;
+                if (!m_model->eval(fmls[i], val)) {
+                    TRACE("qe", tout << "Formula does not evaluate in model: " << mk_pp(fmls[i], m) << "\n";);
+                    return false;
+                } 
+                if (!m.is_true(val)) {
+                    TRACE("qe", tout << mk_pp(fmls[i], m) << " evaluates to " << val << " in model\n";);                    
+                    return false;
+                }
             }               
             return true;
         }
@@ -988,10 +997,16 @@ namespace qe {
                 TRACE("qe", tout << "Not validating partial projection\n";);
                 return true;
             }
-            if (!validate_model(mdl, proj.size(), proj.c_ptr())) return false;
+            if (!validate_model(mdl, proj.size(), proj.c_ptr())) {
+                TRACE("qe", tout << "Projection is false in model\n";);
+                return false;
+            }
             for (unsigned i = 0; i < m_avars.size(); ++i) {
                 contains_app cont(m, m_avars[i].get());
-                if (cont(proj)) return false;
+                if (cont(proj)) {
+                    TRACE("qe", tout << "Projection contains free variable: " << mk_pp(m_avars[i].get(), m) << "\n";);
+                    return false;
+                }
             }
 
             //
@@ -1008,7 +1023,10 @@ namespace qe {
                 fmls.push_back(m.mk_eq(m_avars[i].get(), val));
             }
             fmls.push_back(m.mk_not(mk_and(proj)));
-            return check_fmls(fmls);
+            if (!check_fmls(fmls)) {
+                TRACE("qe", tout << "implication check failed, could be due to turning != into >\n";);
+            }
+            return true;
         }
 
     public:

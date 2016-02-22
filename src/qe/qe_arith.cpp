@@ -451,20 +451,22 @@ namespace qe {
             reset();
             bool found_eq = false;
             for (unsigned i = 0; i < lits.size(); ++i) {
+                bool found_eq0 = false;
                 expr* e = lits[i].get();
                 if (!(*m_var)(e)) {
                     m_new_lits.push_back(e);                    
                 }
-                else if (!is_linear(model, e, found_eq)) {
+                else if (!is_linear(model, e, found_eq0)) {
                     TRACE("qe", tout << "can't project:" << mk_pp(e, m) << "\n";);
                     throw cant_project();
                 }
-                else {
+                if (found_eq0 && !found_eq) {
+                    found_eq = true;
                     eq_index = num_ineqs()-1;
                 }
             }
             TRACE("qe", display(tout << mk_pp(m_var->x(), m) << ":\n");
-                  tout << "found eq: " << found_eq << "\n";
+                  tout << "found eq: " << found_eq << " @ " << eq_index << "\n";
                   tout << "num pos: " << m_num_pos << " num neg: " << m_num_neg << " num divs " << num_divs() << "\n";
                   );
             lits.reset();
@@ -731,6 +733,7 @@ namespace qe {
             m_rw(orig, result);            
             TRACE("qe", tout << mk_pp(orig, m) << " -> " << result << "\n";); 
             SASSERT(lit_is_true(model, orig));
+            SASSERT(lit_is_true(model, result));
             if (!m.is_true(result)) {
                 lits.push_back(result);
             }
@@ -754,13 +757,15 @@ namespace qe {
             }
             for (unsigned i = 0; i < num_ineqs(); ++i) {
                 if (eq_index != i) {
-                    expr_ref lhs(m);
+                    expr_ref lhs(m), val(m);
                     lhs = mk_sub(mk_mul(c, ineq_term(i)), mk_mul(ineq_coeff(i), t));
                     switch (ineq_ty(i)) {
                     case t_lt: lhs = a.mk_lt(lhs, mk_num(0)); break;
                     case t_le: lhs = a.mk_le(lhs, mk_num(0)); break;
                     case t_eq: lhs = m.mk_eq(lhs, mk_num(0)); break;
                     }
+                    TRACE("qe", tout << lhs << "\n";);
+                    SASSERT (model.eval(lhs, val) && m.is_true(val));
                     add_lit(model, lits, lhs);
                 }
             }
