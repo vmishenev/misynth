@@ -21,12 +21,9 @@ Notes:
 #include"nlsat_evaluator.h"
 #include"nlsat_solver.h"
 #include"util.h"
-<<<<<<< HEAD
 #include"nlsat_explain.h"
 #include"polynomial_cache.h"
-=======
 #include"rlimit.h"
->>>>>>> c2ab9b72dc7a30f9e8f2078d44d29f38771c9cfa
 
 nlsat::interval_set_ref tst_interval(nlsat::interval_set_ref const & s1,
                                      nlsat::interval_set_ref const & s2,

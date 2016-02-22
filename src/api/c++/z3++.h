@@ -49,6 +49,7 @@ namespace z3 {
     class context;
     class symbol;
     class params;
+    class param_descrs;
     class ast;
     class sort;
     class func_decl;
@@ -206,6 +207,18 @@ namespace z3 {
         */
         sort bv_sort(unsigned sz);
         /**
+           \brief Return the sort for ASCII strings.
+         */
+        sort string_sort();
+        /**
+           \brief Return a sequence sort over base sort \c s.
+         */
+        sort seq_sort(sort& s);
+        /**
+           \brief Return a regular expression sort over sequences \c seq_sort.
+         */
+        sort re_sort(sort& seq_sort);
+        /**
            \brief Return an array sort for arrays from \c d to \c r.
 
            Example: Given a context \c c, <tt>c.array_sort(c.int_sort(), c.bool_sort())</tt> is an array sort from integer to Boolean.
@@ -261,6 +274,9 @@ namespace z3 {
         expr bv_val(__uint64 n, unsigned sz);
         expr bv_val(char const * n, unsigned sz);
 
+        expr string_val(char const* s);
+        expr string_val(std::string const& s);
+
         expr num_val(int n, sort const & s);
 
         /**
@@ -270,6 +286,9 @@ namespace z3 {
         expr_vector  get_interpolant(expr const& proof, expr const& pat, params const& p);
 
     };
+
+
+
 
     template<typename T>
     class array {
@@ -322,6 +341,30 @@ namespace z3 {
         return out;
     }
 
+
+    class param_descrs : public object {
+        Z3_param_descrs m_descrs;
+    public:
+        param_descrs(context& c, Z3_param_descrs d): object(c), m_descrs(d) { Z3_param_descrs_inc_ref(c, d); }
+        param_descrs(param_descrs const& o): object(o.ctx()), m_descrs(o.m_descrs) { Z3_param_descrs_inc_ref(ctx(), m_descrs); }
+        param_descrs& operator=(param_descrs const& o) {
+            Z3_param_descrs_inc_ref(o.ctx(), o.m_descrs);
+            Z3_param_descrs_dec_ref(ctx(), m_descrs);
+            m_descrs = o.m_descrs;
+            m_ctx = o.m_ctx;
+            return *this;
+        }
+        ~param_descrs() { Z3_param_descrs_dec_ref(ctx(), m_descrs); }
+        static param_descrs simplify_param_descrs(context& c) { return param_descrs(c, Z3_simplify_get_param_descrs(c)); }
+
+        unsigned size() { return Z3_param_descrs_size(ctx(), m_descrs); }
+        symbol name(unsigned i) { return symbol(ctx(), Z3_param_descrs_get_name(ctx(), m_descrs, i)); }
+        Z3_param_kind kind(symbol const& s) { return Z3_param_descrs_get_kind(ctx(), m_descrs, s); }
+        std::string documentation(symbol const& s) { char const* r = Z3_param_descrs_get_documentation(ctx(), m_descrs, s); check_error(); return r; }
+        std::string to_string() const { return Z3_param_descrs_to_string(ctx(), m_descrs); }
+    };
+
+    inline std::ostream& operator<<(std::ostream & out, param_descrs const & d) { return out << d.to_string(); }
 
     class params : public object {
         Z3_params m_params;
@@ -425,6 +468,14 @@ namespace z3 {
             \brief Return true if this sort is a Relation sort.
         */
         bool is_relation() const { return sort_kind() == Z3_RELATION_SORT; }
+        /**
+            \brief Return true if this sort is a Sequence sort.
+        */
+        bool is_seq() const { return sort_kind() == Z3_SEQ_SORT; }
+        /**
+            \brief Return true if this sort is a regular expression sort.
+        */
+        bool is_re() const { return sort_kind() == Z3_RE_SORT; }
         /**
             \brief Return true if this sort is a Finite domain sort.
         */
@@ -532,6 +583,15 @@ namespace z3 {
            \brief Return true if this is a Relation expression.
         */
         bool is_relation() const { return get_sort().is_relation(); }
+        /**
+           \brief Return true if this is a sequence expression.
+        */
+        bool is_seq() const { return get_sort().is_seq(); }
+        /**
+           \brief Return true if this is a regular expression.
+        */
+        bool is_re() const { return get_sort().is_re(); }
+        
         /**
            \brief Return true if this is a Finite-domain expression.
 
@@ -671,6 +731,7 @@ namespace z3 {
 
         friend expr distinct(expr_vector const& args);
         friend expr concat(expr const& a, expr const& b);
+        friend expr concat(expr_vector const& args);
 
         friend expr operator==(expr const & a, expr const & b);
         friend expr operator==(expr const & a, int b);
@@ -736,9 +797,49 @@ namespace z3 {
         friend expr operator|(int a, expr const & b);
 
         friend expr operator~(expr const & a);
-        expr extract(unsigned hi, unsigned lo) const { Z3_ast r = Z3_mk_extract(ctx(), hi, lo, *this); return expr(ctx(), r); }
+        expr extract(unsigned hi, unsigned lo) const { Z3_ast r = Z3_mk_extract(ctx(), hi, lo, *this); ctx().check_error(); return expr(ctx(), r); }        
         unsigned lo() const { assert (is_app() && Z3_get_decl_num_parameters(ctx(), decl()) == 2); return static_cast<unsigned>(Z3_get_decl_int_parameter(ctx(), decl(), 1)); }
         unsigned hi() const { assert (is_app() && Z3_get_decl_num_parameters(ctx(), decl()) == 2); return static_cast<unsigned>(Z3_get_decl_int_parameter(ctx(), decl(), 0)); }
+
+        /**
+           \brief sequence and regular expression operations.
+           + is overloaeded as sequence concatenation and regular expression union.
+           concat is overloaded to handle sequences and regular expressions
+        */
+        expr extract(expr const& offset, expr const& length) const { 
+            check_context(*this, offset); check_context(offset, length);
+            Z3_ast r = Z3_mk_seq_extract(ctx(), *this, offset, length); check_error(); return expr(ctx(), r); 
+        }
+        expr replace(expr const& src, expr const& dst) const {
+            check_context(*this, src); check_context(src, dst);
+            Z3_ast r = Z3_mk_seq_replace(ctx(), *this, src, dst);
+            check_error();
+            return expr(ctx(), r);
+        }
+        expr unit() const {
+            Z3_ast r = Z3_mk_seq_unit(ctx(), *this);
+            check_error();
+            return expr(ctx(), r);
+        }
+        expr contains(expr const& s) {
+            check_context(*this, s);
+            Z3_ast r = Z3_mk_seq_contains(ctx(), *this, s);
+            check_error();
+            return expr(ctx(), r);
+        }
+        expr at(expr const& index) const {
+            check_context(*this, index);
+            Z3_ast r = Z3_mk_seq_at(ctx(), *this, index);
+            check_error();
+            return expr(ctx(), r);
+        }
+        expr length() const {
+            Z3_ast r = Z3_mk_seq_length(ctx(), *this);
+            check_error();
+            return expr(ctx(), r);
+        }
+
+
 
         /**
            \brief Return a simplified version of this expression.
@@ -842,6 +943,13 @@ namespace z3 {
         }
         else if (a.is_bv() && b.is_bv()) {
             r = Z3_mk_bvadd(a.ctx(), a, b);
+        }
+        else if (a.is_seq() && b.is_seq()) {
+            return concat(a, b);
+        }
+        else if (a.is_re() && b.is_re()) {
+            Z3_ast _args[2] = { a, b };
+            r = Z3_mk_re_union(a.ctx(), 2, _args);
         }
         else {
             // operator is not supported by given arguments.
@@ -1227,9 +1335,46 @@ namespace z3 {
 
     inline expr concat(expr const& a, expr const& b) {
         check_context(a, b);
-        Z3_ast r = Z3_mk_concat(a.ctx(), a, b);
+        Z3_ast r;
+        if (Z3_is_seq_sort(a.ctx(), a.get_sort())) {
+            Z3_ast _args[2] = { a, b };
+            r = Z3_mk_seq_concat(a.ctx(), 2, _args);
+        }
+        else if (Z3_is_re_sort(a.ctx(), a.get_sort())) {
+            Z3_ast _args[2] = { a, b };
+            r = Z3_mk_re_concat(a.ctx(), 2, _args);
+        }
+        else {
+            r = Z3_mk_concat(a.ctx(), a, b);
+        }
         a.ctx().check_error();
         return expr(a.ctx(), r);
+    }
+
+    inline expr concat(expr_vector const& args) {
+        Z3_ast r;
+        assert(args.size() > 0);
+        if (args.size() == 1) {
+            return args[0];
+        }
+        context& ctx = args[0].ctx();
+        array<Z3_ast> _args(args);
+        if (Z3_is_seq_sort(ctx, args[0].get_sort())) {
+            r = Z3_mk_seq_concat(ctx, _args.size(), _args.ptr());
+        }
+        else if (Z3_is_re_sort(ctx, args[0].get_sort())) {
+            r = Z3_mk_re_concat(ctx, _args.size(), _args.ptr());
+        }
+        else {
+            r = _args[args.size()-1];
+            for (unsigned i = args.size()-1; i > 0; ) {
+                --i;
+                r = Z3_mk_concat(ctx, _args[i], r);
+                ctx.check_error();
+            }
+        }
+        ctx.check_error();
+        return expr(ctx, r);
     }
 
     class func_entry : public object {
@@ -1463,6 +1608,8 @@ namespace z3 {
                                    fmls,
                                    fml));
         }
+        param_descrs get_param_descrs() { return param_descrs(ctx(), Z3_solver_get_param_descrs(ctx(), m_solver)); }
+
     };
     inline std::ostream & operator<<(std::ostream & out, solver const & s) { out << Z3_solver_to_string(s.ctx(), s); return out; }
 
@@ -1577,6 +1724,7 @@ namespace z3 {
         friend tactic repeat(tactic const & t, unsigned max);
         friend tactic with(tactic const & t, params const & p);
         friend tactic try_for(tactic const & t, unsigned ms);
+        param_descrs get_param_descrs() { return param_descrs(ctx(), Z3_tactic_get_param_descrs(ctx(), m_tactic)); }
     };
 
     inline tactic operator&(tactic const & t1, tactic const & t2) {
@@ -1770,6 +1918,10 @@ namespace z3 {
     inline sort context::int_sort() { Z3_sort s = Z3_mk_int_sort(m_ctx); check_error(); return sort(*this, s); }
     inline sort context::real_sort() { Z3_sort s = Z3_mk_real_sort(m_ctx); check_error(); return sort(*this, s); }
     inline sort context::bv_sort(unsigned sz) { Z3_sort s = Z3_mk_bv_sort(m_ctx, sz); check_error(); return sort(*this, s); }
+    inline sort context::string_sort() { Z3_sort s = Z3_mk_string_sort(m_ctx); check_error(); return sort(*this, s); }
+    inline sort context::seq_sort(sort& s) { Z3_sort r = Z3_mk_seq_sort(m_ctx, s); check_error(); return sort(*this, r); }
+    inline sort context::re_sort(sort& s) { Z3_sort r = Z3_mk_re_sort(m_ctx, s); check_error(); return sort(*this, r); }
+
     inline sort context::array_sort(sort d, sort r) { Z3_sort s = Z3_mk_array_sort(m_ctx, d, r); check_error(); return sort(*this, s); }
     inline sort context::enumeration_sort(char const * name, unsigned n, char const * const * enum_names, func_decl_vector & cs, func_decl_vector & ts) {
         array<Z3_symbol> _enum_names(n);
@@ -1892,6 +2044,9 @@ namespace z3 {
     inline expr context::bv_val(__int64 n, unsigned sz) { Z3_ast r = Z3_mk_int64(m_ctx, n, bv_sort(sz)); check_error(); return expr(*this, r); }
     inline expr context::bv_val(__uint64 n, unsigned sz) { Z3_ast r = Z3_mk_unsigned_int64(m_ctx, n, bv_sort(sz)); check_error(); return expr(*this, r); }
     inline expr context::bv_val(char const * n, unsigned sz) { Z3_ast r = Z3_mk_numeral(m_ctx, n, bv_sort(sz)); check_error(); return expr(*this, r); }
+
+    inline expr context::string_val(char const* s) { Z3_ast r = Z3_mk_string(m_ctx, s); check_error(); return expr(*this, r); }
+    inline expr context::string_val(std::string const& s) { Z3_ast r = Z3_mk_string(m_ctx, s.c_str()); check_error(); return expr(*this, r); }
 
     inline expr context::num_val(int n, sort const & s) { Z3_ast r = Z3_mk_int(m_ctx, n, s); check_error(); return expr(*this, r); }
 
@@ -2025,6 +2180,62 @@ namespace z3 {
         d.check_error();
         return expr(d.ctx(), r);
     }
+
+    // sequence and regular expression operations.
+    // union is +
+    // concat is overloaded to handle sequences and regular expressions
+
+    inline expr empty(sort const& s) {
+        Z3_ast r = Z3_mk_seq_empty(s.ctx(), s);
+        s.check_error();
+        return expr(s.ctx(), r);
+    }
+    inline expr suffixof(expr const& a, expr const& b) {
+        check_context(a, b);
+        Z3_ast r = Z3_mk_seq_suffix(a.ctx(), a, b);
+        a.check_error();
+        return expr(a.ctx(), r);
+    }
+    inline expr prefixof(expr const& a, expr const& b) {
+        check_context(a, b);
+        Z3_ast r = Z3_mk_seq_prefix(a.ctx(), a, b);
+        a.check_error();
+        return expr(a.ctx(), r);
+    }
+    inline expr indexof(expr const& s, expr const& substr, expr const& offset) {
+        check_context(s, substr); check_context(s, offset);
+        Z3_ast r = Z3_mk_seq_index(s.ctx(), s, substr, offset);
+        s.check_error();
+        return expr(s.ctx(), r);
+    }
+    inline expr to_re(expr const& s) {
+        Z3_ast r = Z3_mk_seq_to_re(s.ctx(), s);
+        s.check_error();
+        return expr(s.ctx(), r);
+    }
+    inline expr in_re(expr const& s, expr const& re) {
+        check_context(s, re);
+        Z3_ast r = Z3_mk_seq_in_re(s.ctx(), s, re);
+        s.check_error();
+        return expr(s.ctx(), r);
+    }
+    inline expr plus(expr const& re) {
+        Z3_ast r = Z3_mk_re_plus(re.ctx(), re);
+        re.check_error();
+        return expr(re.ctx(), r);
+    }
+    inline expr option(expr const& re) {
+        Z3_ast r = Z3_mk_re_option(re.ctx(), re);
+        re.check_error();
+        return expr(re.ctx(), r);
+    }
+    inline expr star(expr const& re) {
+        Z3_ast r = Z3_mk_re_star(re.ctx(), re);
+        re.check_error();
+        return expr(re.ctx(), r);
+    }
+
+
     inline expr interpolant(expr const& a) {
         return expr(a.ctx(), Z3_mk_interpolant(a.ctx(), a));
     }

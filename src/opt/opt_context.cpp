@@ -132,7 +132,8 @@ namespace opt {
         m_objective_refs(m),
         m_enable_sat(false),
         m_is_clausal(false),
-        m_pp_neat(false)
+        m_pp_neat(false),
+        m_unknown("unknown")
     {
         params_ref p;
         p.set_bool("model", true);
@@ -487,7 +488,7 @@ namespace opt {
         if (m_solver.get()) {
             return m_solver->reason_unknown();
         }
-        return std::string("unknown"); 
+        return m_unknown;
     }
 
     void context::display_bounds(std::ostream& out, bounds_t const& b) const {
@@ -882,11 +883,11 @@ namespace opt {
             bool neg;
             if (is_maxsat(fml, terms, weights, offset, neg, id, index)) {
                 objective& obj = m_objectives[index];
+
                 if (obj.m_type != O_MAXSMT) {
                     // change from maximize/minimize.
                     obj.m_id = id;
                     obj.m_type = O_MAXSMT;
-                    obj.m_weights.append(weights);
                     SASSERT(!m_maxsmts.contains(id));
                     add_maxsmt(id);
                 }
@@ -894,10 +895,13 @@ namespace opt {
                 SASSERT(obj.m_id == id);
                 obj.m_terms.reset();
                 obj.m_terms.append(terms);
+                obj.m_weights.reset();
+                obj.m_weights.append(weights);
                 obj.m_adjust_value.set_offset(offset);
                 obj.m_adjust_value.set_negate(neg);
                 m_maxsmts.find(id)->set_adjust_value(obj.m_adjust_value);
-                TRACE("opt", tout << "maxsat: " << id << " offset:" << offset << "\n";);
+                TRACE("opt", tout << "maxsat: " << id << " offset:" << offset << "\n";
+                      tout << terms << "\n";);
             }
             else if (is_maximize(fml, tr, orig_term, index)) {
                 purify(tr);

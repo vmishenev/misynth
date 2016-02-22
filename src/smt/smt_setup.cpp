@@ -816,7 +816,7 @@ namespace smt {
     }
 
     void setup::setup_seq() {
-        m_context.register_plugin(alloc(theory_seq_empty, m_manager));
+        m_context.register_plugin(alloc(theory_seq, m_manager));
     }
 
     void setup::setup_card() {
@@ -853,6 +853,9 @@ namespace smt {
                 setup_AUFLIA(false);
             setup_datatypes();
             setup_bv();
+            setup_dl();
+            setup_seq();
+            setup_card();
             setup_fpa();
             return;
         }

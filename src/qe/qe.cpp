@@ -595,7 +595,7 @@ namespace qe {
                 p = m_pols.back();
                 if (!m_is_relevant(e)) {
                     pop();
-                    insert(e, p, p?e:m.mk_not(e));
+                    insert(e, p, p?e:mk_not(m, e));
                     continue;
                 }
                 if (!is_app(e)) {
@@ -633,7 +633,7 @@ namespace qe {
                 }
                 else {
                     pop();
-                    insert(e, p, p?e:m.mk_not(e));
+                    insert(e, p, p?e:mk_not(m, e));
                 }
 
             }
@@ -1207,7 +1207,7 @@ namespace qe {
                 }
                 bool_rewriter(m).mk_or(fmls.size(), fmls.c_ptr(), fml);
                 
-                fml = m.mk_not(m.mk_iff(q, fml));
+                fml = mk_not(m, m.mk_iff(q, fml));
                 ast_smt_pp pp(m);
                 out << "; eliminate " << mk_pp(m_var, m) << "\n";
                 out << "(push)\n";
@@ -1302,12 +1302,7 @@ namespace qe {
             }
         }
         TRACE("qe_verbose", tout << "No plugin for " << mk_ismt2_pp(e, m) << "\n";);
-        if (p || m.is_not(e, e)) {
-            result = e;
-        } 
-        else {
-            result = m.mk_not(e);
-        }
+        result = p?e:mk_not(m, e);
     }
 
     void i_solver_context::mk_atom_fn::operator()(expr* e, bool p, expr_ref& result) {
@@ -1435,7 +1430,7 @@ namespace qe {
                 m_fml = f;
                 f = m_subfml;                
                 m_solver.assert_expr(f);
-            }           
+            }
             m_root.init(f);                       
             TRACE("qe", 
                   for (unsigned i = 0; i < num_vars; ++i) tout << mk_ismt2_pp(vars[i], m) << "\n";
@@ -1590,7 +1585,7 @@ namespace qe {
             }
             m_literals.reset();
             while (node) {
-                m_literals.push_back(m.mk_not(node->assignment()));
+                m_literals.push_back(mk_not(m, node->assignment()));
                 node = node->parent();
             }    
             add_literal(l1);
@@ -1864,7 +1859,7 @@ namespace qe {
         //
         app* mk_eq_value(app* b, rational const& vl) {
             if (m.is_bool(b)) {
-                if (vl.is_zero()) return m.mk_not(b);
+                if (vl.is_zero()) return to_app(mk_not(m, b));
                 if (vl.is_one()) return b;
                 UNREACHABLE();
             }        
@@ -2603,12 +2598,12 @@ namespace qe {
             TRACE("qe", tout << "variables extracted" << mk_pp(result, m) << "\n";);
 
             if (old_q->is_forall()) {
-                result = m.mk_not(result);
+                result = mk_not(m, result);
             }
             m_ctx.solve(result, vars);
             if (old_q->is_forall()) {
                 expr* e = 0;
-                result = m.is_not(result, e)?e:m.mk_not(result);
+                result = m.is_not(result, e)?e:mk_not(m, result);
             }       
             var_shifter shift(m);
             shift(result, vars.size(), result);

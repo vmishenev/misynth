@@ -36,6 +36,7 @@ namespace sat {
         memcpy(m_lits, lits, sizeof(literal) * sz);
         mark_strengthened();
         SASSERT(check_approx());
+        SASSERT(sz > 1);
     }
 
     var_approx_set clause::approx(unsigned num, literal const * lits) {
@@ -144,7 +145,8 @@ namespace sat {
                 return i;
         i = m_num_segments;
         m_num_segments++;
-        if (i > c_max_segments)
+        SASSERT(m_num_segments <= c_max_segments);
+        if (i >= c_max_segments)
             throw default_exception("segment out of range");
         m_segments[i] = ptr;
         return i;
@@ -169,6 +171,7 @@ namespace sat {
 #endif
         void * mem = m_allocator.allocate(size);
         clause * cls = new (mem) clause(m_id_gen.mk(), num_lits, lits, learned);
+        TRACE("sat", tout << "alloc: " << cls->id() << " " << cls << " " << *cls << " " << (learned?"l":"a") << "\n";);
         SASSERT(!learned || cls->is_learned());
         return cls;
     }

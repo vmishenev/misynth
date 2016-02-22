@@ -38,6 +38,15 @@ namespace smt {
     }
 
     template<typename Ext>
+    void theory_arith<Ext>::found_underspecified_op(app * n) {
+        if (!m_found_underspecified_op) {
+            TRACE("arith", tout << "found non underspecificed expression:\n" << mk_pp(n, get_manager()) << "\n";);
+            get_context().push_trail(value_trail<context, bool>(m_found_underspecified_op));
+            m_found_underspecified_op = true;
+        }
+    }
+
+    template<typename Ext>
     bool theory_arith<Ext>::process_atoms() const {
         if (!adaptive())
             return true;
@@ -56,11 +65,47 @@ namespace smt {
     }
 
     template<typename Ext>
+    bool theory_arith<Ext>::is_int_expr(expr* e) {
+#if 0
+        return m_util.is_int(e);
+#else
+        if (m_util.is_int(e)) return true;
+        if (is_uninterp(e)) return false;
+        m_todo.reset();
+        m_todo.push_back(e);
+        rational r;
+        unsigned i = 0;
+        while (!m_todo.empty()) {
+            ++i;
+            if (i > 100) {
+                return false;
+            }
+            e = m_todo.back();
+            m_todo.pop_back();
+            if (m_util.is_to_real(e)) {
+                // pass
+            }
+            else if (m_util.is_numeral(e, r) && r.is_int()) {
+                // pass
+            }
+            else if (m_util.is_add(e) || m_util.is_mul(e)) {
+                m_todo.append(to_app(e)->get_num_args(), to_app(e)->get_args());
+            }
+            else {
+                return false;
+            }
+        }
+        return true;
+#endif
+    }
+
+
+    template<typename Ext>
     theory_var theory_arith<Ext>::mk_var(enode * n) {
         theory_var r = theory::mk_var(n);
         SASSERT(r == static_cast<int>(m_columns.size()));
         SASSERT(check_vector_sizes());
-        bool is_int  = m_util.is_int(n->get_owner());
+        bool is_int  = is_int_expr(n->get_owner());
         TRACE("mk_arith_var", tout << mk_pp(n->get_owner(), get_manager()) << " is_int: " << is_int << "\n";);
         m_columns          .push_back(column());
         m_data             .push_back(var_data(is_int));
@@ -153,6 +198,15 @@ namespace smt {
     }
 
     /**
+       \brief access the current set of variables associated with row.
+     */
+    template<typename Ext>
+    uint_set& theory_arith<Ext>::row_vars() {
+        SASSERT(m_row_vars_top > 0);
+        return m_row_vars[m_row_vars_top-1];
+    }
+
+    /**
        \brief Add coeff * v to the row r.
        The column is also updated.
     */
@@ -161,6 +215,26 @@ namespace smt {
     void theory_arith<Ext>::add_row_entry(unsigned r_id, numeral const & coeff, theory_var v) {
         row    & r          = m_rows[r_id];
         column & c          = m_columns[v];
+        if (row_vars().contains(v)) {
+            typename vector<row_entry>::iterator it = r.begin_entries();
+            typename vector<row_entry>::iterator end = r.end_entries();
+            bool found = false;
+            for (; !found && it != end; ++it) {
+                SASSERT(!it->is_dead());
+                if (it->m_var == v) {
+                    if (invert) {
+                        it->m_coeff -= coeff;
+                    }
+                    else {
+                        it->m_coeff += coeff;
+                    }
+                    found = true;
+                }
+            }
+            SASSERT(found);
+            return;
+        }
+        row_vars().insert(v);
         int r_idx;
         row_entry & r_entry = r.add_row_entry(r_idx);
         int c_idx;
@@ -193,12 +267,13 @@ namespace smt {
             }
         }
         rational _val; 
-        if (m_util.is_mul(m) && m_util.is_numeral(m->get_arg(0), _val)) {
+        expr* arg1, *arg2;
+        if (m_util.is_mul(m, arg1, arg2) && m_util.is_numeral(arg1, _val)) {
             SASSERT(m->get_num_args() == 2);
             numeral val(_val);
-            theory_var v = internalize_term_core(to_app(m->get_arg(1)));
+            theory_var v = internalize_term_core(to_app(arg2));
             if (reflection_enabled()) {
-                internalize_term_core(to_app(m->get_arg(0)));
+                internalize_term_core(to_app(arg1));
                 mk_enode(m);
             }
             add_row_entry<true>(r_id, val, v);
@@ -219,6 +294,7 @@ namespace smt {
         CTRACE("internalize_add_bug", n->get_num_args() == 2 && n->get_arg(0) == n->get_arg(1), tout << "n: " << mk_pp(n, get_manager()) << "\n";);
         SASSERT(m_util.is_add(n));
         unsigned r_id = mk_row();
+        scoped_row_vars _sc(m_row_vars, m_row_vars_top);
         unsigned num_args = n->get_num_args();
         for (unsigned i = 0; i < num_args; i++) {
             internalize_internal_monomial(to_app(n->get_arg(i)), r_id);
@@ -279,6 +355,7 @@ namespace smt {
             numeral val(_val);
             SASSERT(!val.is_one());
             unsigned r_id = mk_row();
+            scoped_row_vars _sc(m_row_vars, m_row_vars_top);
             if (reflection_enabled())
                 internalize_term_core(to_app(m->get_arg(0)));
             theory_var v = internalize_mul_core(to_app(m->get_arg(1)));
@@ -308,6 +385,7 @@ namespace smt {
 
     template<typename Ext>
     theory_var theory_arith<Ext>::internalize_div(app * n) {
+        found_underspecified_op(n);
         theory_var s      = mk_binary_op(n);
         context & ctx     = get_context();
         if (!ctx.relevancy())
@@ -317,6 +395,7 @@ namespace smt {
 
     template<typename Ext>
     theory_var theory_arith<Ext>::internalize_idiv(app * n) {
+        found_underspecified_op(n);
         theory_var s      = mk_binary_op(n);
         context & ctx     = get_context();
         app * mod         = m_util.mk_mod(n->get_arg(0), n->get_arg(1));
@@ -329,6 +408,7 @@ namespace smt {
     template<typename Ext>
     theory_var theory_arith<Ext>::internalize_mod(app * n) {
         TRACE("arith_mod", tout << "internalizing...\n" << mk_pp(n, get_manager()) << "\n";);
+        found_underspecified_op(n);
         theory_var s      = mk_binary_op(n);
         context & ctx     = get_context();
         if (!ctx.relevancy())
@@ -338,6 +418,7 @@ namespace smt {
 
     template<typename Ext>
     theory_var theory_arith<Ext>::internalize_rem(app * n) {
+        found_underspecified_op(n);
         theory_var s  = mk_binary_op(n);
         context & ctx = get_context();
         if (!ctx.relevancy()) {
@@ -568,6 +649,7 @@ namespace smt {
         enode * e      = mk_enode(n);
         theory_var r   = mk_var(e);
         unsigned r_id = mk_row();
+        scoped_row_vars _sc(m_row_vars, m_row_vars_top);
         add_row_entry<true>(r_id, numeral(1), arg);
         add_row_entry<false>(r_id, numeral(1), r);
         init_row(r_id);
@@ -594,6 +676,25 @@ namespace smt {
         m_value[v]   = ival;
         return v;
     }
+
+    template<typename Ext>
+    class theory_arith<Ext>::scoped_row_vars {
+        unsigned& m_top;
+    public:
+        scoped_row_vars(vector<uint_set>& row_vars, unsigned& top):
+            m_top(top)
+        {
+            SASSERT(row_vars.size() >= top);
+            if (row_vars.size() == top) {
+                row_vars.push_back(uint_set());
+            }
+            row_vars[top].reset();
+            ++m_top;
+        }
+        ~scoped_row_vars() {
+            --m_top;            
+        }
+    };
 
     /**
        \brief Internalize the given term and return an alias for it.
@@ -822,7 +923,6 @@ namespace smt {
     void theory_arith<Ext>::mk_bound_axioms(atom * a1) {
         theory_var v = a1->get_var();
         atoms & occs = m_var_occs[v];
-        //SASSERT(v != 15);
         TRACE("mk_bound_axioms", tout << "add bound axioms for v" << v << " " << a1 << "\n";);
         if (!get_context().is_searching()) {
             //
@@ -961,9 +1061,9 @@ namespace smt {
                     --i;
                 }
             }            
-            TRACE("arith", 
+            CTRACE("arith", !atoms.empty(),  
                   for (unsigned i = 0; i < atoms.size(); ++i) {
-                      atoms[i]->display(*this, tout);
+                      atoms[i]->display(*this, tout); tout << "\n";
                   });
             ptr_vector<atom> occs(m_var_occs[v]);
 
@@ -1093,6 +1193,8 @@ namespace smt {
             kind = A_LOWER;
         app * lhs      = to_app(n->get_arg(0));
         app * rhs      = to_app(n->get_arg(1));
+        expr * rhs2;
+        if (m_util.is_to_real(rhs, rhs2) && is_app(rhs2)) { rhs = to_app(rhs2); }
         SASSERT(m_util.is_numeral(rhs));
         theory_var v   = internalize_term_core(lhs);
         if (v == null_theory_var) {
@@ -1514,6 +1616,7 @@ namespace smt {
         m_util(m),
         m_arith_eq_solver(m),
         m_found_unsupported_op(false),
+        m_found_underspecified_op(false),
         m_arith_eq_adapter(*this, params, m_util),
         m_asserted_qhead(0),
         m_to_patch(1024),
@@ -1528,6 +1631,7 @@ namespace smt {
         m_liberal_final_check(true),
         m_changed_assignment(false),
         m_assume_eq_head(0),
+        m_row_vars_top(0),
         m_nl_rounds(0),
         m_nl_gb_exhausted(false),
         m_nl_new_exprs(m),
@@ -3026,7 +3130,7 @@ namespace smt {
             theory_var num = get_num_vars();
             bool refine = false;
             for (theory_var v = 0; v < num; v++) {
-                if (is_int(v))
+                if (is_int_src(v))
                     continue;
                 if (!get_context().is_shared(get_enode(v)))
                     continue;
@@ -3037,7 +3141,7 @@ namespace smt {
                 rational value = val.get_rational().to_rational() + m_epsilon.to_rational() * val.get_infinitesimal().to_rational();
                 theory_var v2;
                 if (mapping.find(value, v2)) {
-                    SASSERT(!is_int(v2));
+                    SASSERT(!is_int_src(v2));
                     if (get_value(v) != get_value(v2)) {
                         // v and v2 are not known to be equal. 
                         // The choice of m_epsilon is making them equal.
@@ -3079,7 +3183,7 @@ namespace smt {
             TRACE("arith", tout << "Truncating non-integer value. This is possible for non-linear constraints v" << v << " " << num << "\n";);
             num = floor(num);
         }
-        return alloc(expr_wrapper_proc, m_factory->mk_value(num, is_int(v)));
+        return alloc(expr_wrapper_proc, m_factory->mk_value(num, m_util.is_int(var2expr(v))));
     }
 
     // -----------------------------------
@@ -3089,20 +3193,35 @@ namespace smt {
     // -----------------------------------
 
     template<typename Ext>
-    bool theory_arith<Ext>::get_value(enode * n, expr_ref & r) {
-        theory_var v = n->get_th_var(get_id());
-        if (v == null_theory_var) {
-            // TODO: generate fresh value different from other get_value(v) for all v.
-            return false; 
+    bool theory_arith<Ext>::to_expr(inf_numeral const& val, bool is_int, expr_ref & r) {
+        if (val.get_infinitesimal().is_zero()) {            
+            numeral _val = val.get_rational();
+            r = m_util.mk_numeral(_val.to_rational(), is_int);
+            return true;
         }
-        inf_numeral const & val = get_value(v);
-        if (!val.get_infinitesimal().is_zero()) {
-            // TODO: add support for infinitesimals
+        else {
             return false;
         }
-        numeral _val = val.get_rational();
-        r = m_util.mk_numeral(_val.to_rational(), is_int(v));
-        return true;
+    }
+
+    template<typename Ext>
+    bool theory_arith<Ext>::get_value(enode * n, expr_ref & r) {
+        theory_var v = n->get_th_var(get_id());
+        return v != null_theory_var && to_expr(get_value(v), is_int(v), r);
+    }
+
+    template<typename Ext>
+    bool theory_arith<Ext>::get_lower(enode * n, expr_ref & r) {        
+        theory_var v = n->get_th_var(get_id());
+        bound* b = (v == null_theory_var) ? 0 : lower(v);
+        return b && to_expr(b->get_value(), is_int(v), r);
+    }
+    
+    template<typename Ext>
+    bool theory_arith<Ext>::get_upper(enode * n, expr_ref & r) {        
+        theory_var v = n->get_th_var(get_id());
+        bound* b = (v == null_theory_var) ? 0 : upper(v);
+        return b && to_expr(b->get_value(), is_int(v), r);
     }
     
     // -----------------------------------
