@@ -45,9 +45,6 @@ public:
     void operator()(expr * t, expr_ref & result, proof_ref & result_pr);
     void operator()(expr * n, unsigned num_bindings, expr * const * bindings, expr_ref & result);
 
-    void cancel() { set_cancel(true); }
-    void reset_cancel() { set_cancel(false); }
-    void set_cancel(bool f);
     void cleanup();
     void reset();
     void mk_app(family_id fid, decl_kind k, unsigned num_args, expr * const * args, unsigned np, parameter const* params, expr_ref& result);

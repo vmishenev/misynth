@@ -22,6 +22,7 @@ Revision History:
 #include"smt_enode.h"
 #include"obj_hashtable.h"
 #include"statistics.h"
+#include<typeinfo>
 
 namespace smt {
     class model_generator;
@@ -316,10 +317,10 @@ namespace smt {
         
         virtual void display(std::ostream & out) const = 0;
 #if 0
-{
-            out << "Theory " << static_cast<int>(get_id()) << " does not have a display method\n";
+        {
+            out << "Theory " << static_cast<int>(get_id()) << typeid(*this).name() << " does not have a display method\n";
             display_var2enode(out);
-        }
+ }
 #endif
         virtual void display_var2enode(std::ostream & out) const;
         

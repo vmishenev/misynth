@@ -34,7 +34,6 @@ class bvarray2uf_tactic : public tactic {
         bool                m_produce_models;
         bool                m_produce_proofs;
         bool                m_produce_cores;
-        volatile bool       m_cancel;
         bvarray2uf_rewriter m_rw;
 
         ast_manager & m() { return m_manager; }
@@ -44,18 +43,14 @@ class bvarray2uf_tactic : public tactic {
             m_produce_models(false),
             m_produce_proofs(false),
             m_produce_cores(false),
-            m_cancel(false),
             m_rw(m, p) {
             updt_params(p);
         }
 
-        void set_cancel(bool f) {
-            m_cancel = f;
-        }
 
         void checkpoint() {
-            if (m_cancel)
-                throw tactic_exception(TACTIC_CANCELED_MSG);
+            if (m_manager.canceled())
+                throw tactic_exception(m_manager.limit().get_cancel_msg());
         }
 
         void operator()(goal_ref const & g,
@@ -148,16 +143,8 @@ public:
     virtual void cleanup() {
         ast_manager & m = m_imp->m();
         imp * d = alloc(imp, m, m_params);
-    #pragma omp critical (tactic_cancel)
-        {
-            std::swap(d, m_imp);
-        }
+        std::swap(d, m_imp);        
         dealloc(d);
-    }
-
-    virtual void set_cancel(bool f) {
-        if (m_imp)
-            m_imp->set_cancel(f);
     }
 
 };
