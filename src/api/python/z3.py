@@ -48,6 +48,7 @@ from z3printer import *
 from fractions import Fraction
 import sys
 import io
+import math
 
 if sys.version < '3':
     def _is_int(v):
@@ -7973,7 +7974,7 @@ class FPSortRef(SortRef):
        return int(Z3_fpa_get_ebits(self.ctx_ref(), self.ast))
 
     def sbits(self):
-       """Retrieves the number of bits reserved for the exponent in the FloatingPoint sort `self`.
+       """Retrieves the number of bits reserved for the significand in the FloatingPoint sort `self`.
        >>> b = FPSort(8, 24)
        >>> b.sbits()
        24
@@ -7981,8 +7982,7 @@ class FPSortRef(SortRef):
        return int(Z3_fpa_get_sbits(self.ctx_ref(), self.ast))
 
     def cast(self, val):
-        """Try to cast `val` as a Floating-point expression
-
+        """Try to cast `val` as a floating-point expression.
         >>> b = FPSort(8, 24)
         >>> b.cast(1.0)
         1
@@ -8108,10 +8108,6 @@ class FPRef(ExprRef):
 
     def __gt__(self, other):
         return fpGT(self, other, self.ctx)
-
-    def __ne__(self, other):
-        return fpNEQ(self, other, self.ctx)
-
 
     def __add__(self, other):
         """Create the Z3 expression `self + other`.
@@ -8423,11 +8419,24 @@ def FPSort(ebits, sbits, ctx=None):
 
 def _to_float_str(val, exp=0):
     if isinstance(val, float):
-        v = val.as_integer_ratio()
-        num = v[0]
-        den = v[1]
-        rvs = str(num) + '/' + str(den)
-        res = rvs + 'p' + _to_int_str(exp)
+        if math.isnan(val):
+            res = "NaN"
+        elif val == 0.0:
+            sone = math.copysign(1.0, val)
+            if sone < 0.0:
+                return "-0.0"
+            else:
+                return "+0.0"
+        elif val == float("+inf"):
+            res = "+oo"
+        elif val == float("-inf"):
+            res = "-oo"
+        else:
+            v = val.as_integer_ratio()
+            num = v[0]
+            den = v[1]
+            rvs = str(num) + '/' + str(den)
+            res = rvs + 'p' + _to_int_str(exp)
     elif isinstance(val, bool):
         if val:
             res = "1.0"
@@ -8525,6 +8534,12 @@ def FPVal(sig, exp=None, fps=None, ctx=None):
     >>> v = FPVal(-2.25, FPSort(8, 24))
     >>> v
     -1.125*(2**1)
+    >>> FPVal(-0.0, FPSort(8, 24))
+    -0.0
+    >>> FPVal(0.0, FPSort(8, 24))
+    +0.0
+    >>> FPVal(+0.0, FPSort(8, 24))
+    +0.0
     """
     ctx = _get_ctx(ctx)
     if is_fp_sort(exp):
@@ -8536,7 +8551,18 @@ def FPVal(sig, exp=None, fps=None, ctx=None):
     if exp == None:
         exp = 0
     val = _to_float_str(sig)
-    return FPNumRef(Z3_mk_numeral(ctx.ref(), val, fps.ast), ctx)
+    if val == "NaN" or val == "nan":
+        return fpNaN(fps)
+    elif val == "-0.0":
+        return fpMinusZero(fps)
+    elif val == "0.0" or val == "+0.0":
+        return fpPlusZero(fps)
+    elif val == "+oo" or val == "+inf" or val == "+Inf":
+        return fpPlusInfinity(fps)
+    elif val == "-oo" or val == "-inf" or val == "-Inf":
+        return fpMinusInfinity(fps)
+    else:
+        return FPNumRef(Z3_mk_numeral(ctx.ref(), val, fps.ast), ctx)
 
 def FP(name, fpsort, ctx=None):
     """Return a floating-point constant named `name`.
@@ -8895,7 +8921,7 @@ def fpNEQ(a, b, ctx=None):
     >>> fpNEQ(x, y)
     Not(fpEQ(x, y))
     >>> (x != y).sexpr()
-    '(not (fp.eq x y))'
+    '(distinct x y)'
     """
     return Not(fpEQ(a, b, ctx))
 
