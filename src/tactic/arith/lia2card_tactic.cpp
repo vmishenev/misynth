@@ -332,15 +332,6 @@ public:
             ok &= get_sum(u, mul, conds, args, coeffs, coeff);
             conds.pop_back();            
         }
-        else if (m.is_ite(x, y, z, u) && is_numeral(u, r) && r.is_zero()) {
-            unsigned sz = args.size();
-            ok = get_pb_sum(z, mul, args, coeffs, coeff);
-            if (ok) {
-                for (unsigned i = sz; i < args.size(); ++i) {
-                    args[i] = m.mk_and(y, args[i].get());
-                }
-            }            
-        }
         else if (is_01var(x)) {
             insert_arg(mul, conds, mk_01(x), args, coeffs, coeff);
         }

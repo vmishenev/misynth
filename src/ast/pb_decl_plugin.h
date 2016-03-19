@@ -116,6 +116,8 @@ public:
 
     app* mk_fresh_bool();
 
+
+private:
     rational to_rational(parameter const& p) const;
 };
 

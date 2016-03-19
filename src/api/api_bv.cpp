@@ -74,7 +74,9 @@ extern "C" {
     Z3_ast mk_extract_core(Z3_context c, unsigned high, unsigned low, Z3_ast n) {
         expr * _n = to_expr(n);
         parameter params[2] = { parameter(high), parameter(low) };
-        expr * a = mk_c(c)->mk_app(mk_c(c)->get_bv_fid(), OP_EXTRACT, 2, params, 1, &_n);
+        expr * a = mk_c(c)->m().mk_app(mk_c(c)->get_bv_fid(), OP_EXTRACT, 2, params, 1, &_n);
+        mk_c(c)->save_ast_trail(a);  
+        check_sorts(c, a);
         return of_ast(a);
     }
     
@@ -94,7 +96,9 @@ Z3_ast Z3_API NAME(Z3_context c, unsigned i, Z3_ast n) {                \
     RESET_ERROR_CODE();                                                 \
     expr * _n = to_expr(n);                                             \
     parameter p(i);                                                     \
-    ast* a = mk_c(c)->mk_app(mk_c(c)->get_bv_fid(), OP, 1, &p, 1, &_n); \
+    ast* a = mk_c(c)->m().mk_app(mk_c(c)->get_bv_fid(), OP, 1, &p, 1, &_n); \
+    mk_c(c)->save_ast_trail(a);                                         \
+    check_sorts(c, a);                                                  \
     RETURN_Z3(of_ast(a));                                               \
     Z3_CATCH_RETURN(0);                                                 \
 }
@@ -138,7 +142,9 @@ Z3_ast Z3_API NAME(Z3_context c, unsigned i, Z3_ast n) {                \
         else {
             expr * _n = to_expr(n);                                                     
             parameter p(to_sort(int_s));                                                             
-            ast* a = mk_c(c)->mk_app(mk_c(c)->get_bv_fid(), OP_BV2INT, 1, &p, 1, &_n);   
+            ast* a = mk_c(c)->m().mk_app(mk_c(c)->get_bv_fid(), OP_BV2INT, 1, &p, 1, &_n);   
+            mk_c(c)->save_ast_trail(a);                                                 
+            check_sorts(c, a);                                                          
             RETURN_Z3(of_ast(a)); 
         }
         Z3_CATCH_RETURN(0);
