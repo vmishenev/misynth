@@ -117,7 +117,7 @@ namespace pdr {
     void core_farkas_generalizer::operator()(model_node& n, expr_ref_vector& core, bool& uses_level) {
         ast_manager& m  = n.pt().get_manager();
         if (core.empty()) return;
-        expr_ref A(m), B(mk_and(core), m), C(m);
+        expr_ref A(m), B(mk_and(core)), C(m);
         expr_ref_vector Bs(m);
         flatten_or(B, Bs);
         A = n.pt().get_propagation_formula(m_ctx.get_pred_transformers(), n.level());
@@ -129,7 +129,7 @@ namespace pdr {
             if (m_farkas_learner.get_lemma_guesses(A, B, lemmas)) {
                 TRACE("pdr", 
                       tout << "Old core:\n" << mk_pp(B, m) << "\n";
-                      tout << "New core:\n" << mk_pp(mk_and(lemmas), m) << "\n";);            
+                      tout << "New core:\n" << mk_and(lemmas) << "\n";);            
                 Bs[i] = mk_and(lemmas);
                 change = true;
             }
@@ -186,7 +186,7 @@ namespace pdr {
         }        
         closure cl(n.pt(), m_is_closure);
 
-        expr_ref fml1(mk_and(core), m);
+        expr_ref fml1 = mk_and(core);        
         expr_ref fml2 = n.pt().get_formulas(n.level(), false);
         fml1_2.push_back(fml1);
         fml1_2.push_back(0);
@@ -205,7 +205,7 @@ namespace pdr {
             if (l_false == n.pt().is_reachable(nd, &conv2, uses_level1)) {
                 new_cores.push_back(std::make_pair(conv2, uses_level1));
                 change = true;
-                expr_ref state1(mk_and(conv2), m);
+                expr_ref state1 = mk_and(conv2);
                 TRACE("pdr", 
                       tout << mk_pp(state, m) << "\n";
                       tout << "Generalized to:\n" << mk_pp(state1, m) << "\n";);
@@ -741,7 +741,7 @@ namespace pdr {
                 }                
             }
 
-            expr_ref result(mk_and(conjs), m);
+            expr_ref result = mk_and(conjs);
             TRACE("pdr", tout << mk_pp(result, m) << "\n";);
             return result;
         }
