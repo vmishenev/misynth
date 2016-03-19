@@ -87,10 +87,9 @@ public:
     br_status mk_to_ieee_bv(parameter const& p, expr * arg, expr_ref & result);
     br_status mk_to_real(expr * arg, expr_ref & result);
 
-    br_status mk_to_ubv_unspecified(parameter const& p, expr_ref & result);
-    br_status mk_to_sbv_unspecified(parameter const& p, expr_ref & result);
-    br_status mk_to_ieee_bv_unspecified(parameter const& p, expr_ref & result);
-    br_status mk_to_real_unspecified(expr_ref & result);
+    br_status mk_to_ubv_unspecified(unsigned ebits, unsigned sbits, unsigned with, expr_ref & result);
+    br_status mk_to_sbv_unspecified(unsigned ebits, unsigned sbits, unsigned with, expr_ref & result);
+    br_status mk_to_real_unspecified(unsigned ebits, unsigned sbits, expr_ref & result);
 };
 
 #endif

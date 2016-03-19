@@ -604,6 +604,14 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
         return st;
     }
 
+    expr_ref mk_app(func_decl* f, unsigned num_args, expr* const* args) {
+        expr_ref result(m());
+        proof_ref pr(m());
+        if (BR_FAILED == reduce_app(f, num_args, args, result, pr)) {
+            result = m().mk_app(f, num_args, args);
+        }
+        return result;
+    }
 
 
     bool reduce_quantifier(quantifier * old_q, 
@@ -723,6 +731,9 @@ struct th_rewriter::imp : public rewriter_tpl<th_rewriter_cfg> {
         rewriter_tpl<th_rewriter_cfg>(m, m.proofs_enabled(), m_cfg),
         m_cfg(m, p) {
     }
+    expr_ref mk_app(func_decl* f, unsigned sz, expr* const* args) {
+        return m_cfg.mk_app(f, sz, args);
+    }
 };
 
 th_rewriter::th_rewriter(ast_manager & m, params_ref const & p):
@@ -813,4 +824,8 @@ void th_rewriter::reset_used_dependencies() {
         set_substitution(m_imp->cfg().m_subst); // reset cache preserving subst
         m_imp->cfg().m_used_dependencies = 0;
     }
+}
+
+expr_ref th_rewriter::mk_app(func_decl* f, unsigned num_args, expr* const* args) {
+    return m_imp->mk_app(f, num_args, args);
 }

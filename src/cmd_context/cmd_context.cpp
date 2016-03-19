@@ -1456,6 +1456,7 @@ void cmd_context::check_sat(unsigned num_assumptions, expr * const * assumptions
             throw ex;
         }
         catch (z3_exception & ex) {
+            get_opt()->display_assignment(regular_stream());
             throw cmd_exception(ex.msg());
         }
         if (was_pareto && r == l_false) {
