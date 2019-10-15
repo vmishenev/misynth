@@ -3209,7 +3209,8 @@ namespace sat {
                 else {
                     is_sat = bounded_search();
                     if (is_sat == l_undef) {
-                        restart();      
+                        restart(); 
+                        propagate(false);
                     }
                 }
             }
