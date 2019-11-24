@@ -1,0 +1,13 @@
+z3_add_component(misynth
+  SOURCES
+    synthlib_cmds.cpp
+    misynth_solver.cpp
+  COMPONENT_DEPENDENCIES
+    bmc
+    clp
+    ddnf
+    muz
+    rel
+    spacer
+    tab
+)

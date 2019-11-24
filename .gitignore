@@ -79,3 +79,6 @@ doc/code
 .vs
 examples/**/obj
 CMakeSettings.json
+#QT Creator
+CMakeLists.txt.user
+*.swp

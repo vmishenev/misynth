@@ -30,6 +30,7 @@ Revision History:
 #include "cmd_context/extra_cmds/subpaving_cmds.h"
 #include "smt/smt2_extra_cmds.h"
 #include "smt/smt_solver.h"
+#include "misynth/synthlib_cmds.h"
 
 static std::mutex *display_stats_mux = new std::mutex;
 
@@ -75,6 +76,15 @@ unsigned read_smtlib2_commands(char const * file_name) {
     install_subpaving_cmds(ctx);
     install_opt_cmds(ctx);
     install_smt2_extra_cmds(ctx);
+
+    int len = strlen(file_name);
+    if (len >= 4 && strcmp(file_name + len - 3, ".sl") == 0) {
+        install_synthlib_cmds(ctx); // it overrides dl:declare-var
+    }
+
+    //if (file_name ends with sl || cmd line params contain aeval flags) {
+    //    install_aeval_cmds(ctx);
+   // }
 
     g_cmd_context = &ctx;
     signal(SIGINT, on_ctrl_c);

@@ -43,7 +43,7 @@ Revision History:
 #include <crtdbg.h>
 #endif
 
-typedef enum { IN_UNSPECIFIED, IN_SMTLIB_2, IN_DATALOG, IN_DIMACS, IN_WCNF, IN_OPB, IN_LP, IN_Z3_LOG, IN_MPS } input_kind;
+typedef enum { IN_UNSPECIFIED, IN_SMTLIB_2, IN_DATALOG, IN_DIMACS, IN_WCNF, IN_OPB, IN_LP, IN_Z3_LOG, IN_MPS, IN_SYNTHLIB } input_kind;
 
 static std::string  g_aux_input_file;
 static char const * g_input_file          = nullptr;
@@ -76,6 +76,7 @@ void display_usage() {
     std::cout << "]. (C) Copyright 2006-2016 Microsoft Corp.\n";
     std::cout << "Usage: z3 [options] [-file:]file\n";
     std::cout << "\nInput format:\n";
+    std::cout << "  -sl         use parser for SynthLib input format.\n";
     std::cout << "  -smt2       use parser for SMT 2 input format.\n";
     std::cout << "  -dl         use parser for Datalog input format.\n";
     std::cout << "  -dimacs     use parser for DIMACS input format.\n";
@@ -180,6 +181,9 @@ static void parse_cmd_line_args(int argc, char ** argv) {
             }
             else if (strcmp(opt_name, "smt2") == 0) {
                 g_input_kind = IN_SMTLIB_2;
+            }
+            else if (strcmp(opt_name, "sl") == 0) {
+                g_input_kind = IN_SYNTHLIB;
             }
             else if (strcmp(opt_name, "dl") == 0) {
                 g_input_kind = IN_DATALOG;
@@ -354,6 +358,10 @@ int STD_CALL main(int argc, char ** argv) {
     }
         switch (g_input_kind) {
         case IN_SMTLIB_2:
+            memory::exit_when_out_of_memory(true, "(error \"out of memory\")");
+            return_value = read_smtlib2_commands(g_input_file);
+            break;
+        case IN_SYNTHLIB:
             memory::exit_when_out_of_memory(true, "(error \"out of memory\")");
             return_value = read_smtlib2_commands(g_input_file);
             break;

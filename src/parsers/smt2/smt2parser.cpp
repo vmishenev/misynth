@@ -2845,9 +2845,29 @@ namespace smt2 {
             case CPK_SORTED_VAR:
                 NOT_IMPLEMENTED_YET();
                 break;
-            case CPK_SORTED_VAR_LIST:
-                NOT_IMPLEMENTED_YET();
-                break;
+            case CPK_SORTED_VAR_LIST: {
+                unsigned sym_spos  = symbol_stack().size();
+                unsigned sort_spos = sort_stack().size();
+                unsigned expr_spos = expr_stack().size();
+
+                unsigned num_vars  = parse_sorted_vars();
+
+                sort* const* sorts = sort_stack().c_ptr() + sort_spos;
+                symbol* syms = symbol_stack().c_ptr() + sym_spos;
+                svector<sorted_var> sorted_var_list;
+                for(unsigned int i=0; i< num_vars; i++) {
+                    sorted_var_list.push_back(sorted_var(*(syms+i), *(sorts+i) ));
+                }
+                m_curr_cmd->set_next_arg(m_ctx, num_vars, sorted_var_list.c_ptr());
+                symbol_stack().shrink(sym_spos);
+                sort_stack().shrink(sort_spos);
+                expr_stack().shrink(expr_spos);
+
+                m_env.end_scope();
+                m_num_bindings = 0;
+
+                return;
+            }
             case CPK_SEXPR:
                 parse_sexpr();
                 m_curr_cmd->set_next_arg(m_ctx, sexpr_stack().back());
