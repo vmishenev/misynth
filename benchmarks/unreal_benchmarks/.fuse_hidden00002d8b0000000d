@@ -1,0 +1,11 @@
+(declare-var x1 Int)
+
+(synth-fun f ((x Int)) Int)
+
+(assert (>= (f (+ x1 1)) (f x1)))
+(assert (> (f 1) (f 2)))
+
+; assumption:
+;(assert (= x1 1))
+
+(check-synth)
