@@ -361,11 +361,6 @@ public:
 class sl_check_synth_cmd : public cmd
 {
     ref<misynth_context> m_aeval_ctx;
-    unsigned m_arg_idx;
-    mutable unsigned m_query_arg_idx;
-    symbol m_fun_name;
-    svector<sorted_var> m_sorted_var_list;
-    sort *m_var_sort;
 
 public:
     sl_check_synth_cmd(misynth_context *aeval_ctx)
@@ -398,11 +393,6 @@ public:
 
     void execute(cmd_context &ctx) override
     {
-        if (m_arg_idx < 3)
-        {
-            throw cmd_exception("at least 3 arguments expected");
-        }
-
         m_aeval_ctx->aectx().check_synth();
     }
 };
