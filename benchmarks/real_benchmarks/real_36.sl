@@ -1,0 +1,21 @@
+(declare-var x1 Int)
+(declare-var x2 Int)
+(declare-var x3 Int)
+(declare-var x4 Int)
+(declare-var x5 Int)
+(declare-var x6 Int)
+(declare-var x7 Int)
+(declare-var x8 Int)
+(declare-var x9 Int)
+(declare-var x10 Int)
+
+(synth-fun f ((x Int) (y Int) (z Int) (w Int) (v Int)) Int)
+
+(constraint (> (+ (f x1 x2 x3 x4 x5) (f x6 x7 x8 x9 x10)) (f (+ x1 x6) (+ x2 x7) (+ x3 x8) (+ x4 x9) (+ x5 x10))))
+(constraint (> (- (f x1 x2 x3 x4 x5) 34) x1))
+(constraint (> (- (f x1 x2 x3 x4 x5) 63) x2))
+(constraint (> (- (f x1 x2 x3 x4 x5) 98) x3))
+(constraint (> (- (f x1 x2 x3 x4 x5) 42) x4))
+(constraint (> (- (f x1 x2 x3 x4 x5) 67) x5))
+
+(check-synth)
