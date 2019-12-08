@@ -46,86 +46,6 @@ Notes:
 namespace misynth
 {
 
-    struct invocations_rewriter_cfg : public default_rewriter_cfg
-    {
-    private:
-        ast_manager &m;
-        expr_ref_vector m_pinned;
-        func_decl_ref_vector &m_synth_fun_list;
-        func_decl_ref_vector &m_subs;
-        obj_map<func_decl, func_decl *> &m_synth_fun_sub_map;
-
-    public:
-        invocations_rewriter_cfg(ast_manager &m,
-                                 func_decl_ref_vector &synth_fun_list,
-                                 func_decl_ref_vector &subs,
-                                 obj_map<func_decl, func_decl *> &synth_fun_sub_map)
-            : m(m)
-            , m_pinned(m)
-            , m_synth_fun_list(synth_fun_list)
-            , m_subs(subs)
-            , m_synth_fun_sub_map(synth_fun_sub_map)
-        {
-        }
-
-        bool get_subst(expr *s, expr *&t, proof *&t_pr)
-        {
-            if (!is_app(s))
-            {
-                return false;
-            }
-
-            app *a = to_app(s);
-            func_decl *sym = a->get_decl();
-            func_decl *sub;
-
-            if (!find_in_synth_fun(sym, sub))
-            {
-                return false;
-            }
-
-            app *a_sub = m.mk_const(sub);
-            t = to_expr(a_sub);
-
-            if (DEBUG)
-            {
-                std::cout << "\t get_subst: " << mk_ismt2_pp(s, m, 3) << std::endl;
-            }
-
-            return true;
-        }
-
-    private:
-        bool find_in_synth_fun(func_decl *sym, func_decl *&sub)
-        {
-            for (unsigned i = 0; i < m_synth_fun_list.size(); ++i)
-            {
-                func_decl *dst = m_synth_fun_list[i].get();
-
-                if (dst->get_name() == sym->get_name())   // for single-invocation
-                {
-                    sub = get_surrogate(dst);
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        func_decl *get_surrogate(func_decl *f) const
-        {
-            obj_map<func_decl, func_decl *>::iterator it = m_synth_fun_sub_map.find_iterator(f);
-
-            if (it != m_synth_fun_sub_map.end())
-            {
-                return it->m_value;
-            }
-
-            return nullptr;
-        }
-    };
-
-
     class misynth_solver_context
     {
         cmd_context &m_cmd;
@@ -134,27 +54,43 @@ namespace misynth
         func_decl_ref_vector m_synth_fun_list;
 
         obj_map<func_decl, func_decl *> m_synth_fun_sub_map;
+        obj_map<func_decl, args_t *> m_synth_fun_args_decl;
 
         params_ref m_params;
         ref<solver> m_solver;
-
+        vector<args_t> args_vector;
+        func_decl_ref_vector all_args_garbage_collection;
     public:
         misynth_solver_context(cmd_context &cmd_ctx)
             : m_cmd(cmd_ctx)
             , m(cmd_ctx.m())
             , m_constraints_list(m)
-            , m_synth_fun_list(m)
+            , m_synth_fun_list(m),
+              all_args_garbage_collection(m)
 
         {
         }
-
-        void register_synth_fun(func_decl *pred)
+        ~misynth_solver_context()
+        {
+            m_synth_fun_args_decl.reset();
+            //args_vector.reset();
+        }
+        void register_synth_fun(func_decl *pred, svector<sorted_var> args)
         {
             if (DEBUG)
             {
                 std::cout << "register_synth_fun: " << pred->get_name() << "(" << pred->get_arity() << "):" << pred->get_range()->get_name() << std::endl;
             }
 
+            func_decl_ref_vector args_decl(m);
+
+            for (sorted_var it : args)
+            {
+                args_decl.push_back(m.mk_const_decl(it.first, it.second));
+            }
+
+            args_vector.push_back(args_decl);
+            m_synth_fun_args_decl.insert_if_not_there(pred, args_vector.c_ptr() + args_vector.size() - 1);
             m_synth_fun_list.push_back(pred);
         }
 
@@ -196,7 +132,7 @@ namespace misynth
             }
 
             misynth_solver tool(m_cmd, m, m_solver.get());
-            tool.solve(m_synth_fun_list, all_constraints);
+            tool.solve(m_synth_fun_list, all_constraints, m_synth_fun_args_decl);
             return false;
         }
 
@@ -404,6 +340,7 @@ class sl_synth_fun_cmd : public cmd
     mutable unsigned m_query_arg_idx;
     symbol m_fun_name;
     svector<sorted_var> m_sorted_var_list;
+
     sort *m_var_sort;
 
 public:
@@ -495,7 +432,7 @@ public:
         func_decl_ref sf(
             m.mk_func_decl(m_fun_name, domain.size(), domain.c_ptr(), m_var_sort), m);
         ctx.insert(sf);
-        m_aeval_ctx->aectx().register_synth_fun(sf);
+        m_aeval_ctx->aectx().register_synth_fun(sf, m_sorted_var_list);
     }
 };
 

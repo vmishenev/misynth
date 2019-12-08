@@ -2,10 +2,12 @@
 #define SMT_UTILS_H
 
 #include "cmd_context/cmd_context.h"
+#include "ast/rewriter/expr_replacer.h"
+
 
 namespace misynth
 {
-
+    extern bool DEBUG_MODE;
     struct smt_utils
     {
         cmd_context &m_cmd;
@@ -46,7 +48,7 @@ namespace misynth
             m_solver->push();
             m_solver->assert_expr(e);
             lbool r = m_solver->check_sat();
-            std::cout << "proof0: " << mk_ismt2_pp(m_solver->get_proof(), m, 3) << std::endl;
+            //std::cout << "proof0: " << mk_ismt2_pp(m_solver->get_proof(), m, 3) << std::endl;
             m_solver->pop(1);
             return r == lbool::l_false;
         }
@@ -107,7 +109,68 @@ namespace misynth
 
             return con_join(vec_of_equals);
         }
-    };
 
+        expr_ref  replace_vars_according_to_model(expr *e, model_ref mdl, func_decl_ref_vector &vars)
+        {
+            scoped_ptr<expr_replacer> rp = mk_default_expr_replacer(m);
+            expr_substitution sub(m);
+
+            for (func_decl *fd : vars)
+            {
+                expr_ref e( to_expr(m.mk_const(fd)), m);
+
+                if (DEBUG_MODE)
+                {
+                    std::cout << "replace " << mk_ismt2_pp((e), m, 3) << " to " << mk_ismt2_pp((*mdl)(e), m, 3) << std::endl;
+                }
+
+                sub.insert(e, (*mdl)(e));
+            }
+
+            rp->set_substitution(&sub);
+            expr_ref result(m);
+            (*rp)(e, result);
+            return result;
+        }
+        expr_ref  replace_vars_decl(expr *e, func_decl_ref_vector &src_vars, func_decl_ref_vector &dest_vars)
+        {
+            // TODO Optimize
+            SASSERT(src_vars.size() <=  dest_vars.size());
+            scoped_ptr<expr_replacer> rp = mk_default_expr_replacer(m);
+            expr_substitution sub(m);
+
+            for (unsigned int i = 0; i < src_vars.size(); ++i)
+            {
+                expr_ref e1( to_expr(m.mk_const(src_vars.get(i))), m);
+                expr_ref e2( to_expr(m.mk_const(dest_vars.get(i))), m);
+
+                sub.insert(e1, e2);
+            }
+
+            rp->set_substitution(&sub);
+            expr_ref result(m);
+            (*rp)(e, result);
+            return result;
+        }
+        expr_ref  replace_vars_decl(expr *e, func_decl_ref_vector &src_vars, expr_ref_vector &dest_expr)
+        {
+
+            SASSERT(src_vars.size() <= dest_expr.size());
+            scoped_ptr<expr_replacer> rp = mk_default_expr_replacer(m);
+            expr_substitution sub(m);
+
+            for (unsigned int i = 0; i < src_vars.size(); ++i)
+            {
+                expr_ref e1( to_expr(m.mk_const(src_vars.get(i))), m);
+
+                sub.insert(e1, dest_expr.get(i));
+            }
+
+            rp->set_substitution(&sub);
+            expr_ref result(m);
+            (*rp)(e, result);
+            return result;
+        }
+    };
 } // misynth
 #endif // SMT_UTILS_H
