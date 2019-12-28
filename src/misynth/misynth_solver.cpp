@@ -10,7 +10,7 @@
 
 #include <ast/used_vars.h>
 #include <ast/rewriter/th_rewriter.h>
-
+#include "sanity_checker.h"
 
 
 
@@ -250,7 +250,12 @@ namespace misynth
             else
             {
 
-                std::cout << "Complete " << std::endl;
+                std::cout << "Complete " << r << std::endl;
+                sanity_checker sanity(m_cmd, m);
+                args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
+
+                bool sanity_res = sanity.check(spec, m_precs, m_branches, synth_funs, *synth_fun_args);
+                std::cout << "Sanity Checker Result: " << sanity_res << std::endl;
                 return true;
             }
 
@@ -338,7 +343,7 @@ namespace misynth
             }
         }
 
-        args_t *args = get_args_decl_for_synth_fun(synth_funs.get(0));
+        args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
 
         expr_ref res(m);
 
@@ -348,9 +353,9 @@ namespace misynth
 
         }
 
-        if (used_vars.size() <= args->size())
+        if (used_vars.size() <= synth_fun_args->size())
         {
-            res = m_utils.replace_vars_decl(th_res, used_vars, *args);
+            res = m_utils.replace_vars_decl(th_res, used_vars, *synth_fun_args);
 
             if (DEBUG_MODE)
             {
@@ -388,7 +393,7 @@ namespace misynth
 
             //[-]
             */
-            res = m_abducer.nonlinear_abduce(m_ops, expr_ref(m.mk_true(), m), th_res, *args);
+            res = m_abducer.nonlinear_abduce(m_ops, expr_ref(m.mk_true(), m), th_res, *synth_fun_args);
 
             //lit(x1) /\ lit(x2) => phi(x1, x2)
             //try_to_separate_into_disjoint_sets();

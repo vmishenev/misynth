@@ -216,6 +216,23 @@ namespace misynth
             return result;
         }
 
+        expr_ref  replace_expr(expr *e, expr_ref_vector &src_expr, expr_ref_vector &dest_expr)
+        {
+
+            SASSERT(src_expr.size() <= dest_expr.size());
+            scoped_ptr<expr_replacer> rp = mk_default_expr_replacer(m);
+            expr_substitution sub(m);
+
+            for (unsigned int i = 0; i < src_expr.size(); ++i)
+            {
+                sub.insert(src_expr.get(i), dest_expr.get(i));
+            }
+
+            rp->set_substitution(&sub);
+            expr_ref result(m);
+            (*rp)(e, result);
+            return result;
+        }
         /*
          *
          * Return \not \exists quantifier_vars \not   e
