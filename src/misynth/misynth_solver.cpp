@@ -33,7 +33,8 @@ namespace misynth
           m_used_vars(m),
           m_precs(m),
           m_branches(m),
-          m_terms(m)
+          m_terms(m),
+          m_abducer(cmd_ctx, m)
     {
     }
 
@@ -48,7 +49,7 @@ namespace misynth
         for (unsigned i = 0; i < num_of_coeff + 1; ++i)
         {
             func_decl_ref coef(
-                m.mk_const_decl(coeff_prefix + std::to_string(( i)),
+                m.mk_const_decl(coeff_prefix + std::to_string((i)),
                                 synth_funs.get(0)->get_range()), m);
             m_coeff_decl_vec.push_back(coef);
         }
@@ -347,9 +348,9 @@ namespace misynth
 
         }
 
-        if ( used_vars.size() <= args->size())
+        if (used_vars.size() <= args->size())
         {
-            expr_ref  res_pre = m_utils.replace_vars_decl(th_res, used_vars, *args);
+            res = m_utils.replace_vars_decl(th_res, used_vars, *args);
 
             if (DEBUG_MODE)
             {
@@ -357,10 +358,38 @@ namespace misynth
 
             }
 
-            return res_pre;
+            return res;
         }
         else
         {
+            /*//[+]sample
+            func_decl_ref_vector sample_pattern(m);
+            func_decl *x_decl = m.mk_const_decl("x", m_arith.mk_int());
+            sample_pattern.push_back(x_decl);
+            func_decl *y_decl = m.mk_const_decl("y", m_arith.mk_int());
+            //etalon.push_back(y_decl);
+
+            expr_ref s(m);
+
+            expr_ref_vector r_x(m);
+            r_x.push_back(m.mk_const(x_decl));
+
+            expr_ref_vector r_y(m);
+            r_y.push_back(m.mk_const(y_decl));
+
+
+            vector<expr_ref_vector> inv_args;
+            inv_args.push_back(r_x);
+            inv_args.push_back(r_y);
+
+            expr_ref sample_expr(m_arith.mk_ge(m_arith.mk_add(m.mk_const(x_decl), m.mk_const(y_decl)), m_arith.mk_int(10)), m);
+            expr_ref res2 = m_abducer.nonlinear_abduce(inv_args, expr_ref(m.mk_true(), m), sample_expr, sample_pattern);
+            std::cout << "Sample x+y>=10: " << mk_ismt2_pp(sample_expr, m, 3) << mk_ismt2_pp(res2, m, 3) << std::endl;
+
+            //[-]
+            */
+            res = m_abducer.nonlinear_abduce(m_ops, expr_ref(m.mk_true(), m), th_res, *args);
+
             //lit(x1) /\ lit(x2) => phi(x1, x2)
             //try_to_separate_into_disjoint_sets();
 

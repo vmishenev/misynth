@@ -1,6 +1,7 @@
 z3_add_component(misynth
   SOURCES
     synthlib_cmds.cpp
+    multi_abducer.cpp
     misynth_solver.cpp
   COMPONENT_DEPENDENCIES
     bmc
@@ -10,4 +11,5 @@ z3_add_component(misynth
     rel
     spacer
     tab
+    ast
 )

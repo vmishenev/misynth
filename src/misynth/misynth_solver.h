@@ -2,7 +2,7 @@
 #define MISYNTH_SOLVER_H
 
 #include "cmd_context/cmd_context.h"
-
+#include "misynth/multi_abducer.h"
 
 #include "smt_utils.h"
 
@@ -21,56 +21,56 @@ namespace misynth
     class misynth_solver
     {
 
-    private:
-        cmd_context &m_cmd;
-        ast_manager &m;
-        ref<solver> m_solver;
+        private:
+            cmd_context &m_cmd;
+            ast_manager &m;
+            ref<solver> m_solver;
 
-        smt_utils m_utils;
-        arith_util m_arith;
+            smt_utils m_utils;
+            arith_util m_arith;
 
-        func_decl_ref_vector m_coeff_decl_vec;
-        func_decl_ref_vector m_used_vars;
-        expr_ref_vector m_precs, m_branches;
-        expr_ref_vector m_terms;
-        app2expr_map m_term_subst;
-
-
-        vector<invocation_operands> m_ops;
-        obj_map<func_decl, args_t *> m_synth_fun_args_decl;
-
-    public:
-        misynth_solver(cmd_context &cmd_ctx, ast_manager &m, solver *solver);
-
-        bool solve(func_decl_ref_vector &synth_funs, expr_ref spec,  obj_map<func_decl, args_t *> &synth_fun_args_decl);
+            func_decl_ref_vector m_coeff_decl_vec;
+            func_decl_ref_vector m_used_vars;
+            expr_ref_vector m_precs, m_branches;
+            expr_ref_vector m_terms;
+            app2expr_map m_term_subst;
 
 
-        void generate_coeff_decl(func_decl_ref_vector &synth_funs);
-        void rewriter_functions_to_linear_term(func_decl_ref_vector &synth_funs,
-                                               expr_ref spec, expr_ref &new_spec);
+            vector<invocation_operands> m_ops;
+            obj_map<func_decl, args_t *> m_synth_fun_args_decl;
+            multi_abducer m_abducer;
+        public:
+            misynth_solver(cmd_context &cmd_ctx, ast_manager &m, solver *solver);
 
-        void rewrite_expr(expr *f, expr_ref &res);
+            bool solve(func_decl_ref_vector &synth_funs, expr_ref spec,  obj_map<func_decl, args_t *> &synth_fun_args_decl);
 
-        void init_used_variables(func_decl_ref_vector &synth_funs, expr_ref spec);
-        expr_ref find_precondition(func_decl_ref_vector &synth_funs,  expr_ref &spec_for_concrete_coeff);
-        args_t *get_args_decl_for_synth_fun(func_decl *f);
-        expr_ref generate_branch(func_decl_ref_vector &synth_funs, model_ref mdl);
 
-        /* [+] Unrealizability Algorithm*/
+            void generate_coeff_decl(func_decl_ref_vector &synth_funs);
+            void rewriter_functions_to_linear_term(func_decl_ref_vector &synth_funs,
+                                                   expr_ref spec, expr_ref &new_spec);
 
-        bool prove_unrealizability(expr_ref spec);
+            void rewrite_expr(expr *f, expr_ref &res);
 
-        bool check_assumptions(expr_ref spec, expr_ref_vector &assumptions);
+            void init_used_variables(func_decl_ref_vector &synth_funs, expr_ref spec);
+            expr_ref find_precondition(func_decl_ref_vector &synth_funs,  expr_ref &spec_for_concrete_coeff);
+            args_t *get_args_decl_for_synth_fun(func_decl *f);
+            expr_ref generate_branch(func_decl_ref_vector &synth_funs, model_ref mdl);
 
-        /*
-         *
-         * @Return either unrealizability
-         *
-         * */
-        bool subsets_backtracking(expr_ref_vector &assump, expr *spec,
-                                  solver *slv, unsigned int index);
-        void generate_assumptions_from_operands(expr_ref_vector &assumptions);
-        /* [-] Unrealizability Algorithm*/
+            /* [+] Unrealizability Algorithm*/
+
+            bool prove_unrealizability(expr_ref spec);
+
+            bool check_assumptions(expr_ref spec, expr_ref_vector &assumptions);
+
+            /*
+             *
+             * @Return either unrealizability
+             *
+             * */
+            bool subsets_backtracking(expr_ref_vector &assump, expr *spec,
+                                      solver *slv, unsigned int index);
+            void generate_assumptions_from_operands(expr_ref_vector &assumptions);
+            /* [-] Unrealizability Algorithm*/
     };
 }
 
