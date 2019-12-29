@@ -281,7 +281,7 @@ namespace misynth
                 slv_for_coeff->get_model(mdl);
                 slv_for_coeff->pop(1);
                 std::cout << "SAT res_spec_for_x!! " << *mdl << std::endl;
-                spec_for_concrete_coeff = m_utils.replace_vars_according_to_model(spec_with_coeff, mdl, m_coeff_decl_vec);
+                spec_for_concrete_coeff = m_utils.replace_vars_according_to_model(spec_with_coeff, mdl, m_coeff_decl_vec, true);
                 std::cout << "spec_for_concrete_coeff " << mk_ismt2_pp(spec_for_concrete_coeff, m, 3) << std::endl;
                 expr_ref branch = generate_branch(synth_funs, mdl);
                 m_branches.push_back(branch);

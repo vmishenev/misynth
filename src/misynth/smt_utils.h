@@ -154,7 +154,7 @@ namespace misynth
             return con_join(vec_of_equals);
         }
 
-        expr_ref  replace_vars_according_to_model(expr *e, model_ref mdl, func_decl_ref_vector &vars)
+        expr_ref  replace_vars_according_to_model(expr *e, model_ref mdl, func_decl_ref_vector &vars, bool used_default_value = false)
         {
             scoped_ptr<expr_replacer> rp = mk_default_expr_replacer(m);
             expr_substitution sub(m);
@@ -167,8 +167,11 @@ namespace misynth
                 {
                     std::cout << "replace " << mk_ismt2_pp((e), m, 3) << " to " << mk_ismt2_pp((*mdl)(e), m, 3) << std::endl;
                 }
-
-                sub.insert(e, (*mdl)(e));
+                expr_ref substitute = (*mdl)(e);
+                if (used_default_value && e == substitute)
+                    sub.insert(e, (m_arith.is_real(e) ? m_arith.mk_real(0) : m_arith.mk_int(0)));
+                else
+                    sub.insert(e, substitute);
             }
 
             rp->set_substitution(&sub);
@@ -176,6 +179,10 @@ namespace misynth
             (*rp)(e, result);
             return result;
         }
+
+
+
+
         expr_ref  replace_vars_decl(expr *e, func_decl_ref_vector &src_vars, func_decl_ref_vector &dest_vars)
         {
             // TODO Optimize
