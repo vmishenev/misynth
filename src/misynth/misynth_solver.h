@@ -42,7 +42,12 @@ namespace misynth
         public:
             misynth_solver(cmd_context &cmd_ctx, ast_manager &m, solver *solver);
 
-            bool solve(func_decl_ref_vector &synth_funs, expr_ref spec,  obj_map<func_decl, args_t *> &synth_fun_args_decl);
+            expr_ref generate_clia_fun_body();
+            void print_def_fun(std::ostream &out, func_decl * f, func_decl_ref_vector &args, expr_ref body);
+            void print_sorted_var_list(std::ostream &out,  func_decl_ref_vector & sorted_var);
+
+
+            bool solve(func_decl_ref_vector &synth_funs, expr_ref_vector &constraints,  obj_map<func_decl, args_t *> &synth_fun_args_decl);
 
 
             void generate_coeff_decl(func_decl_ref_vector &synth_funs);

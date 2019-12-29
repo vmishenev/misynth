@@ -162,12 +162,13 @@ namespace misynth
             for (func_decl *fd : vars)
             {
                 expr_ref e(to_expr(m.mk_const(fd)), m);
+                expr_ref substitute = (*mdl)(e);
 
                 if (DEBUG_MODE)
                 {
-                    std::cout << "replace " << mk_ismt2_pp((e), m, 3) << " to " << mk_ismt2_pp((*mdl)(e), m, 3) << std::endl;
+                    std::cout << "replace " << mk_ismt2_pp((e), m, 3) << " to " << mk_ismt2_pp(substitute, m, 3) << std::endl;
                 }
-                expr_ref substitute = (*mdl)(e);
+
                 if (used_default_value && e == substitute)
                     sub.insert(e, (m_arith.is_real(e) ? m_arith.mk_real(0) : m_arith.mk_int(0)));
                 else
@@ -179,8 +180,6 @@ namespace misynth
             (*rp)(e, result);
             return result;
         }
-
-
 
 
         expr_ref  replace_vars_decl(expr *e, func_decl_ref_vector &src_vars, func_decl_ref_vector &dest_vars)

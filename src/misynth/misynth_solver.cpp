@@ -158,9 +158,11 @@ namespace misynth
         return m_arith.mk_add_simplify(mult_terms);
     }
 
-    bool misynth_solver::solve(func_decl_ref_vector &synth_funs, expr_ref spec,  obj_map<func_decl, args_t *> &synth_fun_args_decl)
+    bool misynth_solver::solve(func_decl_ref_vector &synth_funs, expr_ref_vector &constraints,  obj_map<func_decl, args_t *> &synth_fun_args_decl)
     {
         // [+] INITIALIZE
+        expr_ref spec = m_utils.con_join(constraints);
+
         // [-] INITIALIZE
 
 
@@ -207,9 +209,7 @@ namespace misynth
         {
 
             if (DEBUG_MODE)
-            {
                 std::cout << "====  Itreration #" << i << "  ====" << std::endl;
-            }
 
 
             if (i > 0) // non first iteration
@@ -251,10 +251,12 @@ namespace misynth
             {
 
                 std::cout << "Complete " << r << std::endl;
-                sanity_checker sanity(m_cmd, m);
+                expr_ref fun_body = generate_clia_fun_body();
                 args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
+                print_def_fun(std::cout, synth_funs.get(0), *synth_fun_args, fun_body);
 
-                bool sanity_res = sanity.check(spec, m_precs, m_branches, synth_funs, *synth_fun_args);
+                sanity_checker sanity(m_cmd, m);
+                bool sanity_res = sanity.check(constraints, fun_body, synth_funs, *synth_fun_args);
                 std::cout << "Sanity Checker Result: " << sanity_res << std::endl;
                 return true;
             }
@@ -522,4 +524,37 @@ namespace misynth
         }
     }
 
+    void misynth_solver::print_def_fun(std::ostream &out, func_decl * f, func_decl_ref_vector &args, expr_ref body)
+    {
+        out << "(define-fun " << f->get_name() << " (";
+        print_sorted_var_list(out, args);
+        out << ") " << f->get_range()->get_name() << " ";
+        out << mk_ismt2_pp(body, m, 0);
+        out << ") " << std::endl;
+    }
+    void misynth_solver::print_sorted_var_list(std::ostream &out,  func_decl_ref_vector & sorted_var)
+    {
+        bool is_first = true;
+        for (auto &v : sorted_var)
+        {
+            if (!is_first) out <<  " ";
+            is_first = false;
+            out << v->get_range()->get_name() << " " << v->get_name();
+        }
+    }
+
+    expr_ref misynth_solver::generate_clia_fun_body()
+    {
+        expr_ref res(m);
+        SASSERT(m_precs.size() == m_branches.size());
+        if (m_precs.size() == 0) return res;
+        res = m_branches.get(m_precs.size() - 1);
+        expr_ref_vector v(m);
+
+        for (unsigned int i = 0 ; i < m_precs.size() - 1; ++i)
+        {
+            res = m.mk_ite(m_precs.get(i), m_branches.get(i), res);
+        }
+        return res;
+    }
 } // namespace misynth
