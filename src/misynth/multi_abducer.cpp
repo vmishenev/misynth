@@ -64,7 +64,7 @@ namespace misynth
         expr_ref abduce_conclusion = simple_abduce(premise, flat_conclusion, all_vars);
         abduce_conclusion = m_utils.simplify(abduce_conclusion);
         if (DEBUG_ABDUCE)
-            std::cout << "Abduced flat_conclusion formula: " << mk_ismt2_pp(flat_conclusion, m, 3) << std::endl;
+            std::cout << "Abduced flat_conclusion formula: " << mk_ismt2_pp(abduce_conclusion, m, 3) << std::endl;
 
         /// generate fresh constant \/ m_ki=xx_ij, k=0.. invocation number, i - component index
         ///
@@ -91,12 +91,12 @@ namespace misynth
 
         /// [+] quantifier vars
         ///
-        decl_collector decls(m);
+        /*decl_collector decls(m);
         decls.visit(abduce_conclusion);
         func_decl_ref_vector quantifier_vars(m);
         quantifier_vars.append(decls.get_num_decls(), decls.get_func_decls().c_ptr());
-
-        expr_ref implic(m_utils.universal_quantified(expr_ref(m.mk_implies(fresh_consts_equals_inv_args, abduce_conclusion), m), quantifier_vars), m);
+        */
+        expr_ref implic(m_utils.universal_quantified(expr_ref(m.mk_implies(fresh_consts_equals_inv_args, abduce_conclusion), m), all_vars), m);
 
         //if (DEBUG_ABDUCE)
         std::cout << "INIT SOLN  abduction formula: " << mk_ismt2_pp(implic, m, 3) << std::endl;
