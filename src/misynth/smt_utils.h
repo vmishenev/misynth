@@ -272,6 +272,16 @@ namespace misynth
             s(e, th_res, pr);
             return th_res;
         }
+        void print_sorted_var_list(std::ostream &out,  func_decl_ref_vector & sorted_var)
+        {
+            bool is_first = true;
+            for (auto &v : sorted_var)
+            {
+                if (!is_first) out <<  " ";
+                is_first = false;
+                out << v->get_range()->get_name() << " " << v->get_name();
+            }
+        }
     }; // smt_utils
 } // misynth
 #endif // SMT_UTILS_H

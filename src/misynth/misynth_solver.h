@@ -76,6 +76,8 @@ namespace misynth
                                       solver *slv, unsigned int index);
             void generate_assumptions_from_operands(expr_ref_vector &assumptions);
             /* [-] Unrealizability Algorithm*/
+        private:
+            void completed_solving(func_decl_ref_vector &synth_funs, expr_ref_vector &constraints);
     };
 }
 

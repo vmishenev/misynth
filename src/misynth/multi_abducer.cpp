@@ -58,12 +58,13 @@ namespace misynth
             all_vars.append(a);
         }
         expr_ref flat_conclusion(m.mk_implies(flat_premise, conclusion), m);
-        //if (DEBUG_ABDUCE)
-        std::cout << "Abduction flat_conclusion formula: " << mk_ismt2_pp(flat_conclusion, m, 3) << std::endl;
+        if (DEBUG_ABDUCE)
+            std::cout << "Abduction flat_conclusion formula: " << mk_ismt2_pp(flat_conclusion, m, 3) << std::endl;
 
         expr_ref abduce_conclusion = simple_abduce(premise, flat_conclusion, all_vars);
-
-
+        abduce_conclusion = m_utils.simplify(abduce_conclusion);
+        if (DEBUG_ABDUCE)
+            std::cout << "Abduced flat_conclusion formula: " << mk_ismt2_pp(flat_conclusion, m, 3) << std::endl;
 
         /// generate fresh constant \/ m_ki=xx_ij, k=0.. invocation number, i - component index
         ///
@@ -257,9 +258,9 @@ namespace misynth
             {
                 phi = m.mk_and(phi, m_utils.replace_vars_decl(expr_ref(phi_i[i].get(), m), decl_args.get(i), pattern));
             }
-
-            if (DEBUG_ABDUCE)
-                std::cout << "crnt phi (line after 27)"   << mk_ismt2_pp(m_utils.simplify(phi), m, 3) << std::endl;
+            phi = m_utils.simplify(phi);
+            if (VERBOSE_ABDUCE)
+                std::cout << "crnt phi (line after 27)"   << mk_ismt2_pp(phi, m, 3) << std::endl;
             num_iter++;
         }
         return expr_ref(m.mk_false(), m);

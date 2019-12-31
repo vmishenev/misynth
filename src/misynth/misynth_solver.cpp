@@ -203,7 +203,7 @@ namespace misynth
         args_t *args_decl = get_args_decl_for_synth_fun(synth_funs.get(0));
 
 
-        const unsigned int MAX_ITERATION = 5;
+        const unsigned int MAX_ITERATION = 500;
 
         for (unsigned int i = 0; i < MAX_ITERATION; ++ i)
         {
@@ -249,15 +249,8 @@ namespace misynth
             }
             else
             {
-
                 std::cout << "Complete " << r << std::endl;
-                expr_ref fun_body = generate_clia_fun_body();
-                args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
-                print_def_fun(std::cout, synth_funs.get(0), *synth_fun_args, fun_body);
-
-                sanity_checker sanity(m_cmd, m);
-                bool sanity_res = sanity.check(constraints, fun_body, synth_funs, *synth_fun_args);
-                std::cout << "Sanity Checker Result: " << sanity_res << std::endl;
+                completed_solving(synth_funs, constraints);
                 return true;
             }
 
@@ -276,32 +269,54 @@ namespace misynth
             slv_for_coeff->assert_expr(spec_for_concrete_x);
             lbool res_spec_for_x = slv_for_coeff->check_sat();
             expr_ref spec_for_concrete_coeff(m);
+            model_ref mdl_for_coeff;
 
-            if (res_spec_for_x == lbool::l_true)
-            {
-                model_ref mdl;
-                slv_for_coeff->get_model(mdl);
-                slv_for_coeff->pop(1);
-                std::cout << "SAT res_spec_for_x!! " << *mdl << std::endl;
-                spec_for_concrete_coeff = m_utils.replace_vars_according_to_model(spec_with_coeff, mdl, m_coeff_decl_vec, true);
-                std::cout << "spec_for_concrete_coeff " << mk_ismt2_pp(spec_for_concrete_coeff, m, 3) << std::endl;
-                expr_ref branch = generate_branch(synth_funs, mdl);
-                m_branches.push_back(branch);
-            }
-            else
+            if (res_spec_for_x != lbool::l_true)
             {
                 std::cout << "WARNING!!! There are several branches. " << std::endl;
                 return false;
             }
 
 
+            slv_for_coeff->get_model(mdl_for_coeff);
+            slv_for_coeff->pop(1);
+            std::cout << "SAT res_spec_for_x!! " << *mdl_for_coeff << std::endl;
+            spec_for_concrete_coeff = m_utils.replace_vars_according_to_model(spec_with_coeff, mdl_for_coeff, m_coeff_decl_vec, true);
+            std::cout << "spec_for_concrete_coeff " << mk_ismt2_pp(spec_for_concrete_coeff, m, 3) << std::endl;
             /*[-] */
 
 
 
             /*[+] Find a precondition*/
             last_precond = find_precondition(synth_funs, spec_for_concrete_coeff);
+            if (m_utils.is_unsat(last_precond))
+            {
+                expr_ref_vector eval_coeff_model(m);
+                for (func_decl *fd : m_coeff_decl_vec)
+                {
+                    eval_coeff_model.push_back((*mdl_for_coeff)(m.mk_const(fd)));
+                }
+                //remember this coef
+                slv_for_coeff->push();
+                slv_for_coeff->assert_expr(m.mk_not(m_utils.mk_eq(m_coeff_decl_vec, eval_coeff_model)));
+                std::cout << "!!! Precond is unsat" << std::endl;
+                continue;
+            }
+            expr_ref branch = generate_branch(synth_funs, mdl_for_coeff);
+            if (m_utils.is_unsat(m.mk_not(last_precond)))
+                //if(m.is_true(last_precond))
+            {
+                m_branches.reset();
+                m_precs.reset();
+                m_precs.push_back(m.mk_true());
+                m_branches.push_back(branch);
+                completed_solving(synth_funs, constraints);
+                return true;
+            }
+
             m_precs.push_back(last_precond);
+            m_branches.push_back(branch);
+
 
 
             /*[-] */
@@ -315,7 +330,21 @@ namespace misynth
 
         return false;
     }
+    void misynth_solver::completed_solving(func_decl_ref_vector &synth_funs, expr_ref_vector &constraints)
+    {
+        std::cout << "###Complete "  << std::endl;
+        expr_ref fun_body = generate_clia_fun_body();
+        args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
+        print_def_fun(std::cout, synth_funs.get(0), *synth_fun_args, fun_body);
 
+        sanity_checker sanity(m_cmd, m);
+        bool sanity_res = sanity.check(constraints, fun_body, synth_funs, *synth_fun_args);
+        std::cout << "Sanity Checker Result: " << sanity_res << std::endl;
+
+        //bool sanity_res2 = sanity.check_through_implication(spec,  m_precs, m_branches, synth_funs, *synth_fun_args);
+        //std::cout << "Sanity Checker Result: " << sanity_res2 << std::endl;
+
+    }
     expr_ref misynth_solver::find_precondition(func_decl_ref_vector &synth_funs, expr_ref &spec_for_concrete_coeff)
     {
 
@@ -354,8 +383,8 @@ namespace misynth
             // std::cout << " args.size()" << args->size() << std::endl;
 
         }
-
-        if (used_vars.size() <= synth_fun_args->size())
+        if (used_vars.size() == 0 || (synth_fun_args->size() == 1 && used_vars.size() == 1))
+            //if (used_vars.size() <= synth_fun_args->size())
         {
             res = m_utils.replace_vars_decl(th_res, used_vars, *synth_fun_args);
 
@@ -527,20 +556,10 @@ namespace misynth
     void misynth_solver::print_def_fun(std::ostream &out, func_decl * f, func_decl_ref_vector &args, expr_ref body)
     {
         out << "(define-fun " << f->get_name() << " (";
-        print_sorted_var_list(out, args);
+        m_utils.print_sorted_var_list(out, args);
         out << ") " << f->get_range()->get_name() << " ";
         out << mk_ismt2_pp(body, m, 0);
         out << ") " << std::endl;
-    }
-    void misynth_solver::print_sorted_var_list(std::ostream &out,  func_decl_ref_vector & sorted_var)
-    {
-        bool is_first = true;
-        for (auto &v : sorted_var)
-        {
-            if (!is_first) out <<  " ";
-            is_first = false;
-            out << v->get_range()->get_name() << " " << v->get_name();
-        }
     }
 
     expr_ref misynth_solver::generate_clia_fun_body()
