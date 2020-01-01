@@ -12,13 +12,14 @@
 #include "ast/rewriter/expr_replacer.h"
 #include "qe/qe.h"
 
-#include "tactic/tactical.h"
+#include <ctime>
 
 #define DEBUG_ABDUCE false
 #define VERBOSE_ABDUCE true
 
 namespace misynth
 {
+    const int ISO_DECOMP_ITERS_TRESHOLD = 10;
     multi_abducer::multi_abducer(cmd_context &cmd_ctx, ast_manager &m) : m_cmd(cmd_ctx), m(m), m_arith(m), m_utils(cmd_ctx, m)
     {
     }
@@ -62,7 +63,7 @@ namespace misynth
             std::cout << "Abduction flat_conclusion formula: " << mk_ismt2_pp(flat_conclusion, m, 3) << std::endl;
 
         expr_ref abduce_conclusion = simple_abduce(premise, flat_conclusion, all_vars);
-        abduce_conclusion = m_utils.simplify(abduce_conclusion);
+        abduce_conclusion = m_utils.simplify_context(abduce_conclusion);
         if (DEBUG_ABDUCE)
             std::cout << "Abduced flat_conclusion formula: " << mk_ismt2_pp(abduce_conclusion, m, 3) << std::endl;
 
@@ -224,7 +225,12 @@ namespace misynth
             {
                 return phi;
             }
-
+            if (num_iter >= ISO_DECOMP_ITERS_TRESHOLD)
+            {
+                if (VERBOSE_ABDUCE)
+                    std::cout << "!!! ISO_DECOMP_ITERS_TRESHOLD " << std::endl;
+                return expr_ref(m.mk_false(), m);
+            }
             model_ref mdl;
             slv->get_model(mdl);
             slv->pop(1);
@@ -247,10 +253,11 @@ namespace misynth
                     if (j != i)
                         phi_except_i  = m.mk_and(phi_except_i, phi_i.get(j));
                 }
+                phi_except_i = m_utils.simplify_context(phi_except_i);
                 if (DEBUG_ABDUCE)
                     std::cout << "phi_except_i " << i <<  mk_ismt2_pp(phi_except_i, m, 3) << std::endl;
 
-                phi_i[i] = simple_abduce(phi_except_i, conclusion, decl_args.get(i));
+                phi_i[i] = (simple_abduce(phi_except_i, conclusion, decl_args.get(i)));
             }
 
             phi = m.mk_true();
@@ -258,9 +265,17 @@ namespace misynth
             {
                 phi = m.mk_and(phi, m_utils.replace_vars_decl(expr_ref(phi_i[i].get(), m), decl_args.get(i), pattern));
             }
-            phi = m_utils.simplify(phi);
+
+            //if (VERBOSE_ABDUCE)
+            //    std::cout << "crnt phi (line after 27) "   << mk_ismt2_pp(phi, m, 3) << std::endl;
+            phi = m_utils.simplify_context(phi);
+
+            clock_t start = clock();
             if (VERBOSE_ABDUCE)
-                std::cout << "crnt phi (line after 27)"   << mk_ismt2_pp(phi, m, 3) << std::endl;
+            {
+                std::cout << "crnt phi-simplified (line after 27) "   << mk_ismt2_pp(phi, m, 3) << std::endl;
+                std::cout << "time :" << ((double)(clock() - start) / CLOCKS_PER_SEC) << std::endl;;
+            }
             num_iter++;
         }
         return expr_ref(m.mk_false(), m);

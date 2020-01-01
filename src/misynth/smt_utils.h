@@ -4,6 +4,8 @@
 #include "cmd_context/cmd_context.h"
 #include "ast/rewriter/expr_replacer.h"
 #include <ast/rewriter/th_rewriter.h>
+#include "tactic/tactic.h"
+#include "smt/tactic/ctx_solver_simplify_tactic.h"
 
 namespace misynth
 {
@@ -272,6 +274,30 @@ namespace misynth
             s(e, th_res, pr);
             return th_res;
         }
+
+        expr_ref simplify_context(expr_ref e)
+        {
+            tactic_ref tct = mk_ctx_solver_simplify_tactic(m);
+            goal_ref g = alloc(goal, m);
+
+            /*
+             * Fearure to get simplified union formula
+             * rather then  each conjecture
+             * (or e false)
+             *
+             * Vadim
+             * */
+            g->assert_expr(m.mk_or(e, m.mk_false()));
+
+            goal_ref_buffer result;
+            (*tct)(g, result);
+            SASSERT(result.size() == 1);
+            goal *r = result[0];
+            expr_ref_vector res_fmls(m);
+            r->get_formulas(res_fmls);
+            return expr_ref(con_join(res_fmls), m);
+        }
+
         void print_sorted_var_list(std::ostream &out,  func_decl_ref_vector & sorted_var)
         {
             bool is_first = true;

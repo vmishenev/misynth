@@ -39,6 +39,8 @@ namespace misynth
             vector<invocation_operands> m_ops;
             obj_map<func_decl, args_t *> m_synth_fun_args_decl;
             multi_abducer m_abducer;
+
+            vector<model_ref> m_models_from_assumptions;
         public:
             misynth_solver(cmd_context &cmd_ctx, ast_manager &m, solver *solver);
 

@@ -170,7 +170,7 @@ namespace misynth
         collect_invocation_operands(spec, synth_funs, m_ops);
 
         //std::cout << "m_ops size: " << m_ops.size() << std::endl;
-        prove_unrealizability(spec);
+        //prove_unrealizability(spec);
 
         init_used_variables(synth_funs, spec);
 
@@ -228,31 +228,38 @@ namespace misynth
                 }
 
 
-
-            lbool r = slv_for_prec->check_sat();
             expr_ref spec_for_concrete_x(m);
-
-            if (r == lbool::l_true)
+            model_ref mdl_for_x;
+            if (true)
             {
-                model_ref mdl;
-                slv_for_prec->get_model(mdl);
-                std::cout << "SAT Precond!! "  << std::endl;
-                spec_for_concrete_x = m_utils.replace_vars_according_to_model(spec_with_coeff, mdl, m_used_vars);
-                // slv->pop(1);
-                /*std::cout << "SAT Precond!! " << *mdl << std::endl;
-
-                for (func_decl *fd : m_used_vars)
+                lbool r = slv_for_prec->check_sat();
+                if (r == lbool::l_true)
                 {
-                    expr_ref e( to_expr(m.mk_const(fd)), m) ;
-                    std::cout << fd->get_name() << " " <<  mk_ismt2_pp((*mdl)(e), m, 3) << std::endl;
-                }*/
+
+                    slv_for_prec->get_model(mdl_for_x);
+                    std::cout << "SAT Precond!! "  << std::endl;
+                    // slv->pop(1);
+                    /*std::cout << "SAT Precond!! " << *mdl << std::endl;
+
+                    for (func_decl *fd : m_used_vars)
+                    {
+                        expr_ref e( to_expr(m.mk_const(fd)), m) ;
+                        std::cout << fd->get_name() << " " <<  mk_ismt2_pp((*mdl)(e), m, 3) << std::endl;
+                    }*/
+                }
+                else
+                {
+                    std::cout << "Complete " << r << std::endl;
+                    completed_solving(synth_funs, constraints);
+                    return true;
+                }
             }
             else
             {
-                std::cout << "Complete " << r << std::endl;
-                completed_solving(synth_funs, constraints);
-                return true;
+                mdl_for_x = m_models_from_assumptions.back();
+                m_models_from_assumptions.pop_back();
             }
+            spec_for_concrete_x = m_utils.replace_vars_according_to_model(spec_with_coeff, mdl_for_x, m_used_vars);
 
             if (DEBUG_MODE)
             {
@@ -341,22 +348,23 @@ namespace misynth
         bool sanity_res = sanity.check(constraints, fun_body, synth_funs, *synth_fun_args);
         std::cout << "Sanity Checker Result: " << sanity_res << std::endl;
 
-        //bool sanity_res2 = sanity.check_through_implication(spec,  m_precs, m_branches, synth_funs, *synth_fun_args);
-        //std::cout << "Sanity Checker Result: " << sanity_res2 << std::endl;
+        //bool sanity_res2 = sanity.check_through_implication(m_utils.con_join(constraints),  m_precs, m_branches, synth_funs, *synth_fun_args);
+        //std::cout << "Sanity Checker implication Result: " << sanity_res2 << std::endl;
 
     }
     expr_ref misynth_solver::find_precondition(func_decl_ref_vector &synth_funs, expr_ref &spec_for_concrete_coeff)
     {
 
         //simplify
-        expr_ref th_res(m);
+        /*expr_ref th_res(m);
         proof_ref pr(m);
 
         params_ref th_solv_params;
         th_rewriter s(m, th_solv_params);
         th_solver solver(m_cmd);
         s.set_solver(alloc(th_solver, m_cmd));
-        s(spec_for_concrete_coeff, th_res, pr);
+        s(spec_for_concrete_coeff, th_res, pr);*/
+        expr_ref th_res = m_utils.simplify_context(spec_for_concrete_coeff);
         std::cout << "Simplified precondition candidate: " << mk_ismt2_pp(th_res, m, 3) << std::endl;
         //
 
@@ -490,6 +498,7 @@ namespace misynth
             }
             else
             {
+
                 slv->push();
                 slv->assert_expr(spec);
 
@@ -509,6 +518,12 @@ namespace misynth
                     }
 
                     return true;
+                }
+                else
+                {
+                    model_ref mdl;
+                    slv->get_model(mdl);
+                    m_models_from_assumptions.push_back(mdl);
                 }
 
                 slv->pop(1);
