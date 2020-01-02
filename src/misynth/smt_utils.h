@@ -275,18 +275,12 @@ namespace misynth
             return th_res;
         }
 
-        expr_ref simplify_context(expr_ref e)
+        expr_ref simplify_context(expr_ref e, unsigned int max_repeat = UINT_MAX)
         {
-            tactic_ref tct = mk_ctx_solver_simplify_tactic(m);
+            tactic_ref simplify_tct = mk_ctx_solver_simplify_tactic(m);
+            tactic_ref tct = repeat(simplify_tct.get(), max_repeat);
             goal_ref g = alloc(goal, m);
 
-            /*
-             * Fearure to get simplified union formula
-             * rather then  each conjecture
-             * (or e false)
-             *
-             * Vadim
-             * */
             g->assert_expr(m.mk_or(e, m.mk_false()));
 
             goal_ref_buffer result;

@@ -44,7 +44,7 @@ namespace misynth
         public:
             misynth_solver(cmd_context &cmd_ctx, ast_manager &m, solver *solver);
 
-            expr_ref generate_clia_fun_body();
+            expr_ref generate_clia_fun_body(bool is_compact = false);
             void print_def_fun(std::ostream &out, func_decl * f, func_decl_ref_vector &args, expr_ref body);
             void print_sorted_var_list(std::ostream &out,  func_decl_ref_vector & sorted_var);
 

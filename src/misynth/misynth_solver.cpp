@@ -170,7 +170,7 @@ namespace misynth
         collect_invocation_operands(spec, synth_funs, m_ops);
 
         //std::cout << "m_ops size: " << m_ops.size() << std::endl;
-        //prove_unrealizability(spec);
+        prove_unrealizability(spec);
 
         init_used_variables(synth_funs, spec);
 
@@ -205,7 +205,7 @@ namespace misynth
 
         const unsigned int MAX_ITERATION = 500;
 
-        for (unsigned int i = 0; i < MAX_ITERATION; ++ i)
+        for (unsigned int i = 0; i < MAX_ITERATION; ++i)
         {
 
             if (DEBUG_MODE)
@@ -213,6 +213,7 @@ namespace misynth
 
 
             if (i > 0) // non first iteration
+            {
                 for (unsigned int i = 0; i < m_ops.size(); ++i)
                 {
                     invocation_operands &op = m_ops.get(i);
@@ -226,7 +227,7 @@ namespace misynth
                         std::cout << "add to solver called precondition " << mk_ismt2_pp(slv_for_prec->get_assertion(slv_for_prec->get_num_assertions() - 1), m, 0) << std::endl;
                     }
                 }
-
+            }
 
             expr_ref spec_for_concrete_x(m);
             model_ref mdl_for_x;
@@ -340,13 +341,21 @@ namespace misynth
     void misynth_solver::completed_solving(func_decl_ref_vector &synth_funs, expr_ref_vector &constraints)
     {
         std::cout << "###Complete "  << std::endl;
-        expr_ref fun_body = generate_clia_fun_body();
+
         args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
+
+        std::cout << "Incompact solution: ";
+        print_def_fun(std::cout, synth_funs.get(0), *synth_fun_args, generate_clia_fun_body());
+
+        expr_ref fun_body = generate_clia_fun_body(true);
         print_def_fun(std::cout, synth_funs.get(0), *synth_fun_args, fun_body);
+
 
         sanity_checker sanity(m_cmd, m);
         bool sanity_res = sanity.check(constraints, fun_body, synth_funs, *synth_fun_args);
         std::cout << "Sanity Checker Result: " << sanity_res << std::endl;
+
+
 
         //bool sanity_res2 = sanity.check_through_implication(m_utils.con_join(constraints),  m_precs, m_branches, synth_funs, *synth_fun_args);
         //std::cout << "Sanity Checker implication Result: " << sanity_res2 << std::endl;
@@ -386,11 +395,6 @@ namespace misynth
 
         expr_ref res(m);
 
-        if (DEBUG_MODE)
-        {
-            // std::cout << " args.size()" << args->size() << std::endl;
-
-        }
         if (used_vars.size() == 0 || (synth_fun_args->size() == 1 && used_vars.size() == 1))
             //if (used_vars.size() <= synth_fun_args->size())
         {
@@ -482,8 +486,7 @@ namespace misynth
     {
         params_ref params;
         ref<solver> slv = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
-        subsets_backtracking(assumptions, spec, slv.get(), 0);
-        return false;
+        return subsets_backtracking(assumptions, spec, slv.get(), 0);
     }
 
     bool misynth_solver::subsets_backtracking(expr_ref_vector &assump, expr *spec, solver *slv, unsigned int index)
@@ -519,12 +522,12 @@ namespace misynth
 
                     return true;
                 }
-                else
+                /*else
                 {
                     model_ref mdl;
                     slv->get_model(mdl);
                     m_models_from_assumptions.push_back(mdl);
-                }
+                }*/
 
                 slv->pop(1);
             }
@@ -577,16 +580,71 @@ namespace misynth
         out << ") " << std::endl;
     }
 
-    expr_ref misynth_solver::generate_clia_fun_body()
+    expr_ref misynth_solver::generate_clia_fun_body(bool is_compact)
     {
-        expr_ref res(m);
         SASSERT(m_precs.size() == m_branches.size());
+        expr_ref res(m);
         if (m_precs.size() == 0) return res;
-        res = m_branches.get(m_precs.size() - 1);
+
+        std::set<unsigned int> todo_remove;
+        //[+] compaction
+        if (is_compact)
+        {
+
+
+            for (unsigned int i = 0 ; i < m_precs.size() - 1; ++i)
+            {
+                if (todo_remove.find(i) != todo_remove.end())
+                {
+                    continue;
+                }
+                for (unsigned int j = 0 ; j < m_precs.size(); ++j)
+                {
+                    if (i != j)
+                    {
+                        if (todo_remove.find(j) != todo_remove.end())
+                        {
+                            continue;
+                        }
+                        if (m_utils.implies(m_precs.get(i), m_precs.get(j)))
+                        {
+                            //std::cout << "remove " <<  mk_ismt2_pp(m_precs.get(j), m, 0)
+                            //          << " ===> " << mk_ismt2_pp(m_precs.get(i), m, 0) << std::endl;
+                            todo_remove.insert(i);
+                            break;
+                        }
+                        else if (m_utils.implies(m_precs.get(j), m_precs.get(i)))
+                        {
+                            todo_remove.insert(j);
+                            //std::cout << "remove " <<  mk_ismt2_pp(m_precs.get(i), m, 0)
+                            //         << " ===> " << mk_ismt2_pp(m_precs.get(j), m, 0) << std::endl;
+
+                        }
+
+                    }
+                }
+            }
+        }
+        //[-] compaction
+
+        for (unsigned int i = m_precs.size() - 1 ; i < m_precs.size(); --i)
+        {
+            if (todo_remove.find(i) != todo_remove.end())
+            {
+                continue;
+            }
+            res = m_branches.get(i);
+            break;
+        }
+
         expr_ref_vector v(m);
 
         for (unsigned int i = 0 ; i < m_precs.size() - 1; ++i)
         {
+            if (todo_remove.find(i) != todo_remove.end())
+            {
+                continue;
+            }
             res = m.mk_ite(m_precs.get(i), m_branches.get(i), res);
         }
         return res;
