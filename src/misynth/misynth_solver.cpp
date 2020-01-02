@@ -35,6 +35,7 @@ namespace misynth
           m_precs(m),
           m_branches(m),
           m_terms(m),
+          m_assumptions(m),
           m_abducer(cmd_ctx, m)
     {
 
@@ -138,7 +139,7 @@ namespace misynth
 
 
 
-            if (m_arith.is_numeral(val))
+            if (m_arith.is_numeral(val) && !m_arith.is_zero(val))
             {
                 if (i == 0)
                 {
@@ -206,12 +207,15 @@ namespace misynth
 
         const unsigned int MAX_ITERATION = 500;
 
+        unsigned int current_assumption_idx = 0;
+        unsigned int attempt_number_current_assumption = 0;
+        bool pushed_assumption = false;
+
         for (unsigned int i = 0; i < MAX_ITERATION; ++i)
         {
 
             if (DEBUG_MODE)
                 std::cout << "====  Itreration #" << i << "  ====" << std::endl;
-
 
             if (i > 0) // non first iteration
             {
@@ -229,39 +233,62 @@ namespace misynth
                     }
                 }
             }
+            if (attempt_number_current_assumption >= m_params.attempts_per_one_assumption())
+            {
+                ++current_assumption_idx;
+                attempt_number_current_assumption = 0;
+            }
+            if (current_assumption_idx < m_assumptions.size())
+            {
+                pushed_assumption = true;
+                slv_for_prec->push();
+                slv_for_prec->assert_expr(m_assumptions.get(current_assumption_idx));
+                ++attempt_number_current_assumption;
+            }
+
+            lbool r = slv_for_prec->check_sat();
+            if (pushed_assumption)
+            {
+                slv_for_prec->pop(1); //remove assumption
+                pushed_assumption = false;
+            }
+            if (r != lbool::l_true)
+            {
+                current_assumption_idx++;
+                r = slv_for_prec->check_sat();
+            }
+
 
             expr_ref spec_for_concrete_x(m);
             model_ref mdl_for_x;
-            if (true)
+            if (r == lbool::l_true)
             {
-                lbool r = slv_for_prec->check_sat();
-                if (r == lbool::l_true)
-                {
 
-                    slv_for_prec->get_model(mdl_for_x);
-                    std::cout << "SAT Precond!! "  << std::endl;
-                    // slv->pop(1);
-                    /*std::cout << "SAT Precond!! " << *mdl << std::endl;
+                slv_for_prec->get_model(mdl_for_x);
+                std::cout << "SAT Precond!! "  << std::endl;
 
-                    for (func_decl *fd : m_used_vars)
-                    {
-                        expr_ref e( to_expr(m.mk_const(fd)), m) ;
-                        std::cout << fd->get_name() << " " <<  mk_ismt2_pp((*mdl)(e), m, 3) << std::endl;
-                    }*/
-                }
-                else
+                //push to blacklist
+                slv_for_prec->push();
+                slv_for_prec->assert_expr(m.mk_not(m_utils.get_logic_model_with_default_value(mdl_for_x, m_used_vars)));
+
+                // slv->pop(1);
+                /*std::cout << "SAT Precond!! " << *mdl << std::endl;
+
+                for (func_decl *fd : m_used_vars)
                 {
-                    std::cout << "Complete " << r << std::endl;
-                    completed_solving(synth_funs, constraints);
-                    return true;
-                }
+                    expr_ref e( to_expr(m.mk_const(fd)), m) ;
+                    std::cout << fd->get_name() << " " <<  mk_ismt2_pp((*mdl)(e), m, 3) << std::endl;
+                }*/
             }
             else
             {
-                mdl_for_x = m_models_from_assumptions.back();
-                m_models_from_assumptions.pop_back();
+                std::cout << "Complete " << r << std::endl;
+                completed_solving(synth_funs, constraints);
+                return true;
             }
-            spec_for_concrete_x = m_utils.replace_vars_according_to_model(spec_with_coeff, mdl_for_x, m_used_vars);
+
+
+            spec_for_concrete_x = m_utils.replace_vars_according_to_model(spec_with_coeff, mdl_for_x, m_used_vars, true);
 
             if (DEBUG_MODE)
             {
@@ -298,19 +325,25 @@ namespace misynth
 
             /*[+] Find a precondition*/
             last_precond = find_precondition(synth_funs, spec_for_concrete_coeff);
+
+            expr_ref_vector eval_coeff_model(m);
+            for (func_decl *fd : m_coeff_decl_vec)
+            {
+                eval_coeff_model.push_back((*mdl_for_coeff)(m.mk_const(fd)));
+            }
+            //remember this coef
+            slv_for_coeff->push();
+            slv_for_coeff->assert_expr(m.mk_not(m_utils.mk_eq(m_coeff_decl_vec, eval_coeff_model)));
+
             if (m_utils.is_unsat(last_precond))
             {
-                expr_ref_vector eval_coeff_model(m);
-                for (func_decl *fd : m_coeff_decl_vec)
-                {
-                    eval_coeff_model.push_back((*mdl_for_coeff)(m.mk_const(fd)));
-                }
-                //remember this coef
-                slv_for_coeff->push();
-                slv_for_coeff->assert_expr(m.mk_not(m_utils.mk_eq(m_coeff_decl_vec, eval_coeff_model)));
+
                 std::cout << "!!! Precond is unsat" << std::endl;
                 continue;
             }
+
+
+
             expr_ref branch = generate_branch(synth_funs, mdl_for_coeff);
             if (m_utils.is_unsat(m.mk_not(last_precond)))
                 //if(m.is_true(last_precond))
@@ -468,18 +501,18 @@ namespace misynth
             return true;
         }
 
-        expr_ref_vector assumptions(m);
-        generate_assumptions_from_operands(assumptions);
+        //expr_ref_vector assumptions(m);
+        generate_assumptions_from_operands(m_assumptions);
 
         if (VERBOSE)
         {
-            for (unsigned int i = 0; i < assumptions.size(); ++i)
+            for (unsigned int i = 0; i < m_assumptions.size(); ++i)
             {
-                std::cout << "assumptions: " << mk_ismt2_pp(assumptions.get(i), m, 3) << std::endl;
+                std::cout << "assumptions: " << mk_ismt2_pp(m_assumptions.get(i), m, 3) << std::endl;
             }
         }
 
-        return check_assumptions(spec, assumptions);
+        return check_assumptions(spec, m_assumptions);
 
     }
 

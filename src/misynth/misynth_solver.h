@@ -33,7 +33,7 @@ namespace misynth
             func_decl_ref_vector m_coeff_decl_vec;
             func_decl_ref_vector m_used_vars;
             expr_ref_vector m_precs, m_branches;
-            expr_ref_vector m_terms;
+            expr_ref_vector m_terms, m_assumptions;
             app2expr_map m_term_subst;
 
 

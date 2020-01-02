@@ -291,6 +291,19 @@ namespace misynth
             r->get_formulas(res_fmls);
             return expr_ref(con_join(res_fmls), m);
         }
+        expr_ref get_logic_model_with_default_value(model_ref mdl, func_decl_ref_vector &v)
+        {
+            expr_ref_vector eqs(m);
+            for (func_decl *fd :  v)
+            {
+                expr_ref e(m.mk_const(fd), m);
+                if (e == (*mdl)(e))
+                    eqs.push_back(m_arith.is_real(e) ? m_arith.mk_real(0) : m_arith.mk_int(0));
+                else
+                    eqs.push_back((*mdl)(e));
+            }
+            return mk_eq(v, eqs);
+        }
 
         void print_sorted_var_list(std::ostream &out,  func_decl_ref_vector & sorted_var)
         {

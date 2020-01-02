@@ -266,8 +266,8 @@ namespace misynth
                 phi = m.mk_and(phi, m_utils.replace_vars_decl(expr_ref(phi_i[i].get(), m), decl_args.get(i), pattern));
             }
 
-            if (VERBOSE_ABDUCE)
-                std::cout << "crnt phi (line after 27) "   << mk_ismt2_pp(phi, m, 3) << std::endl;
+            //if (VERBOSE_ABDUCE)
+            //    std::cout << "crnt phi (line after 27) "   << mk_ismt2_pp(phi, m, 3) << std::endl;
             phi = m_utils.simplify_context(phi);
 
             clock_t start = clock();
