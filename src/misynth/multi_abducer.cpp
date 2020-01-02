@@ -225,7 +225,7 @@ namespace misynth
             {
                 return phi;
             }
-            if (num_iter >= ISO_DECOMP_ITERS_TRESHOLD)
+            if (num_iter >= m_params.theshold_iso_decomp())
             {
                 if (VERBOSE_ABDUCE)
                     std::cout << "!!! ISO_DECOMP_ITERS_TRESHOLD " << std::endl;

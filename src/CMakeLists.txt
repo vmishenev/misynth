@@ -92,11 +92,12 @@ add_subdirectory(sat/sat_solver)
 add_subdirectory(tactic/smtlogics)
 add_subdirectory(tactic/fpa)
 add_subdirectory(tactic/fd_solver)
+add_subdirectory(misynth)
 add_subdirectory(tactic/portfolio)
 add_subdirectory(opt)
 add_subdirectory(api)
 add_subdirectory(api/dll)
-add_subdirectory(misynth)
+
 
 ################################################################################
 # libz3

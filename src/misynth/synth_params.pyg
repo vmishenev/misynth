@@ -1,0 +1,6 @@
+def_module_params(module_name='misynth',
+                  class_name='synth_params',
+                  export=True,
+                  params=(('theshold_iso_decomp', UINT, 10, 'theshold for number of iterations isomorphic decomposition'),
+                          ('attempts_per_one_attumption', UINT, 5, ' attempts number per one attumption')))
+

@@ -12,4 +12,6 @@ z3_add_component(misynth
     spacer
     tab
     ast
+   PYG_FILES
+    synth_params.pyg
 )

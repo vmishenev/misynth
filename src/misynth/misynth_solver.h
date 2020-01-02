@@ -6,7 +6,7 @@
 
 #include "smt_utils.h"
 
-
+#include "misynth/synth_params.hpp"
 namespace misynth
 {
 
@@ -24,6 +24,7 @@ namespace misynth
         private:
             cmd_context &m_cmd;
             ast_manager &m;
+            synth_params m_params;
             ref<solver> m_solver;
 
             smt_utils m_utils;

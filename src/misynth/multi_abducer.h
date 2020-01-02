@@ -12,14 +12,15 @@ Abstract:
 Notes:
 
 
-I introduce new vars for operands arguments to flat .
-R(x1+x2) is replaced to R(y) /\ y=x1+x2
+    I introduce new vars for operands arguments to flat .
+    R(x1+x2) is replaced to R(y) /\ y=x1+x2
 
 --*/
 #ifndef MULTI_ABDUCER_H
 #define MULTI_ABDUCER_H
 
 #include "cmd_context/cmd_context.h"
+#include "misynth/synth_params.hpp"
 #include "smt_utils.h"
 
 
@@ -32,6 +33,7 @@ namespace misynth
         private:
             cmd_context &m_cmd;
             ast_manager &m;
+            synth_params m_params;
             arith_util m_arith;
             smt_utils m_utils;
 

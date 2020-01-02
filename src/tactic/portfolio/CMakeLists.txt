@@ -14,6 +14,7 @@ z3_add_component(portfolio
     subpaving_tactic
     ufbv_tactic
     fd_solver
+    misynth
   TACTIC_HEADERS
     default_tactic.h
 )

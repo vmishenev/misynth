@@ -10,6 +10,7 @@
 
 #include <ast/used_vars.h>
 #include <ast/rewriter/th_rewriter.h>
+#include "misynth/synth_params.hpp"
 #include "sanity_checker.h"
 
 
@@ -36,6 +37,7 @@ namespace misynth
           m_terms(m),
           m_abducer(cmd_ctx, m)
     {
+
     }
 
     void misynth_solver::generate_coeff_decl(func_decl_ref_vector &synth_funs)
@@ -182,7 +184,6 @@ namespace misynth
         {
             std::cout << "spec_with_coeff: " << mk_ismt2_pp(spec_with_coeff, m, 3) << std::endl;
         }
-
         /* used_vars uv;
 
          for (unsigned i = 0; i < uv.get_num_vars(); ++i)
