@@ -212,9 +212,14 @@ namespace misynth
         bool pushed_assumption = false;
 
         bool generated_new_model_x = true;
+        bool is_added_heuristic = false;
+
         unsigned int  current_iter_model_x = UINT_MAX - 1;
+        unsigned int  current_iter_trivial_model_x = 0;
 
         expr_ref spec_for_concrete_x(m);
+
+        expr_ref  heuristic_constaraint_coeff(generate_heuristic_constaraint_coeff(m_coeff_decl_vec));
 
         for (unsigned int i = 0; i < MAX_ITERATION; ++i)
         {
@@ -239,10 +244,10 @@ namespace misynth
                 }
                 last_precond = 0;
             }
-            if (current_iter_model_x++ >= m_params.attempts_per_one_model_x())
+            if (current_iter_model_x++ >= (m_params.attempts_per_one_model_x() + m_params.trivial_attempts_per_one_model_x()))
             {
-                std::cout << "add to solver called precondition "  << std::endl;
                 current_iter_model_x = 0;
+                current_iter_trivial_model_x = 0;
                 if (attempt_number_current_assumption >= m_params.attempts_per_one_assumption())
                 {
                     ++current_assumption_idx;
@@ -320,6 +325,20 @@ namespace misynth
             /*
              * [+] getting model for coefficients
              * */
+            if (current_iter_trivial_model_x == 0 && m_params.trivial_attempts_per_one_model_x() > 0)
+            {
+                std::cout << "pushed heuristic constaraint for coeff" << std::endl;
+                is_added_heuristic = true;
+                slv_for_coeff->push();
+                slv_for_coeff->assert_expr(heuristic_constaraint_coeff);
+            }
+            else if (current_iter_trivial_model_x >= m_params.trivial_attempts_per_one_model_x() && is_added_heuristic)
+            {
+                std::cout << "popped heuristic constaraint for coeff" << std::endl;
+                is_added_heuristic = false;
+                slv_for_coeff->pop(1);
+            }
+            ++current_iter_trivial_model_x;
 
             slv_for_coeff->push();
             slv_for_coeff->assert_expr(spec_for_concrete_x);
@@ -329,6 +348,13 @@ namespace misynth
 
             if (res_spec_for_x != lbool::l_true)
             {
+                //TODO: take into account a heuristic
+                if (is_added_heuristic)
+                {
+                    std::cout << "WARNING!!! Heuristic for this spec and model x is unsat. " << std::endl;
+                    slv_for_coeff->pop(2); // remove spec_for_concrete_x and heuristic
+                    continue;
+                }
                 std::cout << "WARNING!!! There are several branches. " << std::endl;
                 return false;
             }
@@ -704,4 +730,20 @@ namespace misynth
         }
         return res;
     }
+
+    expr_ref misynth_solver::generate_heuristic_constaraint_coeff(func_decl_ref_vector &coeff_decls)
+    {
+        expr_ref_vector v(m);
+        for (func_decl * fd : coeff_decls)
+        {
+            expr_ref e(m.mk_const(fd), m);
+            v.push_back(m.mk_or(
+                            m.mk_eq(e, m_arith.mk_int(-1)),
+                            m.mk_eq(e, m_arith.mk_int(0)),
+                            m.mk_eq(e, m_arith.mk_int(1))
+                        ));
+        }
+        return m_utils.dis_join(v);
+    }
+
 } // namespace misynth

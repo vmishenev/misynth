@@ -3,6 +3,7 @@ def_module_params(module_name='misynth',
                   export=True,
                   params=(('theshold_iso_decomp', UINT, 10, 'theshold for number of iterations isomorphic decomposition'),
                           ('attempts_per_one_assumption', UINT, 5, ' attempts number per one assumption'),
-                          ('attempts_per_one_model_x', UINT, 5, ' attempts number per one assumption'),
+                          ('attempts_per_one_model_x', UINT, 3, ' attempts number per one assumption'),
+                          ('trivial_attempts_per_one_model_x', UINT, 4, 'trivial attempts number per one assumption'),
                            ('check_assumptions', BOOL, True, ' either check unrealizability')))
 
