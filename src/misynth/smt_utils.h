@@ -9,6 +9,10 @@
 
 namespace misynth
 {
+    // for stat
+    extern unsigned int max_iter_iso_mor;
+    extern unsigned int iters_main_alg;
+
     extern bool DEBUG_MODE;
     struct smt_utils
     {
@@ -257,7 +261,8 @@ namespace misynth
                 quantifier_vars_sort.push_back(fd->get_range());
                 quantifier_vars_names.push_back(symbol("_x_"));  //fd->get_name()
             }
-            expr_ref quant_e(m.mk_not(m.mk_exists(quantifier_vars_sort.size(), quantifier_vars_sort.c_ptr(), quantifier_vars_names.c_ptr(), m.mk_not(e))), m);
+            //expr_ref quant_e(m.mk_not(m.mk_exists(quantifier_vars_sort.size(), quantifier_vars_sort.c_ptr(), quantifier_vars_names.c_ptr(), m.mk_not(e))), m);
+            expr_ref quant_e(m.mk_forall(quantifier_vars_sort.size(), quantifier_vars_sort.c_ptr(), quantifier_vars_names.c_ptr(), e), m);
             subst.reverse();
             return replace_vars_decl(quant_e, quantifier_vars, subst);
         }

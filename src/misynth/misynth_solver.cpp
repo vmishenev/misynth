@@ -20,7 +20,8 @@
 
 namespace misynth
 {
-
+    unsigned int max_iter_iso_mor = 0;
+    unsigned int iters_main_alg = 0;
     bool DEBUG_MODE = true;
     misynth_solver::misynth_solver(cmd_context &cmd_ctx, ast_manager &m, solver *solver)
         : m_cmd(cmd_ctx)
@@ -75,7 +76,8 @@ namespace misynth
                         sub.insert(a, z());
                         rp->set_substitution(&sub);
          * */
-
+        app2expr_map  term_subst;
+        expr_ref_vector accumulator_terms(m);
         for (auto it = set.begin(); it != set.end(); it++)
         {
             app *ap_f = (*it);
@@ -90,17 +92,18 @@ namespace misynth
             }
 
             expr_ref linear_term = m_arith.mk_add_simplify(mult_terms);
-            m_term_subst.insert(ap_f, linear_term);
-            m_terms.push_back(linear_term);
+            term_subst.insert(ap_f, linear_term);
+            accumulator_terms.push_back(linear_term);
+            //m_terms.push_back(linear_term);
         }
 
-        rewrite_expr(spec, new_spec);
+        rewrite_expr(spec, new_spec, term_subst);
 
     }
 
-    void misynth_solver::rewrite_expr(expr *f, expr_ref &res)
+    void misynth_solver::rewrite_expr(expr *f, expr_ref &res, app2expr_map& subst)
     {
-        invocations_rewriter_cfg inv_cfg(m, m_term_subst);
+        invocations_rewriter_cfg inv_cfg(m, subst);
         rewriter_tpl<invocations_rewriter_cfg> rwr(m, false, inv_cfg);
         rwr(f, res);
     }
@@ -217,7 +220,7 @@ namespace misynth
 
         for (unsigned int i = 0; i < MAX_ITERATION; ++i)
         {
-
+            iters_main_alg++;
             if (DEBUG_MODE)
                 std::cout << "====  Itreration #" << i << "  ====" << std::endl;
 
@@ -319,19 +322,19 @@ namespace misynth
             /*
              * [+] getting model for coefficients
              * */
-            if (current_iter_trivial_model_x == 0 && m_params.trivial_attempts_per_one_model_x() > 0)
+            if (current_iter_trivial_model_x++ < m_params.trivial_attempts_per_one_model_x() > 0)
             {
                 std::cout << "pushed heuristic constaraint for coeff" << std::endl;
                 is_added_heuristic = true;
                 slv_for_coeff->push();
                 slv_for_coeff->assert_expr(heuristic_constaraint_coeff);
             }
-            else if (current_iter_trivial_model_x >= m_params.trivial_attempts_per_one_model_x() && is_added_heuristic)
+            /*else if (current_iter_trivial_model_x >= m_params.trivial_attempts_per_one_model_x() && is_added_heuristic)
             {
                 std::cout << "popped heuristic constaraint for coeff" << std::endl;
                 is_added_heuristic = false;
                 slv_for_coeff->pop(1);
-            }
+            }*/
             ++current_iter_trivial_model_x;
 
             slv_for_coeff->push();
@@ -346,6 +349,7 @@ namespace misynth
                 if (is_added_heuristic)
                 {
                     std::cout << "WARNING!!! Heuristic for this spec and model x is unsat. " << std::endl;
+                    is_added_heuristic = false;
                     slv_for_coeff->pop(2); // remove spec_for_concrete_x and heuristic
                     continue;
                 }
@@ -353,9 +357,14 @@ namespace misynth
                 return false;
             }
 
-
             slv_for_coeff->get_model(mdl_for_coeff);
             slv_for_coeff->pop(1);
+            if (is_added_heuristic)
+            {
+                slv_for_coeff->pop(1);
+                is_added_heuristic = false;
+            }
+
             std::cout << "SAT res_spec_for_x!! " << *mdl_for_coeff << std::endl;
             //simplify spec for concrete coef
             expr_ref branch = generate_branch(synth_funs, mdl_for_coeff);
@@ -436,7 +445,7 @@ namespace misynth
         sanity_checker sanity(m_cmd, m);
         bool sanity_res = sanity.check(constraints, fun_body, synth_funs, *synth_fun_args);
         std::cout << "Sanity Checker Result: " << sanity_res << std::endl;
-
+        std::cout << iters_main_alg << " " << max_iter_iso_mor << " " << m_precs.size()  << std::endl;
 
 
         //bool sanity_res2 = sanity.check_through_implication(m_utils.con_join(constraints),  m_precs, m_branches, synth_funs, *synth_fun_args);
@@ -448,7 +457,7 @@ namespace misynth
         vector<invocation_operands> current_ops;
         collect_invocation_operands(spec, synth_funs, current_ops);
         expr_ref spec_with_coeff(m);
-        rewrite_expr(spec, spec_with_coeff);
+        rewriter_functions_to_linear_term(synth_funs, spec, spec_with_coeff);
         std::cout << "spec_with_coeff " << mk_ismt2_pp(spec_with_coeff, m, 3) << std::endl;
 
         expr_ref spec_for_concrete_coeff = m_utils.replace_vars_according_to_model(spec_with_coeff, mdl_for_coeff, m_coeff_decl_vec, true);
@@ -753,6 +762,7 @@ namespace misynth
                             m.mk_eq(e, m_arith.mk_int(1))
                         ));
         }
+        v.reverse();
         return m_utils.dis_join(v);
     }
 

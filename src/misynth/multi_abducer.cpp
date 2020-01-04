@@ -6,17 +6,17 @@
 #include "ast/used_vars.h"
 #include "multi_abducer.h"
 #include "qe/qe.h"
-
+#include "qe/qe_tactic.h"
 #include <set>
 #include <ctime>
 #include <iostream>
 
-#define DEBUG_ABDUCE false
+#define DEBUG_ABDUCE m_params.debug_abduce()
 #define VERBOSE_ABDUCE true
 
 namespace misynth
 {
-    const int ISO_DECOMP_ITERS_TRESHOLD = 10;
+
     multi_abducer::multi_abducer(cmd_context &cmd_ctx, ast_manager &m) : m_cmd(cmd_ctx), m(m), m_arith(m), m_utils(cmd_ctx, m)
     {
     }
@@ -220,6 +220,7 @@ namespace misynth
 
             if (r != lbool::l_true)
             {
+                max_iter_iso_mor = std::max(max_iter_iso_mor, num_iter);
                 return phi;
             }
             if (num_iter >= m_params.theshold_iso_decomp())
@@ -299,14 +300,28 @@ namespace misynth
             }
         }
 
+        implic = m_utils.universal_quantified(implic, quantifier_vars);
         if (DEBUG_ABDUCE)
             std::cout << "Simple abduction : " << mk_ismt2_pp(implic, m, 3) << std::endl;
-        implic = m_utils.universal_quantified(implic, quantifier_vars);
+
         //std::cout << "Simple abduction implic2: " << mk_ismt2_pp(implic, m, 3) << std::endl;
         smt_params params;
         expr_ref result(m);
         qe::expr_quant_elim      expr_qe(m, params);
         expr_qe(m.mk_true(), implic, result);
+
+        //through tactic qe
+        /* tactic_ref tct = mk_qe_tactic(m);
+        goal_ref g = alloc(goal, m);
+
+        g->assert_expr(implic);
+
+        goal_ref_buffer result_goal;
+        (*tct)(g, result_goal);
+        goal *r = result_goal[0];
+        expr_ref_vector res_fmls(m);
+        r->get_formulas(res_fmls);
+        expr_ref result(m_utils.con_join(res_fmls), m);*/
         if (DEBUG_ABDUCE)
             std::cout << "Simple abduction result: " << mk_ismt2_pp(result, m, 3) << std::endl;
         return result;

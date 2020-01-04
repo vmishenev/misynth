@@ -58,7 +58,7 @@ namespace misynth
             void rewriter_functions_to_linear_term(func_decl_ref_vector &synth_funs,
                                                    expr_ref spec, expr_ref &new_spec);
 
-            void rewrite_expr(expr *f, expr_ref &res);
+            void rewrite_expr(expr *f, expr_ref &res, app2expr_map& subst);
 
             void init_used_variables(func_decl_ref_vector &synth_funs, expr_ref spec);
             expr_ref find_precondition(func_decl_ref_vector &synth_funs,  expr_ref &spec, model_ref mdl_for_coeff);
