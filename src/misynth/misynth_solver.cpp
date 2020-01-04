@@ -4,16 +4,15 @@
 #include "ast/ast_pp.h"
 #include "ast/rewriter/rewriter.h"
 #include "ast/rewriter/rewriter_def.h"
-#include <iomanip>
-#include <iostream>
-#include <set>
 
-#include <ast/used_vars.h>
-#include <ast/rewriter/th_rewriter.h>
+#include "ast/used_vars.h"
+#include "ast/rewriter/th_rewriter.h"
 #include "misynth/synth_params.hpp"
 #include "sanity_checker.h"
 
-
+#include <iomanip>
+#include <iostream>
+#include <set>
 
 
 #define VERBOSE true
@@ -185,12 +184,7 @@ namespace misynth
         {
             std::cout << "spec_with_coeff: " << mk_ismt2_pp(spec_with_coeff, m, 3) << std::endl;
         }
-        /* used_vars uv;
 
-         for (unsigned i = 0; i < uv.get_num_vars(); ++i)
-         {
-             if (uv.get(i))
-             }*/
 
         params_ref params;
         ref<solver> slv_for_prec = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
@@ -363,14 +357,23 @@ namespace misynth
             slv_for_coeff->get_model(mdl_for_coeff);
             slv_for_coeff->pop(1);
             std::cout << "SAT res_spec_for_x!! " << *mdl_for_coeff << std::endl;
-            spec_for_concrete_coeff = m_utils.replace_vars_according_to_model(spec_with_coeff, mdl_for_coeff, m_coeff_decl_vec, true);
-            std::cout << "spec_for_concrete_coeff " << mk_ismt2_pp(spec_for_concrete_coeff, m, 3) << std::endl;
+            //simplify spec for concrete coef
+            expr_ref branch = generate_branch(synth_funs, mdl_for_coeff);
+            args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
+            expr_ref additional_cond = generate_fun_macros(branch, synth_funs, *synth_fun_args);
+            expr_ref simplified_spec = m_utils.simplify_context_cond(spec, additional_cond);
+            std::cout << "simplified_spec for concrete coeff " << mk_ismt2_pp(simplified_spec, m, 3) << std::endl;
+
+            //
+
+            //spec_for_concrete_coeff = m_utils.replace_vars_according_to_model(spec_with_coeff, mdl_for_coeff, m_coeff_decl_vec, true);
+            // std::cout << "spec_for_concrete_coeff " << mk_ismt2_pp(spec_for_concrete_coeff, m, 3) << std::endl;
             /*[-] */
 
 
 
             /*[+] Find a precondition*/
-            last_precond = find_precondition(synth_funs, spec_for_concrete_coeff);
+            last_precond = find_precondition(synth_funs, simplified_spec, mdl_for_coeff);
 
             expr_ref_vector eval_coeff_model(m);
             for (func_decl *fd : m_coeff_decl_vec)
@@ -390,7 +393,6 @@ namespace misynth
 
 
 
-            expr_ref branch = generate_branch(synth_funs, mdl_for_coeff);
             if (m_utils.is_unsat(m.mk_not(last_precond)))
                 //if(m.is_true(last_precond))
             {
@@ -441,8 +443,16 @@ namespace misynth
         //std::cout << "Sanity Checker implication Result: " << sanity_res2 << std::endl;
 
     }
-    expr_ref misynth_solver::find_precondition(func_decl_ref_vector &synth_funs, expr_ref &spec_for_concrete_coeff)
+    expr_ref misynth_solver::find_precondition(func_decl_ref_vector &synth_funs, expr_ref &spec, model_ref mdl_for_coeff)
     {
+        vector<invocation_operands> current_ops;
+        collect_invocation_operands(spec, synth_funs, current_ops);
+        expr_ref spec_with_coeff(m);
+        rewrite_expr(spec, spec_with_coeff);
+        std::cout << "spec_with_coeff " << mk_ismt2_pp(spec_with_coeff, m, 3) << std::endl;
+
+        expr_ref spec_for_concrete_coeff = m_utils.replace_vars_according_to_model(spec_with_coeff, mdl_for_coeff, m_coeff_decl_vec, true);
+        std::cout << "spec_for_concrete_coeff " << mk_ismt2_pp(spec_for_concrete_coeff, m, 3) << std::endl;
 
         //simplify
         /*expr_ref th_res(m);
@@ -516,7 +526,7 @@ namespace misynth
 
             //[-]
             */
-            res = m_abducer.nonlinear_abduce(m_ops, expr_ref(m.mk_true(), m), th_res, *synth_fun_args);
+            res = m_abducer.nonlinear_abduce(current_ops, expr_ref(m.mk_true(), m), th_res, *synth_fun_args);
 
             //lit(x1) /\ lit(x2) => phi(x1, x2)
             //try_to_separate_into_disjoint_sets();
@@ -746,4 +756,19 @@ namespace misynth
         return m_utils.dis_join(v);
     }
 
+
+    expr_ref misynth_solver::generate_fun_macros(expr_ref body_fun, func_decl_ref_vector &synth_funs, func_decl_ref_vector args)
+    {
+        func_decl *fd = synth_funs.get(0);
+
+        expr_ref_vector args_app(m);
+        for (auto &fd : args)
+        {
+            args_app.push_back(m.mk_const(fd));
+        }
+        expr_ref fd_eq_body_fun(m.mk_eq(m.mk_app(fd, args_app.size(), args_app.c_ptr()), body_fun), m);
+        expr_ref macros(m_utils.universal_quantified(fd_eq_body_fun, args));
+
+        return macros;
+    }
 } // namespace misynth

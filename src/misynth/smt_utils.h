@@ -291,6 +291,26 @@ namespace misynth
             r->get_formulas(res_fmls);
             return expr_ref(con_join(res_fmls), m);
         }
+
+        expr_ref simplify_context_cond(expr_ref e, expr_ref condition, unsigned int max_repeat = UINT_MAX)
+        {
+            tactic_ref simplify_tct = mk_ctx_solver_simplify_tactic(m);
+            tactic_ref tct = repeat(simplify_tct.get(), max_repeat);
+            goal_ref g = alloc(goal, m);
+
+            g->assert_expr(m.mk_or(e, m.mk_false()));
+            g->assert_expr(condition); //add condition
+
+            goal_ref_buffer result;
+            (*tct)(g, result);
+            SASSERT(result.size() == 1);
+            goal *r = result[0];
+            expr_ref_vector res_fmls(m);
+            r->get_formulas(res_fmls);
+            res_fmls.pop_back();//remove condition
+            return expr_ref(con_join(res_fmls), m);
+        }
+
         expr_ref get_logic_model_with_default_value(model_ref mdl, func_decl_ref_vector &v)
         {
             expr_ref_vector eqs(m);

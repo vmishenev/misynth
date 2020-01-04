@@ -61,9 +61,10 @@ namespace misynth
             void rewrite_expr(expr *f, expr_ref &res);
 
             void init_used_variables(func_decl_ref_vector &synth_funs, expr_ref spec);
-            expr_ref find_precondition(func_decl_ref_vector &synth_funs,  expr_ref &spec_for_concrete_coeff);
+            expr_ref find_precondition(func_decl_ref_vector &synth_funs,  expr_ref &spec, model_ref mdl_for_coeff);
             args_t *get_args_decl_for_synth_fun(func_decl *f);
             expr_ref generate_branch(func_decl_ref_vector &synth_funs, model_ref mdl);
+            expr_ref generate_fun_macros(expr_ref body_fun, func_decl_ref_vector &synth_funs, func_decl_ref_vector args);
 
             /* [+] Unrealizability Algorithm*/
 

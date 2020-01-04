@@ -1,18 +1,15 @@
-//#include "ast/decl_collector.h"
 #include "ast/ast_pp.h"
 #include "ast/rewriter/rewriter.h"
 #include "ast/rewriter/rewriter_def.h"
-#include <iomanip>
-#include <iostream>
-#include <set>
+#include "ast/rewriter/th_rewriter.h"
 
-#include <ast/used_vars.h>
-#include <ast/rewriter/th_rewriter.h>
+#include "ast/used_vars.h"
 #include "multi_abducer.h"
-#include "ast/rewriter/expr_replacer.h"
 #include "qe/qe.h"
 
+#include <set>
 #include <ctime>
+#include <iostream>
 
 #define DEBUG_ABDUCE false
 #define VERBOSE_ABDUCE true
@@ -256,8 +253,14 @@ namespace misynth
                 phi_except_i = m_utils.simplify_context(phi_except_i);
                 if (DEBUG_ABDUCE)
                     std::cout << "phi_except_i " << i <<  mk_ismt2_pp(phi_except_i, m, 3) << std::endl;
+                //expr_ref old_phi_i(phi_i[i].get(), m);
 
-                phi_i[i] = (simple_abduce(phi_except_i, conclusion, decl_args.get(i)));
+                phi_i[i] = simple_abduce(phi_except_i, conclusion, decl_args.get(i));
+                if (VERBOSE_ABDUCE)
+                {
+                    //std::cout << "check either old phi_i implies abduced phi_i: " << m_utils.implies(old_phi_i, phi_i[i].get()) << std::endl;
+                    //std::cout << m_utils.simplify_context(old_phi_i) << " ==>" << m_utils.simplify_context(expr_ref(phi_i[i].get(), m)) << std::endl;
+                }
             }
 
             phi = m.mk_true();
