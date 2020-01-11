@@ -5,6 +5,8 @@
 #include "ast/expr_delta_pair.h"
 #include "util/hashtable.h"
 #include "ast/ast_pp.h"
+#include "model/model.h"
+#include "smt_utils.h"
 
 typedef expr_ref_vector invocation_operands;
 

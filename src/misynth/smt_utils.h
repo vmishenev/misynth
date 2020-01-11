@@ -34,6 +34,20 @@ namespace misynth
             m_solver->get_model(model);
             return model;
         }
+        model_ref get_model(expr_ref e)
+        {
+            model_ref model;
+            m_solver->push();
+            m_solver->assert_expr(e);
+            lbool r = m_solver->check_sat();
+            if (r == lbool::l_true)
+            {
+                m_solver->get_model(model);
+            }
+            m_solver->pop(1);
+
+            return model;
+        }
         proof_ref get_proof()
         {
             proof_ref pr(m_solver->get_proof(), m);
@@ -47,6 +61,7 @@ namespace misynth
         {
             return implies(a, b) && implies(b, a);
         }
+
 
         bool is_unsat(expr *e)
         {
@@ -192,6 +207,7 @@ namespace misynth
         {
             // TODO Optimize
             SASSERT(src_vars.size() <=  dest_vars.size());
+            //if (src_vars.size() == 0) return expr_ref(e, m);
             scoped_ptr<expr_replacer> rp = mk_default_expr_replacer(m);
             expr_substitution sub(m);
 

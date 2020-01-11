@@ -9,6 +9,8 @@
 #include "ast/rewriter/th_rewriter.h"
 #include "misynth/synth_params.hpp"
 #include "sanity_checker.h"
+#include "search_simultaneously_branches.h"
+#include "misynth/function_utils.h"
 
 #include <iomanip>
 #include <iostream>
@@ -29,6 +31,7 @@ namespace misynth
         , m_solver(solver)
         , m_utils(cmd_ctx, m)
         , m_arith(m)
+        , m_futils(cmd_ctx, m)
         , m_coeff_decl_vec(m),
 
           m_used_vars(m),
@@ -60,53 +63,12 @@ namespace misynth
 
 
 
-    void misynth_solver::rewriter_functions_to_linear_term(func_decl_ref_vector &synth_funs,
-            expr_ref spec, expr_ref &new_spec)
-    {
-        invocation_collector collector(synth_funs);
-        collector(spec);
-
-        generate_coeff_decl(synth_funs);
-        obj_hashtable<app > set = collector.get_invocation();
-
-        /*
-         *
-         * scoped_ptr<expr_replacer> rp = mk_default_expr_replacer(m());
-                        expr_substitution sub(m());
-                        sub.insert(a, z());
-                        rp->set_substitution(&sub);
-         * */
-        app2expr_map  term_subst;
-        expr_ref_vector accumulator_terms(m);
-        for (auto it = set.begin(); it != set.end(); it++)
-        {
-            app *ap_f = (*it);
-            expr_ref_vector mult_terms(m);
-            mult_terms.push_back(m.mk_const(m_coeff_decl_vec.get(0)));
-
-
-            for (unsigned i = 0; i < ap_f->get_num_args(); ++i)
-            {
-                expr *term = m_arith.mk_mul(m.mk_const(m_coeff_decl_vec.get(1 + i)), ap_f->get_arg(i));
-                mult_terms.push_back(term);
-            }
-
-            expr_ref linear_term = m_arith.mk_add_simplify(mult_terms);
-            term_subst.insert(ap_f, linear_term);
-            accumulator_terms.push_back(linear_term);
-            //m_terms.push_back(linear_term);
-        }
-
-        rewrite_expr(spec, new_spec, term_subst);
-
-    }
-
-    void misynth_solver::rewrite_expr(expr *f, expr_ref &res, app2expr_map& subst)
+    /*void misynth_solver::rewrite_expr(expr *f, expr_ref &res, app2expr_map& subst)
     {
         invocations_rewriter_cfg inv_cfg(m, subst);
         rewriter_tpl<invocations_rewriter_cfg> rwr(m, false, inv_cfg);
         rwr(f, res);
-    }
+    }*/
     void misynth_solver::init_used_variables(func_decl_ref_vector &synth_funs, expr_ref spec)
     {
         decl_collector decls(m);
@@ -127,41 +89,7 @@ namespace misynth
 
 
     }
-    expr_ref misynth_solver::generate_branch(func_decl_ref_vector &synth_funs, model_ref mdl)
-    {
-        func_decl_ref_vector *args_decl = get_args_decl_for_synth_fun(synth_funs.get(0));
 
-        //get coeeficients
-        expr_ref_vector  mult_terms(m);
-
-        for (unsigned i = 0; i < m_coeff_decl_vec.size(); ++i)
-        {
-
-            expr_ref val = (*mdl)(m.mk_const(m_coeff_decl_vec.get(i)));
-
-
-
-            if (m_arith.is_numeral(val) && !m_arith.is_zero(val))
-            {
-                if (i == 0)
-                {
-                    mult_terms.push_back(val);
-                    continue;
-                }
-                else
-                {
-                    mult_terms.push_back(m_arith.mk_mul(val, m.mk_const(args_decl->get(i - 1))));
-                }
-            }
-            else
-            {
-                //mult_terms.push_back(m_arith.mk_mul(m_arith.mk_int(0), m.mk_const(args_decl.get(i))));
-
-            }
-        }
-
-        return m_arith.mk_add_simplify(mult_terms);
-    }
 
     bool misynth_solver::solve(func_decl_ref_vector &synth_funs, expr_ref_vector &constraints,  obj_map<func_decl, args_t *> &synth_fun_args_decl)
     {
@@ -179,9 +107,10 @@ namespace misynth
 
         init_used_variables(synth_funs, spec);
 
-
+        generate_coeff_decl(synth_funs);
         expr_ref spec_with_coeff(m);
-        rewriter_functions_to_linear_term(synth_funs, spec, spec_with_coeff);
+        invocations_rewriter inv_rwr(m_cmd, m);
+        inv_rwr.rewriter_functions_to_linear_term(m_coeff_decl_vec, synth_funs, spec, spec_with_coeff);
 
         if (VERBOSE)
         {
@@ -192,6 +121,7 @@ namespace misynth
         params_ref params;
         ref<solver> slv_for_prec = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
         ref<solver> slv_for_coeff = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
+        slv_for_x_prec = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
 
         expr_ref last_precond(0, m);
 
@@ -217,13 +147,15 @@ namespace misynth
         expr_ref spec_for_concrete_x(m);
 
         expr_ref  heuristic_constaraint_coeff(generate_heuristic_constaraint_coeff(m_coeff_decl_vec));
+        args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
+
 
         for (unsigned int i = 0; i < MAX_ITERATION; ++i)
         {
             iters_main_alg++;
             if (DEBUG_MODE)
                 std::cout << "====  Itreration #" << i << "  ====" << std::endl;
-
+            model_ref mdl_for_x;
             if (last_precond.get()) // non first iteration
             {
                 for (unsigned int i = 0; i < m_ops.size(); ++i)
@@ -272,7 +204,7 @@ namespace misynth
 
 
 
-                model_ref mdl_for_x;
+
                 if (r == lbool::l_true)
                 {
 
@@ -280,8 +212,8 @@ namespace misynth
                     std::cout << "SAT Precond!! "  << std::endl;
 
                     //push to blacklist
-                    slv_for_prec->push();
-                    slv_for_prec->assert_expr(m.mk_not(m_utils.get_logic_model_with_default_value(mdl_for_x, m_used_vars)));
+                    //slv_for_prec->push();
+                    //slv_for_prec->assert_expr(m.mk_not(m_utils.get_logic_model_with_default_value(mdl_for_x, m_used_vars)));
 
                     // slv->pop(1);
                     /*std::cout << "SAT Precond!! " << *mdl << std::endl;
@@ -294,9 +226,14 @@ namespace misynth
                 }
                 else
                 {
-                    std::cout << "Complete " << r << std::endl;
-                    completed_solving(synth_funs, constraints);
-                    return true;
+                    std::cout << "!!! UNSAT of precs with replaced operands"  << std::endl;
+                    model_ref mdl = m_utils.get_model(spec_with_coeff);
+                    if (try_find_simultaneously_branches(synth_funs, constraints, mdl))
+                        return true;
+                    continue;
+
+                    // completed_solving(synth_funs, constraints);
+                    //return true;
                 }
 
 
@@ -307,6 +244,8 @@ namespace misynth
                 lbool r = slv_for_prec->check_sat();
                 if (r == lbool::l_false)
                 {
+                    std::cout << "!!! UNSAT of precs with replaced operands"  << std::endl;
+                    std::cout << "ERROR!!!! TODO: simply check sat of prec" << r << std::endl;
                     completed_solving(synth_funs, constraints);
                     return true;
                 }
@@ -353,8 +292,13 @@ namespace misynth
                     slv_for_coeff->pop(2); // remove spec_for_concrete_x and heuristic
                     continue;
                 }
+
                 std::cout << "WARNING!!! There are several branches. " << std::endl;
-                return false;
+
+                if (try_find_simultaneously_branches(synth_funs, constraints, mdl_for_x))
+                    return true;
+
+                //return false;
             }
 
             slv_for_coeff->get_model(mdl_for_coeff);
@@ -367,8 +311,8 @@ namespace misynth
 
             std::cout << "SAT res_spec_for_x!! " << *mdl_for_coeff << std::endl;
             //simplify spec for concrete coef
-            expr_ref branch = generate_branch(synth_funs, mdl_for_coeff);
-            args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
+            expr_ref branch = m_futils.generate_branch(m_coeff_decl_vec, *synth_fun_args, synth_funs, mdl_for_coeff);
+
             expr_ref additional_cond = generate_fun_macros(branch, synth_funs, *synth_fun_args);
             expr_ref simplified_spec = m_utils.simplify_context_cond(spec, additional_cond);
             std::cout << "simplified_spec for concrete coeff " << mk_ismt2_pp(simplified_spec, m, 3) << std::endl;
@@ -416,6 +360,12 @@ namespace misynth
             m_precs.push_back(last_precond);
             m_branches.push_back(branch);
 
+            slv_for_x_prec->push();
+            slv_for_x_prec->assert_expr(last_precond);
+
+
+            if (try_find_simultaneously_branches(synth_funs, constraints, 0))
+                return true;
 
 
             /*[-] */
@@ -429,6 +379,55 @@ namespace misynth
 
         return false;
     }
+
+
+
+
+    bool misynth_solver::try_find_simultaneously_branches(func_decl_ref_vector &synth_funs, expr_ref_vector &constraints, model_ref mdl_for_x)
+    {
+        args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
+        params_ref params_slv;
+        if (mdl_for_x.get())
+        {
+            std::cout << "start search_simultaneously_branches with mdl: " << *mdl_for_x << std::endl;
+            search_simultaneously_branches search(m_cmd, m);
+            m_branches.reset();
+            m_precs.reset();
+            search(synth_funs, constraints, mdl_for_x, *synth_fun_args, m_branches, m_precs);
+            slv_for_x_prec = m_cmd.get_solver_factory()(m, params_slv, false, true, false, symbol::null);
+            slv_for_x_prec->push();
+            slv_for_x_prec->assert_expr(m_precs);
+        }
+
+
+        while (slv_for_x_prec->check_sat() == lbool::l_true)
+        {
+            std::cout << "Completing condition is sat!  "  << std::endl;
+            expr_ref fun_body = generate_clia_fun_body(true);
+            //model_ref mdl;
+            sanity_checker sanity(m_cmd, m);
+            bool sanity_res = sanity.check(constraints, fun_body, synth_funs, *synth_fun_args, mdl_for_x);
+            if (sanity_res)
+            {
+                completed_solving(synth_funs, constraints);
+                return true;
+            }
+            else
+            {
+                std::cout << "Sanity failed, start   search_simultaneously_branches"  << std::endl;
+                search_simultaneously_branches search(m_cmd, m);
+                m_branches.reset();
+                m_precs.reset();
+                search(synth_funs, constraints, mdl_for_x, *synth_fun_args, m_branches, m_precs);
+                slv_for_x_prec = m_cmd.get_solver_factory()(m, params_slv, false, true, false, symbol::null);
+                slv_for_x_prec->push();
+                slv_for_x_prec->assert_expr(m_precs);
+                //try_find_simultaneously_branches(synth_funs, constraints, mdl_for_x);
+            }
+        }
+        return false;
+    }
+
     void misynth_solver::completed_solving(func_decl_ref_vector &synth_funs, expr_ref_vector &constraints)
     {
         std::cout << "###Complete "  << std::endl;
@@ -457,7 +456,9 @@ namespace misynth
         vector<invocation_operands> current_ops;
         collect_invocation_operands(spec, synth_funs, current_ops);
         expr_ref spec_with_coeff(m);
-        rewriter_functions_to_linear_term(synth_funs, spec, spec_with_coeff);
+        invocations_rewriter inv_rwr(m_cmd, m);
+        inv_rwr.rewriter_functions_to_linear_term(m_coeff_decl_vec, synth_funs, spec, spec_with_coeff);
+
         std::cout << "spec_with_coeff " << mk_ismt2_pp(spec_with_coeff, m, 3) << std::endl;
 
         expr_ref spec_for_concrete_coeff = m_utils.replace_vars_according_to_model(spec_with_coeff, mdl_for_coeff, m_coeff_decl_vec, true);

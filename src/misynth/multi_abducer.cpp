@@ -47,7 +47,7 @@ namespace misynth
 
     expr_ref multi_abducer::nonlinear_abduce(vector<expr_ref_vector> &inv_args, expr_ref premise, expr_ref conclusion, func_decl_ref_vector &pattern)
     {
-
+        //TODO: check inv_args.size>1
         vector<func_decl_ref_vector> decl_args;
         expr_ref flat_premise = to_flat(inv_args, decl_args);
         func_decl_ref_vector all_vars(m);

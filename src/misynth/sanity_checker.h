@@ -103,6 +103,43 @@ namespace misynth
                 }
                 return true;
             }
+
+
+            bool check(expr_ref_vector &constraints, expr_ref body_fun, func_decl_ref_vector &synth_funs, func_decl_ref_vector args, model_ref &mdl)
+            {
+                func_decl *fd = synth_funs.get(0);
+
+                expr_ref_vector args_app(m);
+                for (auto &fd : args)
+                {
+                    args_app.push_back(m.mk_const(fd));
+                }
+                expr_ref fd_eq_body_fun(m.mk_eq(m.mk_app(fd, args_app.size(), args_app.c_ptr()), body_fun), m);
+                expr_ref macros(m_utils.universal_quantified(fd_eq_body_fun, args));
+                std::cout << "Sanity checker:: macros: " << mk_ismt2_pp(macros, m, 3) << std::endl;
+
+                params_ref params;
+                ref<solver> slv = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
+                slv->push();
+                slv->assert_expr(macros);
+
+                for (unsigned int i = 0; i < constraints.size(); ++i)
+                {
+                    slv->push();
+                    slv->assert_expr(m.mk_not(constraints.get(i)));
+                    lbool r = slv->check_sat();
+                    if (r != lbool::l_false)
+                    {
+                        std::cout << "!!!Sanity checker:: constraint is failed: " <<  mk_ismt2_pp(constraints.get(i), m, 3) <<  std::endl;
+
+                        slv->get_model(mdl);
+                        std::cout << *mdl << std::endl;
+                        return false;
+                    }
+                    slv->pop(1);
+                }
+                return true;
+            }
     };
 }
 

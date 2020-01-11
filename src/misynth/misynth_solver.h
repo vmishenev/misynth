@@ -5,7 +5,7 @@
 #include "misynth/multi_abducer.h"
 
 #include "smt_utils.h"
-
+#include "function_utils.h"
 #include "misynth/synth_params.hpp"
 namespace misynth
 {
@@ -29,6 +29,7 @@ namespace misynth
 
             smt_utils m_utils;
             arith_util m_arith;
+            function_utils m_futils;
 
             func_decl_ref_vector m_coeff_decl_vec;
             func_decl_ref_vector m_used_vars;
@@ -42,28 +43,30 @@ namespace misynth
             multi_abducer m_abducer;
 
             vector<model_ref> m_models_from_assumptions;
+            ref<solver> slv_for_x_prec;
         public:
             misynth_solver(cmd_context &cmd_ctx, ast_manager &m, solver *solver);
 
             expr_ref generate_heuristic_constaraint_coeff(func_decl_ref_vector &coeff_decls);
             expr_ref generate_clia_fun_body(bool is_compact = false);
+            bool try_find_simultaneously_branches(func_decl_ref_vector &synth_funs, expr_ref_vector &constraints, model_ref mdl);
             void print_def_fun(std::ostream &out, func_decl * f, func_decl_ref_vector &args, expr_ref body);
-            void print_sorted_var_list(std::ostream &out,  func_decl_ref_vector & sorted_var);
+            //void print_sorted_var_list(std::ostream &out,  func_decl_ref_vector & sorted_var);
 
 
             bool solve(func_decl_ref_vector &synth_funs, expr_ref_vector &constraints,  obj_map<func_decl, args_t *> &synth_fun_args_decl);
 
 
             void generate_coeff_decl(func_decl_ref_vector &synth_funs);
-            void rewriter_functions_to_linear_term(func_decl_ref_vector &synth_funs,
-                                                   expr_ref spec, expr_ref &new_spec);
+            //void rewriter_functions_to_linear_term(func_decl_ref_vector &synth_funs,
+            //                                       expr_ref spec, expr_ref &new_spec);
 
-            void rewrite_expr(expr *f, expr_ref &res, app2expr_map& subst);
+            //void rewrite_expr(expr *f, expr_ref &res, app2expr_map& subst);
 
             void init_used_variables(func_decl_ref_vector &synth_funs, expr_ref spec);
             expr_ref find_precondition(func_decl_ref_vector &synth_funs,  expr_ref &spec, model_ref mdl_for_coeff);
             args_t *get_args_decl_for_synth_fun(func_decl *f);
-            expr_ref generate_branch(func_decl_ref_vector &synth_funs, model_ref mdl);
+            // expr_ref generate_branch(func_decl_ref_vector &synth_funs, model_ref mdl);
             expr_ref generate_fun_macros(expr_ref body_fun, func_decl_ref_vector &synth_funs, func_decl_ref_vector args);
 
             /* [+] Unrealizability Algorithm*/
