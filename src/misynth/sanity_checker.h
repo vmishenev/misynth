@@ -17,7 +17,8 @@ namespace misynth
             arith_util m_arith;
             smt_utils m_utils;
             //params_ref m_params;
-            //ref<solver> m_solver;
+            ref<solver> m_solver;
+
         public:
             sanity_checker(cmd_context &cmd_ctx, ast_manager &m)
                 : m_cmd(cmd_ctx)
@@ -25,6 +26,7 @@ namespace misynth
                 , m_arith(m)
                 , m_utils(cmd_ctx, m)
             {
+                reset_constraint_for_model_x();
             }
             expr_ref build_invocation_fun_body(func_decl_ref var, expr_ref_vector &precs, expr_ref_vector &branches, func_decl_ref_vector pattern, expr_ref_vector invocation_args)
             {
@@ -105,8 +107,19 @@ namespace misynth
             }
 
 
-            bool check(expr_ref_vector &constraints, expr_ref body_fun, func_decl_ref_vector &synth_funs, func_decl_ref_vector args, model_ref &mdl)
+            bool check(expr_ref_vector &constraints, func_decl_ref_vector used_vars, expr_ref body_fun, func_decl_ref_vector &synth_funs, func_decl_ref_vector args, model_ref &mdl)
             {
+
+                if (!body_fun.get())
+                {
+                    lbool r = m_solver->check_sat();
+                    if (r != lbool::l_false)
+                    {
+                        m_solver->get_model(mdl);
+                        add_blacklist(mdl, used_vars);
+                    }
+                    return false;
+                }
                 func_decl *fd = synth_funs.get(0);
 
                 expr_ref_vector args_app(m);
@@ -118,27 +131,41 @@ namespace misynth
                 expr_ref macros(m_utils.universal_quantified(fd_eq_body_fun, args));
                 std::cout << "Sanity checker:: macros: " << mk_ismt2_pp(macros, m, 3) << std::endl;
 
-                params_ref params;
-                ref<solver> slv = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
-                slv->push();
-                slv->assert_expr(macros);
+
+
+                m_solver->push();
+                m_solver->assert_expr(macros);
 
                 for (unsigned int i = 0; i < constraints.size(); ++i)
                 {
-                    slv->push();
-                    slv->assert_expr(m.mk_not(constraints.get(i)));
-                    lbool r = slv->check_sat();
+                    m_solver->push();
+                    m_solver->assert_expr(m.mk_not(constraints.get(i)));
+                    lbool r = m_solver->check_sat();
                     if (r != lbool::l_false)
                     {
                         std::cout << "!!!Sanity checker:: constraint is failed: " <<  mk_ismt2_pp(constraints.get(i), m, 3) <<  std::endl;
 
-                        slv->get_model(mdl);
+                        m_solver->get_model(mdl);
                         std::cout << *mdl << std::endl;
+
+                        m_solver->pop(1);
+                        add_blacklist(mdl, used_vars);
                         return false;
                     }
-                    slv->pop(1);
+                    m_solver->pop(1);
                 }
                 return true;
+            }
+            void add_blacklist(model_ref mdl,  func_decl_ref_vector used_vars)
+            {
+                m_solver->push();
+                m_solver->assert_expr(m.mk_not(m_utils.get_logic_model_with_default_value(mdl, used_vars)));
+            }
+            void reset_constraint_for_model_x()
+            {
+                params_ref params;
+                m_solver = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
+
             }
     };
 }

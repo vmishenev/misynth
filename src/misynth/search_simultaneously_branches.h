@@ -23,7 +23,7 @@ namespace misynth
             vector<func_decl_ref_vector> m_coeff_decl_vec;
             multi_abducer m_abducer;
             //params_ref m_params;
-            //ref<solver> m_solver;
+            ref<solver> m_coeff_solver;
         public:
             search_simultaneously_branches(cmd_context &cmd_ctx, ast_manager &m)
                 : m_cmd(cmd_ctx)
@@ -33,6 +33,8 @@ namespace misynth
                 , m_futils(cmd_ctx, m)
                 , m_abducer(cmd_ctx, m)
             {
+                params_ref params;
+                m_coeff_solver = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
             }
 
             void generate_coeff_decl(func_decl_ref_vector &synth_funs, unsigned int n)
@@ -139,12 +141,17 @@ namespace misynth
 
             }
 
-            void operator()(func_decl_ref_vector & synth_funs, expr_ref_vector & constraints, model_ref mdl_for_x, func_decl_ref_vector &synth_fun_args, expr_ref_vector & branches,   expr_ref_vector & precs)
+            void operator()(func_decl_ref_vector & synth_funs, expr_ref_vector & constraints, model_ref mdl_for_x, func_decl_ref_vector &synth_fun_args, expr_ref_vector & branches,   expr_ref_vector & precs, bool is_added_heuristic = false)
             {
                 vector<app_ref_vector> distinct_invocation;
                 for (auto it = constraints.begin(); it != constraints.end(); it++)
                     collect_distinct_invocation(*it, synth_funs, mdl_for_x, distinct_invocation);
                 std::cout << "distinct_invocation.size() : " << distinct_invocation.size()  << std::endl;
+                if (distinct_invocation.size() <= 1)
+                {
+                    std::cout << "WARNING!!! This spec isn't multiinvocation " << std::endl;
+                    return;
+                }
                 generate_coeff_decl(synth_funs, distinct_invocation.size());
                 expr_ref spec = m_utils.con_join(constraints);
                 func_decl_ref_vector used_vars(m);
@@ -159,24 +166,43 @@ namespace misynth
                 std::cout << "constraint: " << mk_ismt2_pp(constraint, m, 3)  << std::endl;
 
 
-                /* params_ref params;
-                 ref<solver> slv = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
-                 slv->push();
-                 slv->assert_expr(m.mk_and(spec_with_coeffs, constraint));
-                 model_ref mdl_for_coeff;
-                 if (slv->check_sat() != lbool::l_true)
-                 {
-                     std::cout << "WARNING!!!!  search_simultaneously_branches is unsat" << std::endl;
-                 }
-                 slv->get_model(mdl_for_coeff);
-                 slv->pop(1);*/
-                model_ref mdl_for_coeff = m_utils.get_model(expr_ref(m.mk_and(spec_with_x_coeffs, constraint), m));
+
+                m_coeff_solver->push();
+                m_coeff_solver->assert_expr(m.mk_and(spec_with_x_coeffs, constraint));
+                if (is_added_heuristic)
+                {
+                    m_coeff_solver->push();
+                    m_coeff_solver->assert_expr(generate_heuristic());
+
+                }
+
+                model_ref mdl_for_coeff;
+
+                if (m_coeff_solver->check_sat() != lbool::l_true)
+                {
+
+                    if (is_added_heuristic)
+                    {
+                        is_added_heuristic = false;
+                        m_coeff_solver->pop(1);
+                        if (m_coeff_solver->check_sat() != lbool::l_true)
+                            std::cout << "WARNING!!!!  search_simultaneously_branches is unsat" << std::endl;
+                    }
+                    else
+                        std::cout << "WARNING!!!!  search_simultaneously_branches is unsat" << std::endl;
+                }
+                m_coeff_solver->get_model(mdl_for_coeff);
+                m_coeff_solver->pop(1);
+                if (is_added_heuristic)
+                    m_coeff_solver->pop(1);
+                //model_ref mdl_for_coeff = m_utils.get_model(expr_ref(m.mk_and(spec_with_x_coeffs, constraint), m));
                 if (!mdl_for_coeff.get())
                 {
                     std::cout << "WARNING!!!!  search_simultaneously_branches is unsat" << std::endl;
                     return;
                 }
                 std::cout << "mdl_for_coeff : " << (*mdl_for_coeff) << std::endl;
+                add_coeff_to_blacklist(mdl_for_coeff);
 
                 // after 9
                 expr_ref_vector res_single_conjuncts(m);
@@ -189,7 +215,7 @@ namespace misynth
                 collect_invocation_operands(single_conjuncts, synth_funs, current_ops);
 
 
-
+                expr_ref_vector precs_temp(m), branches_temp(m);
                 for (unsigned int i = 0; i < distinct_invocation.size(); ++i)
                 {
                     func_decl_ref_vector & crnt_coeffs = m_coeff_decl_vec.get(i);
@@ -235,13 +261,49 @@ namespace misynth
                         std::cout << mk_ismt2_pp(crnt_pre, m, 0) << "  ==> " << mk_ismt2_pp(crnt_branch, m, 0) << std::endl;
                     }
 
-                    precs.push_back(crnt_pre);
-                    branches.push_back(crnt_branch);
+                    precs_temp.push_back(crnt_pre);
+                    branches_temp.push_back(crnt_branch);
                 }
+
+                bool is_single_true = true;
+                for (unsigned int i = 0; i < precs_temp.size(); ++i)
+                {
+                    if (m_utils.is_true(precs_temp.get(i)))
+                    {
+                        if (!is_single_true)
+                        {
+                            std::cout << "WARNING!!!  Several true-branches exist" << std::endl;
+                            return; //several true-branches exist
+                        }
+                        if (i > 0) precs_temp.set(i, m.mk_not(precs_temp.get(i - 1)));
+                        else if (i < precs_temp.size() - 1) precs_temp.set(i, m.mk_not(precs_temp.get(i + 1)));
+                        else std::cout << "WARNING!!!  True-branch is only one" << std::endl;
+
+                        is_single_true = false;
+
+                    }
+
+                }
+                precs.append(precs_temp);
+                branches.append(branches_temp);
             }
 
 
+            void add_coeff_to_blacklist(model_ref mdl_for_coeff)
+            {
+                //flatting
 
+                func_decl_ref_vector v(m);
+                for (unsigned int i = 0; i < m_coeff_decl_vec.size(); ++i)
+                {
+                    v.append(m_coeff_decl_vec.get(i));
+
+                }
+                //////
+
+                m_coeff_solver->push();
+                m_coeff_solver->assert_expr(m.mk_not(m_utils.get_logic_model_with_default_value(mdl_for_coeff, v)));
+            }
 
             void collect_distinct_invocation(expr * n, func_decl_ref_vector &   fun_list, model_ref mdl,  vector<app_ref_vector> &l)
             {
@@ -291,6 +353,18 @@ namespace misynth
                 }
 
                 return true;
+            }
+
+            expr_ref generate_heuristic()
+            {
+                expr_ref_vector v(m);
+                for (unsigned int i = 0; i < m_coeff_decl_vec.size(); ++i)
+                {
+                    expr * c0_i = m.mk_const(m_coeff_decl_vec.get(i).get(0));
+                    v.push_back(m.mk_eq(c0_i, m_arith.mk_int(0)));
+
+                }
+                return m_utils.con_join(v);
             }
 
     };

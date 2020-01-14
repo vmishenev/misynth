@@ -62,7 +62,10 @@ namespace misynth
             return implies(a, b) && implies(b, a);
         }
 
-
+        bool is_true(expr *e)
+        {
+            return is_unsat(m.mk_not(e));
+        }
         bool is_unsat(expr *e)
         {
             m_solver = m_cmd.get_solver_factory()(m, m_params, true/*need proof*/, true, false, symbol::null);
