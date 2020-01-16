@@ -71,6 +71,7 @@ namespace misynth
 
             /* [+] Unrealizability Algorithm*/
 
+            bool prove_unrealizability_with_mdl(expr_ref spec, model_ref & mdl);
             bool prove_unrealizability(expr_ref spec);
 
             bool check_assumptions(expr_ref spec, expr_ref_vector &assumptions);

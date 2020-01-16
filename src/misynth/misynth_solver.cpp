@@ -11,10 +11,12 @@
 #include "sanity_checker.h"
 #include "search_simultaneously_branches.h"
 #include "misynth/function_utils.h"
+#include "model/model2expr.h"
 
 #include <iomanip>
 #include <iostream>
 #include <set>
+
 
 
 #define VERBOSE true
@@ -149,6 +151,7 @@ namespace misynth
         unsigned int  current_iter_trivial_model_x = 0;
 
         expr_ref spec_for_concrete_x(m);
+        model_ref mdl_for_x;
 
         expr_ref  heuristic_constaraint_coeff(generate_heuristic_constaraint_coeff(m_coeff_decl_vec));
         args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
@@ -159,7 +162,7 @@ namespace misynth
             iters_main_alg++;
             if (DEBUG_MODE)
                 std::cout << "====  Itreration #" << i << "  ====" << std::endl;
-            model_ref mdl_for_x;
+
             if (last_precond.get()) // non first iteration
             {
                 for (unsigned int i = 0; i < m_ops.size(); ++i)
@@ -214,6 +217,11 @@ namespace misynth
 
                     slv_for_prec->get_model(mdl_for_x);
                     std::cout << "SAT Precond!! "  << std::endl;
+
+                    if (prove_unrealizability_with_mdl(spec, mdl_for_x))
+                    {
+                        return false;
+                    }
 
                     //push to blacklist
                     //slv_for_prec->push();
@@ -448,7 +456,8 @@ namespace misynth
             }
             else
             {
-                std::cout << "Sanity failed, start   search_simultaneously_branches"  << std::endl;
+                std::cout << "Sanity failed, start   search_simultaneously_branches"  << *mdl_for_x << std::endl;
+
                 m_branches.reset();
                 m_precs.reset();
                 search(synth_funs, constraints, mdl_for_x, *synth_fun_args, m_branches, m_precs, is_added_heuristic);
@@ -468,6 +477,7 @@ namespace misynth
             }
             iter++;
         }
+        std::cout << "Completing condition is unsat!  "  << std::endl;
         return false;
     }
 
@@ -595,6 +605,20 @@ namespace misynth
         return m_synth_fun_args_decl[f];
     }
 
+    bool misynth_solver::prove_unrealizability_with_mdl(expr_ref spec, model_ref & mdl)
+    {
+        expr_ref logic_mdl(m);
+        model2expr(mdl, logic_mdl);
+        if (m_utils.is_unsat(m.mk_and(spec, logic_mdl)))
+        {
+            if (VERBOSE)
+            {
+                std::cout << "Unrealizability!!! Specification is unsat. \n  with model: " << mk_ismt2_pp(logic_mdl, m, 3) << std::endl;
+            }
+
+            return true;
+        }
+    }
 
     bool misynth_solver::prove_unrealizability(expr_ref spec)
     {
