@@ -103,7 +103,11 @@ namespace misynth
         collect_invocation_operands(spec, synth_funs, m_ops);
 
         //std::cout << "m_ops size: " << m_ops.size() << std::endl;
-        prove_unrealizability(spec);
+        if (prove_unrealizability(spec))
+        {
+            std::cout << "Unrealizability!!! Specification is unsat \n. " << std::endl;
+            return false;
+        }
 
         init_used_variables(synth_funs, spec);
 
@@ -393,7 +397,7 @@ namespace misynth
 
 
         search_simultaneously_branches search(m_cmd, m);
-        bool is_added_heuristic = true;
+        int is_added_heuristic = m_params.type_heuristic_branches();
 
         params_ref params_slv;
         slv_for_x_prec = m_cmd.get_solver_factory()(m, params_slv, false, true, false, symbol::null);
@@ -427,10 +431,12 @@ namespace misynth
         sanity_checker sanity(m_cmd, m);
         while (m_precs.size() == 0 || solver->check_sat() == lbool::l_false)
         {
-            if (iter >= m_params.trivial_attempts_per_one_model_x())
+            if (iter >= m_params.trivial_attempts_simultaneously_branches())
             {
-                is_added_heuristic = false;
+                is_added_heuristic = 0;
             }
+            // else ++is_added_heuristic;
+
             std::cout << "Completing condition is sat!  "  << std::endl;
             expr_ref fun_body = generate_clia_fun_body(true);
 
@@ -617,7 +623,7 @@ namespace misynth
         if (m_params.check_assumptions())
             return check_assumptions(spec, m_assumptions);
         else
-            return true;
+            return false;
     }
 
     bool misynth_solver::check_assumptions(expr_ref spec, expr_ref_vector &assumptions)

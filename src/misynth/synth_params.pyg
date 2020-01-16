@@ -5,6 +5,8 @@ def_module_params(module_name='misynth',
                           ('attempts_per_one_assumption', UINT, 5, ' attempts number per one assumption'),
                           ('attempts_per_one_model_x', UINT, 3, ' attempts number per one assumption'),
                           ('trivial_attempts_per_one_model_x', UINT, 2, 'trivial attempts number per one assumption'),
+                          ('trivial_attempts_simultaneously_branches', UINT, 2, 'trivial attempts for simultaneously search branches'),
+                          ('type_heuristic_branches', UINT, 2, '1 all c0_* are equals; 2 c0_* = 0; 3 c0_* = 1;'),
                           ('check_assumptions', BOOL, True, 'check unrealizability'),
                           ('debug_abduce', BOOL, False, 'debug_abducey')))
 

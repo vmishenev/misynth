@@ -141,7 +141,7 @@ namespace misynth
 
             }
 
-            void operator()(func_decl_ref_vector & synth_funs, expr_ref_vector & constraints, model_ref mdl_for_x, func_decl_ref_vector &synth_fun_args, expr_ref_vector & branches,   expr_ref_vector & precs, bool is_added_heuristic = false)
+            void operator()(func_decl_ref_vector & synth_funs, expr_ref_vector & constraints, model_ref mdl_for_x, func_decl_ref_vector &synth_fun_args, expr_ref_vector & branches,   expr_ref_vector & precs, int is_added_heuristic = 0)
             {
                 vector<app_ref_vector> distinct_invocation;
                 for (auto it = constraints.begin(); it != constraints.end(); it++)
@@ -171,9 +171,10 @@ namespace misynth
                 m_coeff_solver->assert_expr(m.mk_and(spec_with_x_coeffs, constraint));
                 if (is_added_heuristic)
                 {
+                    expr_ref heuristic = generate_heuristic(is_added_heuristic);
                     m_coeff_solver->push();
-                    m_coeff_solver->assert_expr(generate_heuristic());
-
+                    m_coeff_solver->assert_expr(heuristic);
+                    std::cout << "added heuristic: " << mk_ismt2_pp(heuristic, m, 3)  << std::endl;
                 }
 
                 model_ref mdl_for_coeff;
@@ -355,14 +356,36 @@ namespace misynth
                 return true;
             }
 
-            expr_ref generate_heuristic()
+            expr_ref generate_heuristic(int num)
             {
                 expr_ref_vector v(m);
-                for (unsigned int i = 0; i < m_coeff_decl_vec.size(); ++i)
+                if (num == 1)
                 {
-                    expr * c0_i = m.mk_const(m_coeff_decl_vec.get(i).get(0));
-                    v.push_back(m.mk_eq(c0_i, m_arith.mk_int(0)));
+                    for (unsigned int i = 0; i < m_coeff_decl_vec.size() - 1; ++i)
+                    {
+                        expr * c0_i = m.mk_const(m_coeff_decl_vec.get(i).get(0));
+                        expr * c0_i1 = m.mk_const(m_coeff_decl_vec.get(i + 1).get(0));
+                        v.push_back(m.mk_eq(c0_i, c0_i1));
 
+                    }
+                }
+                else if (num == 2)
+                {
+                    for (unsigned int i = 0; i < m_coeff_decl_vec.size(); ++i)
+                    {
+                        expr * c0_i = m.mk_const(m_coeff_decl_vec.get(i).get(0));
+                        v.push_back(m.mk_eq(c0_i, m_arith.mk_int(0)));
+
+                    }
+                }
+                else if (num == 3)
+                {
+                    for (unsigned int i = 0; i < m_coeff_decl_vec.size(); ++i)
+                    {
+                        expr * c0_i = m.mk_const(m_coeff_decl_vec.get(i).get(0));
+                        v.push_back(m.mk_eq(c0_i, m_arith.mk_int(1)));
+
+                    }
                 }
                 return m_utils.con_join(v);
             }
