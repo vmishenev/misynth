@@ -421,8 +421,11 @@ namespace misynth
 
 
         unsigned int iter = 0;
+        bool is_infinity_loop = false;
+
         if (mdl_for_x.get())
         {
+            is_infinity_loop = true; // if alg1 gave a model
             std::cout << "start search_simultaneously_branches with mdl: " << *mdl_for_x << std::endl;
 
             m_branches.reset();
@@ -440,7 +443,7 @@ namespace misynth
 
 
         sanity_checker sanity(m_cmd, m);
-        while (m_precs.size() == 0 || m_slv_for_prec_completing_cond->check_sat() == lbool::l_false)
+        while (is_infinity_loop || m_precs.size() == 0 || m_slv_for_prec_completing_cond->check_sat() == lbool::l_false)
         {
             if (iter >= m_params.trivial_attempts_simultaneously_branches())
             {
