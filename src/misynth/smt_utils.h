@@ -356,7 +356,7 @@ namespace misynth
             {
                 if (!is_first) out <<  " ";
                 is_first = false;
-                out << v->get_range()->get_name() << " " << v->get_name();
+                out << "(" << v->get_name() << " " << v->get_range()->get_name() << ")";
             }
         }
     }; // smt_utils

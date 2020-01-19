@@ -127,7 +127,8 @@ namespace misynth
         params_ref params;
         ref<solver> slv_for_prec = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
         ref<solver> slv_for_coeff = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
-        slv_for_x_prec = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
+
+        m_slv_for_prec_completing_cond = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
 
         expr_ref last_precond(0, m);
 
@@ -138,13 +139,13 @@ namespace misynth
         args_t *args_decl = get_args_decl_for_synth_fun(synth_funs.get(0));
 
 
-        const unsigned int MAX_ITERATION = 500;
+        const unsigned int MAX_ITERATION = UINT_MAX;
 
         unsigned int current_assumption_idx = 0;
         unsigned int attempt_number_current_assumption = 0;
         bool pushed_assumption = false;
 
-        bool generated_new_model_x = true;
+
         bool is_added_heuristic = false;
 
         unsigned int  current_iter_model_x = UINT_MAX - 1;
@@ -194,6 +195,8 @@ namespace misynth
                     pushed_assumption = true;
                     slv_for_prec->push();
                     slv_for_prec->assert_expr(m_assumptions.get(current_assumption_idx));
+                    std::cout << "pushed assumption " << mk_ismt2_pp(m_assumptions.get(current_assumption_idx), m, 0) << std::endl;
+
                     ++attempt_number_current_assumption;
                 }
 
@@ -203,7 +206,7 @@ namespace misynth
                     slv_for_prec->pop(1); //remove assumption
                     pushed_assumption = false;
                 }
-                if (r != lbool::l_true)
+                if (r != lbool::l_true)//without assumption
                 {
                     current_assumption_idx++;
                     r = slv_for_prec->check_sat();
@@ -355,7 +358,7 @@ namespace misynth
 
             if (m_utils.is_unsat(last_precond))
             {
-
+                last_precond = 0;
                 std::cout << "!!! Precond is unsat" << std::endl;
                 continue;
             }
@@ -376,8 +379,8 @@ namespace misynth
             m_precs.push_back(last_precond);
             m_branches.push_back(branch);
 
-            slv_for_x_prec->push();
-            slv_for_x_prec->assert_expr(last_precond);
+            m_slv_for_prec_completing_cond->push();
+            m_slv_for_prec_completing_cond->assert_expr(m.mk_not(last_precond));
 
 
             if (try_find_simultaneously_branches(synth_funs, constraints, 0))
@@ -408,10 +411,10 @@ namespace misynth
         int is_added_heuristic = m_params.type_heuristic_branches();
 
         params_ref params_slv;
-        slv_for_x_prec = m_cmd.get_solver_factory()(m, params_slv, false, true, false, symbol::null);
+        //slv_for_x_prec = m_cmd.get_solver_factory()(m, params_slv, false, true, false, symbol::null);
 
 
-        ref<solver>  solver = m_cmd.get_solver_factory()(m, params_slv, false, true, false, symbol::null);
+
         unsigned int iter = 0;
         if (mdl_for_x.get())
         {
@@ -420,24 +423,19 @@ namespace misynth
             m_branches.reset();
             m_precs.reset();
             search(synth_funs, constraints, mdl_for_x, *synth_fun_args, m_branches, m_precs, is_added_heuristic);
-
-            if (m_precs.size() > 0)
+            m_slv_for_prec_completing_cond = m_cmd.get_solver_factory()(m, params_slv, false, true, false, symbol::null);
+            for (expr * e : m_precs)
             {
-                slv_for_x_prec->push();
-                slv_for_x_prec->assert_expr(m_precs);
+                m_slv_for_prec_completing_cond->push();
+                m_slv_for_prec_completing_cond->assert_expr(m.mk_not(e));
+                std::cout << "prec " << mk_ismt2_pp(e, m, 3) << std::endl;
             }
-
         }
 
-        for (expr * e : m_precs)
-        {
-            solver->push();
-            solver->assert_expr(m.mk_not(e));
-            std::cout << "prec " << mk_ismt2_pp(e, m, 3) << std::endl;
-        }
+
 
         sanity_checker sanity(m_cmd, m);
-        while (m_precs.size() == 0 || solver->check_sat() == lbool::l_false)
+        while (m_precs.size() == 0 || m_slv_for_prec_completing_cond->check_sat() == lbool::l_false)
         {
             if (iter >= m_params.trivial_attempts_simultaneously_branches())
             {
@@ -462,15 +460,15 @@ namespace misynth
                 m_precs.reset();
                 search(synth_funs, constraints, mdl_for_x, *synth_fun_args, m_branches, m_precs, is_added_heuristic);
 
-                solver = m_cmd.get_solver_factory()(m, params_slv, false, true, false, symbol::null);
+                m_slv_for_prec_completing_cond = m_cmd.get_solver_factory()(m, params_slv, false, true, false, symbol::null);
                 if (m_precs.size() > 0)
                 {
                     sanity.reset_constraint_for_model_x();
                 }
                 for (expr * e : m_precs)
                 {
-                    solver->push();
-                    solver->assert_expr(m.mk_not(e));
+                    m_slv_for_prec_completing_cond->push();
+                    m_slv_for_prec_completing_cond->assert_expr(m.mk_not(e));
                     std::cout << "prec " << mk_ismt2_pp(e, m, 3) << std::endl;
                 }
                 //try_find_simultaneously_branches(synth_funs, constraints, mdl_for_x);

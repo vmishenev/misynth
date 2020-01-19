@@ -44,6 +44,7 @@ namespace misynth
 
             vector<model_ref> m_models_from_assumptions;
             ref<solver> slv_for_x_prec;
+            ref<solver> m_slv_for_prec_completing_cond;
         public:
             misynth_solver(cmd_context &cmd_ctx, ast_manager &m, solver *solver);
 
