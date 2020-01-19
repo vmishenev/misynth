@@ -616,6 +616,7 @@ namespace misynth
 
             return true;
         }
+        return false;
     }
 
     bool misynth_solver::prove_unrealizability(expr_ref spec)
