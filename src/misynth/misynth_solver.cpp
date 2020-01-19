@@ -26,6 +26,8 @@ namespace misynth
 {
     unsigned int max_iter_iso_mor = 0;
     unsigned int iters_main_alg = 0;
+    unsigned int alg3_run = 0;
+
     bool DEBUG_MODE = true;
     misynth_solver::misynth_solver(cmd_context &cmd_ctx, ast_manager &m, solver *solver)
         : m_cmd(cmd_ctx)
@@ -280,7 +282,7 @@ namespace misynth
             /*
              * [+] getting model for coefficients
              * */
-            if (current_iter_trivial_model_x++ < m_params.trivial_attempts_per_one_model_x() > 0)
+            if (current_iter_trivial_model_x++ < m_params.trivial_attempts_per_one_model_x())
             {
                 std::cout << "pushed heuristic constaraint for coeff" << std::endl;
                 is_added_heuristic = true;
@@ -383,9 +385,6 @@ namespace misynth
             m_slv_for_prec_completing_cond->assert_expr(m.mk_not(last_precond));
 
 
-            if (try_find_simultaneously_branches(synth_funs, constraints, 0))
-                return true;
-
 
             /*[-] */
             if (DEBUG_MODE)
@@ -393,6 +392,12 @@ namespace misynth
                 std::cout << "-------------------" << std::endl;
                 std::cout << mk_ismt2_pp(last_precond, m, 0) << "  ==> " << mk_ismt2_pp(m_branches.back(), m, 0) << std::endl;
             }
+
+            if (try_find_simultaneously_branches(synth_funs, constraints, 0))
+                return true;
+
+
+
 
         }
 
@@ -458,6 +463,7 @@ namespace misynth
 
                 m_branches.reset();
                 m_precs.reset();
+                alg3_run++;
                 search(synth_funs, constraints, mdl_for_x, *synth_fun_args, m_branches, m_precs, is_added_heuristic);
 
                 m_slv_for_prec_completing_cond = m_cmd.get_solver_factory()(m, params_slv, false, true, false, symbol::null);
@@ -496,7 +502,7 @@ namespace misynth
         bool sanity_res = sanity.check(constraints, fun_body, synth_funs, *synth_fun_args);
         std::cout << "Sanity Checker Result: " << sanity_res << std::endl;
         std::cout << iters_main_alg << " " << max_iter_iso_mor << " " << m_precs.size()  << std::endl;
-
+        std::cout  << " alg3_run: " << alg3_run << std::endl;
 
         //bool sanity_res2 = sanity.check_through_implication(m_utils.con_join(constraints),  m_precs, m_branches, synth_funs, *synth_fun_args);
         //std::cout << "Sanity Checker implication Result: " << sanity_res2 << std::endl;
@@ -587,7 +593,22 @@ namespace misynth
 
             //[-]
             */
-            res = m_abducer.nonlinear_abduce(current_ops, expr_ref(m.mk_true(), m), th_res, *synth_fun_args);
+            if (m.is_or(th_res))
+            {
+
+                for (unsigned int i = 0; i < to_app(th_res)->get_num_args(); ++i)
+                {
+                    th_res = to_app(th_res)->get_arg(i);
+                    res = m_abducer.nonlinear_abduce(current_ops, expr_ref(m.mk_true(), m), th_res, *synth_fun_args);
+                    if (!m_utils.is_unsat(res))
+                        return res;
+                }
+                // we take first argument
+
+            }
+            else
+                res = m_abducer.nonlinear_abduce(current_ops, expr_ref(m.mk_true(), m), th_res, *synth_fun_args);
+
 
             //lit(x1) /\ lit(x2) => phi(x1, x2)
             //try_to_separate_into_disjoint_sets();

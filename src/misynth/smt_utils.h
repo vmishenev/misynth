@@ -12,6 +12,7 @@ namespace misynth
     // for stat
     extern unsigned int max_iter_iso_mor;
     extern unsigned int iters_main_alg;
+    extern unsigned int alg3_run;
 
     extern bool DEBUG_MODE;
     struct smt_utils
