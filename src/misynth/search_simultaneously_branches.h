@@ -356,6 +356,22 @@ namespace misynth
                 return true;
             }
 
+            expr_ref generate_heuristic_constaraint_coeff(vector<func_decl_ref_vector> &coeff_decls)
+            {
+              expr_ref_vector v(m);
+              for (auto & a : coeff_decls)
+                for (func_decl * fd : a)
+                {
+                  expr_ref e(m.mk_const(fd), m);
+                  v.push_back(m.mk_or(
+                                      m.mk_eq(e, m_arith.mk_int(-1)),
+                                      m.mk_eq(e, m_arith.mk_int(0)),
+                                      m.mk_eq(e, m_arith.mk_int(1))
+                                      ));
+                }
+              return m_utils.con_join(v);
+            }
+
             expr_ref generate_heuristic(int num)
             {
                 expr_ref_vector v(m);
@@ -387,6 +403,7 @@ namespace misynth
 
                     }
                 }
+                v.push_back(generate_heuristic_constaraint_coeff(m_coeff_decl_vec));
                 return m_utils.con_join(v);
             }
 
