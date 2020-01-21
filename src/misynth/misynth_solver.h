@@ -14,7 +14,7 @@ namespace misynth
     typedef func_decl_ref_vector  args_t;//svector<func_decl>
     typedef expr_ref_vector invocation_operands;
     typedef obj_map<app, expr * > app2expr_map;
-    typedef obj_hashtable<expr> expr_set;
+    //typedef obj_hashtable<expr> expr_set;
     typedef obj_map<func_decl, expr *> decl2expr_map;
     typedef obj_map<func_decl, expr_ref_vector> decl2expr_ref_vec;
 
@@ -48,7 +48,7 @@ namespace misynth
         public:
             misynth_solver(cmd_context &cmd_ctx, ast_manager &m, solver *solver);
 
-            expr_ref generate_heuristic_constaraint_coeff(func_decl_ref_vector &coeff_decls);
+            expr_ref generate_heuristic_constaraint_coeff(expr_ref spec, func_decl_ref_vector &coeff_decls);
             expr_ref generate_clia_fun_body(bool is_compact = false);
             bool try_find_simultaneously_branches(func_decl_ref_vector &synth_funs, expr_ref_vector &constraints, model_ref mdl);
             void print_def_fun(std::ostream &out, func_decl * f, func_decl_ref_vector &args, expr_ref body);

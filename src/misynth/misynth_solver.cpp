@@ -11,6 +11,7 @@
 #include "sanity_checker.h"
 #include "search_simultaneously_branches.h"
 #include "misynth/function_utils.h"
+#include "misynth/collector_constants.h"
 #include "model/model2expr.h"
 
 #include <iomanip>
@@ -156,7 +157,10 @@ namespace misynth
         expr_ref spec_for_concrete_x(m);
         model_ref mdl_for_x;
 
-        expr_ref  heuristic_constaraint_coeff(generate_heuristic_constaraint_coeff(m_coeff_decl_vec));
+        expr_ref  heuristic_constaraint_coeff(generate_heuristic_constaraint_coeff(spec, m_coeff_decl_vec));
+
+        std::cout << "generated heuristic: " << mk_ismt2_pp(heuristic_constaraint_coeff, m, 0) << std::endl;
+
         args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
 
 
@@ -841,24 +845,72 @@ namespace misynth
         return res;
     }
 
-    expr_ref misynth_solver::generate_heuristic_constaraint_coeff(func_decl_ref_vector &coeff_decls)
+    expr_ref misynth_solver::generate_heuristic_constaraint_coeff(expr_ref spec, func_decl_ref_vector &coeff_decls)
     {
-        expr_ref_vector v(m);
-        for (func_decl * fd : coeff_decls)
+        if (m_params.type_heuristic() == 1)
         {
-            expr_ref e(m.mk_const(fd), m);
-            v.push_back(m.mk_or(
-                            m.mk_eq(e, m_arith.mk_int(-1)),
-                            m.mk_eq(e, m_arith.mk_int(0)),
-                            m.mk_eq(e, m_arith.mk_int(1))
-                        ));
+            expr_ref_vector v(m);
+            //for (func_decl * fd : coeff_decls)
+            for (unsigned int i = 0; i < coeff_decls.size(); i++)
+            {
+                func_decl * fd = coeff_decls.get(i);
+                expr_ref e(m.mk_const(fd), m);
+                v.push_back(m.mk_or(
+                                m.mk_eq(e, m_arith.mk_int(-1)),
+                                m.mk_eq(e, m_arith.mk_int(0)),
+                                m.mk_eq(e, m_arith.mk_int(1))
+                            ));
+            }
+            //v.reverse();
+            return m_utils.dis_join(v);
         }
-        v.reverse();
-        return m_utils.dis_join(v);
+        else if (m_params.type_heuristic() == 2)
+        {
+            expr_ref_vector v(m);
+            //for (func_decl * fd : coeff_decls)
+            for (unsigned int i = 0; i < coeff_decls.size(); i++)
+            {
+                func_decl * fd = coeff_decls.get(i);
+                expr_ref e(m.mk_const(fd), m);
+                v.push_back(m.mk_or(
+                                m.mk_eq(e, m_arith.mk_int(-1)),
+                                m.mk_eq(e, m_arith.mk_int(0)),
+                                m.mk_eq(e, m_arith.mk_int(1))
+                            ));
+            }
+            //v.reverse();
+            return m_utils.con_join(v);
+
+        }
+        else
+        {
+
+            expr_set constants_set;
+            collect_consts(spec, constants_set, m);
+            expr_ref_vector v(m);
+            //for (func_decl * fd : coeff_decls)
+            for (unsigned int i = 0; i < coeff_decls.size(); i++)
+            {
+                func_decl * fd = coeff_decls.get(i);
+                expr_ref e(m.mk_const(fd), m);
+                expr_ref_vector disj(m);
+                disj.push_back(m.mk_eq(e, m_arith.mk_int(-1)));
+                disj.push_back(m.mk_eq(e, m_arith.mk_int(0)));
+                disj.push_back(m.mk_eq(e, m_arith.mk_int(1)));
+                for (auto it = constants_set.begin(); it != constants_set.end(); it++)
+                {
+                    disj.push_back(m.mk_eq(e, *it));
+                    disj.push_back(m.mk_eq(e, m_arith.mk_uminus(*it)));
+                }
+                v.push_back(m_utils.dis_join(disj));
+            }
+            //v.reverse();
+            return m_utils.con_join(v);
+        }
     }
 
 
-    expr_ref misynth_solver::generate_fun_macros(expr_ref body_fun, func_decl_ref_vector &synth_funs, func_decl_ref_vector args)
+    expr_ref misynth_solver::generate_fun_macros(expr_ref body_fun, func_decl_ref_vector & synth_funs, func_decl_ref_vector args)
     {
         func_decl *fd = synth_funs.get(0);
 
