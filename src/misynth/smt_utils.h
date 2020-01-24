@@ -336,6 +336,14 @@ namespace misynth
             return expr_ref(con_join(res_fmls), m);
         }
 
+        expr_ref get_default_value_from_mdl(model_ref mdl, func_decl *fd)
+        {
+            expr_ref e(m.mk_const(fd), m);
+            if (e == (*mdl)(e))
+                return expr_ref(m_arith.is_real(e) ? m_arith.mk_real(0) : m_arith.mk_int(0), m);
+            else
+                return ((*mdl)(e));
+        }
         expr_ref get_logic_model_with_default_value(model_ref mdl, func_decl_ref_vector &v)
         {
             expr_ref_vector eqs(m);

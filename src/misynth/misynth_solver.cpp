@@ -46,10 +46,113 @@ namespace misynth
           m_assumptions(m),
           m_abducer(cmd_ctx, m)
     {
+    }
+
+
+    model_ref misynth_solver::get_coeff_model_from_slv(ref<solver> &slv, expr_ref spec_for_concrete_x, expr_ref heuristic)
+    {
+        bool is_added_heuristic = heuristic.get();
+        slv->push();
+        slv->assert_expr(spec_for_concrete_x);
+
+        if (is_added_heuristic)
+        {
+            slv->push();
+            slv->assert_expr(heuristic);
+        }
+
+        lbool res_spec_for_x = slv->check_sat();
+
+        model_ref mdl_for_coeff;
+
+        if (res_spec_for_x != lbool::l_true)
+        {
+            //TODO: take into account a heuristic
+            if (is_added_heuristic)
+            {
+                std::cout << "WARNING!!! Heuristic for this spec and model x is unsat. " << std::endl;
+                is_added_heuristic = false;
+                slv->pop(1); // remove a heuristic
+                lbool res_spec_for_x = slv->check_sat();
+                if (res_spec_for_x != lbool::l_true)
+                {
+                    return mdl_for_coeff;//not found
+                }
+            }
+            else
+            {
+                return mdl_for_coeff;//not found
+            }
+
+        }
+        if (is_added_heuristic)
+        {
+            slv->pop(1);
+            is_added_heuristic = false;
+        }
+
+        slv->get_model(mdl_for_coeff);
+        slv->pop(1);
+
+        expr_ref logic_mdl = m_utils.get_logic_model_with_default_value(mdl_for_coeff, m_coeff_decl_vec);
+        slv->assert_expr(m.mk_not(logic_mdl));
+        return mdl_for_coeff;
 
     }
 
-    void misynth_solver::generate_coeff_decl(func_decl_ref_vector &synth_funs)
+    model_ref misynth_solver::get_coeff_model(expr_ref spec_for_concrete_x, expr_ref heuristic)
+    {
+
+
+        if (m_params.fairness())
+        {
+
+
+
+
+
+            unsigned int i = 0;
+            model_ref mdl;
+            while (i <=  m_slv_for_coeff_vec.size())
+            {
+                ref<solver> &slv = m_slv_for_coeff_vec.get(m_current_slv_for_coeff);
+                mdl = get_coeff_model_from_slv(slv, spec_for_concrete_x, heuristic);
+                if (mdl.get()) break;
+                if (++m_current_slv_for_coeff ==  m_slv_for_coeff_vec.size())
+                {
+                    m_current_slv_for_coeff = 0;
+                }
+                ++i;
+            }
+            if (!mdl.get()) return mdl;
+
+
+
+            for (unsigned int i = 0; i < m_slv_for_coeff_vec.size(); ++i)
+            {
+                if (i == m_current_slv_for_coeff)
+                    continue;
+                expr_ref value_for_coeff = m_utils.get_default_value_from_mdl(mdl, m_coeff_decl_vec.get(i));
+                m_slv_for_coeff_vec.get(i)->push();
+                m_slv_for_coeff_vec.get(i)->assert_expr(m.mk_not(m.mk_eq(m.mk_const(m_coeff_decl_vec.get(i)), value_for_coeff)));
+
+            }
+
+
+            if (++m_current_slv_for_coeff ==  m_slv_for_coeff_vec.size())
+            {
+                m_current_slv_for_coeff = 0;
+            }
+            return mdl;
+
+        }
+        else return get_coeff_model_from_slv(m_slv_for_coeff, spec_for_concrete_x, heuristic);
+
+    }
+
+
+
+    void misynth_solver::generate_coeff_decl(func_decl_ref_vector & synth_funs)
     {
         m_coeff_decl_vec.reset();
 
@@ -74,7 +177,7 @@ namespace misynth
         rewriter_tpl<invocations_rewriter_cfg> rwr(m, false, inv_cfg);
         rwr(f, res);
     }*/
-    void misynth_solver::init_used_variables(func_decl_ref_vector &synth_funs, expr_ref spec)
+    void misynth_solver::init_used_variables(func_decl_ref_vector & synth_funs, expr_ref spec)
     {
         decl_collector decls(m);
         decls.visit(spec);
@@ -96,10 +199,19 @@ namespace misynth
     }
 
 
-    bool misynth_solver::solve(func_decl_ref_vector &synth_funs, expr_ref_vector &constraints,  obj_map<func_decl, args_t *> &synth_fun_args_decl)
+    bool misynth_solver::solve(func_decl_ref_vector & synth_funs, expr_ref_vector & constraints,  obj_map<func_decl, args_t *> &synth_fun_args_decl)
     {
         // [+] INITIALIZE
+        m_current_slv_for_coeff = 0;
+        params_ref params;
         expr_ref spec = m_utils.con_join(constraints);
+
+        m_slv_for_coeff = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
+
+        for (unsigned int i = 0; i < synth_funs.get(0)->get_arity() + 1; ++i)
+        {
+            m_slv_for_coeff_vec.push_back(m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null));
+        }
 
         // [-] INITIALIZE
 
@@ -127,7 +239,7 @@ namespace misynth
         }
 
 
-        params_ref params;
+        //params_ref params;
         ref<solver> slv_for_prec = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
         ref<solver> slv_for_coeff = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
 
@@ -290,8 +402,8 @@ namespace misynth
             {
                 std::cout << "pushed heuristic constaraint for coeff" << std::endl;
                 is_added_heuristic = true;
-                slv_for_coeff->push();
-                slv_for_coeff->assert_expr(heuristic_constaraint_coeff);
+                //slv_for_coeff->push();
+                //slv_for_coeff->assert_expr(heuristic_constaraint_coeff);
             }
             /*else if (current_iter_trivial_model_x >= m_params.trivial_attempts_per_one_model_x() && is_added_heuristic)
             {
@@ -301,10 +413,14 @@ namespace misynth
             }*/
             ++current_iter_trivial_model_x;
 
+
+
+
+            /*
             slv_for_coeff->push();
             slv_for_coeff->assert_expr(spec_for_concrete_x);
             lbool res_spec_for_x = slv_for_coeff->check_sat();
-            expr_ref spec_for_concrete_coeff(m);
+
             model_ref mdl_for_coeff;
 
             if (res_spec_for_x != lbool::l_true)
@@ -333,7 +449,21 @@ namespace misynth
                 slv_for_coeff->pop(1);
                 is_added_heuristic = false;
             }
+            */
 
+            model_ref mdl_for_coeff = get_coeff_model(spec_for_concrete_x, is_added_heuristic ? heuristic_constaraint_coeff : expr_ref(m));
+            is_added_heuristic = false;
+
+            if (!mdl_for_coeff)
+            {
+                std::cout << "WARNING!!! There are several branches. " << std::endl;
+
+                if (try_find_simultaneously_branches(synth_funs, constraints, mdl_for_x))
+                    return true;
+
+                // TODO:???
+
+            }
             std::cout << "SAT res_spec_for_x!! " << *mdl_for_coeff << std::endl;
             //simplify spec for concrete coef
             expr_ref branch = m_futils.generate_branch(m_coeff_decl_vec, *synth_fun_args, synth_funs, mdl_for_coeff);
@@ -343,7 +473,7 @@ namespace misynth
             std::cout << "simplified_spec for concrete coeff " << mk_ismt2_pp(simplified_spec, m, 3) << std::endl;
 
             //
-
+            //expr_ref spec_for_concrete_coeff(m);
             //spec_for_concrete_coeff = m_utils.replace_vars_according_to_model(spec_with_coeff, mdl_for_coeff, m_coeff_decl_vec, true);
             // std::cout << "spec_for_concrete_coeff " << mk_ismt2_pp(spec_for_concrete_coeff, m, 3) << std::endl;
             /*[-] */
@@ -353,14 +483,14 @@ namespace misynth
             /*[+] Find a precondition*/
             last_precond = find_precondition(synth_funs, simplified_spec, mdl_for_coeff);
 
-            expr_ref_vector eval_coeff_model(m);
+            /*expr_ref_vector eval_coeff_model(m);
             for (func_decl *fd : m_coeff_decl_vec)
             {
                 eval_coeff_model.push_back((*mdl_for_coeff)(m.mk_const(fd)));
             }
             //remember this coef
             slv_for_coeff->push();
-            slv_for_coeff->assert_expr(m.mk_not(m_utils.mk_eq(m_coeff_decl_vec, eval_coeff_model)));
+            slv_for_coeff->assert_expr(m.mk_not(m_utils.mk_eq(m_coeff_decl_vec, eval_coeff_model)));*/
 
             if (m_utils.is_unsat(last_precond))
             {
@@ -411,7 +541,7 @@ namespace misynth
 
 
 
-    bool misynth_solver::try_find_simultaneously_branches(func_decl_ref_vector &synth_funs, expr_ref_vector &constraints, model_ref mdl_for_x)
+    bool misynth_solver::try_find_simultaneously_branches(func_decl_ref_vector & synth_funs, expr_ref_vector & constraints, model_ref mdl_for_x)
     {
         args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
 
@@ -492,7 +622,7 @@ namespace misynth
         return false;
     }
 
-    void misynth_solver::completed_solving(func_decl_ref_vector &synth_funs, expr_ref_vector &constraints)
+    void misynth_solver::completed_solving(func_decl_ref_vector & synth_funs, expr_ref_vector & constraints)
     {
         std::cout << "###Complete "  << std::endl;
 
@@ -515,7 +645,7 @@ namespace misynth
         //std::cout << "Sanity Checker implication Result: " << sanity_res2 << std::endl;
 
     }
-    expr_ref misynth_solver::find_precondition(func_decl_ref_vector &synth_funs, expr_ref &spec, model_ref mdl_for_coeff)
+    expr_ref misynth_solver::find_precondition(func_decl_ref_vector & synth_funs, expr_ref & spec, model_ref mdl_for_coeff)
     {
         vector<invocation_operands> current_ops;
         collect_invocation_operands(spec, synth_funs, current_ops);
@@ -626,7 +756,7 @@ namespace misynth
         return res;
     }
 
-    args_t *misynth_solver::get_args_decl_for_synth_fun(func_decl *f)
+    args_t *misynth_solver::get_args_decl_for_synth_fun(func_decl * f)
     {
         return m_synth_fun_args_decl[f];
     }
@@ -677,14 +807,14 @@ namespace misynth
             return false;
     }
 
-    bool misynth_solver::check_assumptions(expr_ref spec, expr_ref_vector &assumptions)
+    bool misynth_solver::check_assumptions(expr_ref spec, expr_ref_vector & assumptions)
     {
         params_ref params;
         ref<solver> slv = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
         return subsets_backtracking(assumptions, spec, slv.get(), 0);
     }
 
-    bool misynth_solver::subsets_backtracking(expr_ref_vector &assump, expr *spec, solver *slv, unsigned int index)
+    bool misynth_solver::subsets_backtracking(expr_ref_vector & assump, expr * spec, solver * slv, unsigned int index)
     {
         if (index > 0)
         {
@@ -750,7 +880,7 @@ namespace misynth
         return false;
     }
 
-    void misynth_solver::generate_assumptions_from_operands(expr_ref_vector &assumptions)
+    void misynth_solver::generate_assumptions_from_operands(expr_ref_vector & assumptions)
     {
         for (unsigned int i = 0; i < m_ops.size(); ++i)
         {
@@ -766,7 +896,7 @@ namespace misynth
         }
     }
 
-    void misynth_solver::print_def_fun(std::ostream &out, func_decl * f, func_decl_ref_vector &args, expr_ref body)
+    void misynth_solver::print_def_fun(std::ostream & out, func_decl * f, func_decl_ref_vector & args, expr_ref body)
     {
         out << "(define-fun " << f->get_name() << " (";
         m_utils.print_sorted_var_list(out, args);
@@ -845,7 +975,7 @@ namespace misynth
         return res;
     }
 
-    expr_ref misynth_solver::generate_heuristic_constaraint_coeff(expr_ref spec, func_decl_ref_vector &coeff_decls)
+    expr_ref misynth_solver::generate_heuristic_constaraint_coeff(expr_ref spec, func_decl_ref_vector & coeff_decls)
     {
         if (m_params.type_heuristic() == 1)
         {
