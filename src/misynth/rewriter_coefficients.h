@@ -59,14 +59,14 @@ namespace misynth
             cmd_context &m_cmd;
             ast_manager &m;
             arith_util m_arith;
-            //smt_utils m_utils;
+            smt_utils m_utils;
 
         public:
             invocations_rewriter(cmd_context &cmd_ctx, ast_manager &m)
                 : m_cmd(cmd_ctx)
                 , m(m)
                 , m_arith(m)
-                  // , m_utils(cmd_ctx, m)
+                , m_utils(cmd_ctx, m)
 
             {
             }
@@ -91,6 +91,62 @@ namespace misynth
 
                 expr_ref linear_term = m_arith.mk_add_simplify(mult_terms);
                 return linear_term;
+            }
+
+            void rewriter_functions_to_linear_term_with_prec(func_decl_ref_vector coeff_decl_vec, func_decl_ref_vector &synth_funs,
+                    expr_ref spec, expr_ref &new_spec, func_decl_ref_vector& pattern, expr_ref_vector &precs, expr_ref_vector &branches)
+            {
+                invocation_collector collector(synth_funs);
+                collector(spec);
+
+
+                obj_hashtable<app > set = collector.get_invocation();
+
+                app2expr_map  term_subst;
+                expr_ref_vector accumulator_terms(m);
+                for (auto it = set.begin(); it != set.end(); it++)
+                {
+                    app *ap_f = (*it);
+
+                    //[+] use founded precs
+                    expr_ref_vector op(m, ap_f->get_num_args(), ap_f->get_args());
+                    bool is_found = false;
+                    for (unsigned i = 0; i < precs.size(); ++i)
+                    {
+                        expr_ref called_prec = m_utils.replace_vars_decl(precs.get(i), pattern, op);
+                        if (m_utils.is_true(called_prec))
+                        {
+                            std::cout << "Reused prec " << mk_ismt2_pp(precs.get(i), m, 0) << " for " << mk_ismt2_pp(called_prec, m, 0) << std::endl;
+                            expr_ref called_branch = m_utils.replace_vars_decl(branches.get(i), pattern, op);
+                            term_subst.insert(ap_f, called_branch);
+                            std::cout << "Reused branch " << mk_ismt2_pp(branches.get(i), m, 0) << " for " << mk_ismt2_pp(called_branch, m, 0) << std::endl;
+                            is_found = true;
+                            break;
+                        }
+
+                    }
+                    if (is_found)
+                        continue;
+                    //[-]
+
+                    expr_ref_vector mult_terms(m);
+                    mult_terms.push_back(m.mk_const(coeff_decl_vec.get(0)));
+
+
+                    for (unsigned i = 0; i < ap_f->get_num_args(); ++i)
+                    {
+                        expr *term = m_arith.mk_mul(m.mk_const(coeff_decl_vec.get(1 + i)), ap_f->get_arg(i));
+                        mult_terms.push_back(term);
+                    }
+
+                    expr_ref linear_term = m_arith.mk_add_simplify(mult_terms);
+                    term_subst.insert(ap_f, linear_term);
+                    accumulator_terms.push_back(linear_term);
+                    //m_terms.push_back(linear_term);
+                }
+
+                rewrite_expr(spec, new_spec, term_subst);
+
             }
 
             void rewriter_functions_to_linear_term(func_decl_ref_vector coeff_decl_vec, func_decl_ref_vector &synth_funs,

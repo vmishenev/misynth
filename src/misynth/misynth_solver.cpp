@@ -275,6 +275,9 @@ namespace misynth
 
         args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
 
+        expr_ref_vector all_precs_for_ops(m);
+        slv_for_prec->push();
+        slv_for_prec->assert_expr(m.mk_true());
 
         for (unsigned int i = 0; i < MAX_ITERATION; ++i)
         {
@@ -284,19 +287,31 @@ namespace misynth
 
             if (last_precond.get()) // non first iteration
             {
+
+                expr_ref_vector precs_for_one_op(m);
                 for (unsigned int i = 0; i < m_ops.size(); ++i)
                 {
                     invocation_operands &op = m_ops.get(i);
 
                     expr_ref called_prec = m_utils.replace_vars_decl(last_precond, *args_decl, op);
-                    slv_for_prec->push();
-                    slv_for_prec->assert_expr(m.mk_not(called_prec));
+                    precs_for_one_op.push_back(m.mk_not(called_prec));
+
+                    //slv_for_prec->push();
+                    //slv_for_prec->assert_expr(m.mk_not(called_prec));
 
                     if (DEBUG_MODE)
                     {
-                        std::cout << "add to solver called precondition " << mk_ismt2_pp(slv_for_prec->get_assertion(slv_for_prec->get_num_assertions() - 1), m, 0) << std::endl;
+                        //std::cout << "add to solver called precondition: " << mk_ismt2_pp(slv_for_prec->get_assertion(slv_for_prec->get_num_assertions() - 1), m, 0) << std::endl;
                     }
                 }
+
+                all_precs_for_ops.push_back(m_utils.con_join(precs_for_one_op));
+
+                slv_for_prec->pop(1);// pop previos precs
+                slv_for_prec->push();
+                slv_for_prec->assert_expr(m_utils.dis_join(all_precs_for_ops));
+                std::cout << "Current precs: " << mk_ismt2_pp(slv_for_prec->get_assertion(slv_for_prec->get_num_assertions() - 1), m, 0) << std::endl;
+
                 last_precond = 0;
             }
             if (current_iter_model_x++ >= (m_params.attempts_per_one_model_x() + m_params.trivial_attempts_per_one_model_x()))
@@ -647,11 +662,20 @@ namespace misynth
     }
     expr_ref misynth_solver::find_precondition(func_decl_ref_vector & synth_funs, expr_ref & spec, model_ref mdl_for_coeff)
     {
+        args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
+
         vector<invocation_operands> current_ops;
         collect_invocation_operands(spec, synth_funs, current_ops);
         expr_ref spec_with_coeff(m);
         invocations_rewriter inv_rwr(m_cmd, m);
-        inv_rwr.rewriter_functions_to_linear_term(m_coeff_decl_vec, synth_funs, spec, spec_with_coeff);
+        if (m_params.reused_brances())
+        {
+            inv_rwr.rewriter_functions_to_linear_term_with_prec(m_coeff_decl_vec, synth_funs, spec, spec_with_coeff, *synth_fun_args, m_precs, m_branches);
+        }
+        else
+        {
+            inv_rwr.rewriter_functions_to_linear_term(m_coeff_decl_vec, synth_funs, spec, spec_with_coeff);
+        }
 
         std::cout << "spec_with_coeff " << mk_ismt2_pp(spec_with_coeff, m, 3) << std::endl;
 
@@ -685,7 +709,7 @@ namespace misynth
             }
         }
 
-        args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
+
 
         expr_ref res(m);
 

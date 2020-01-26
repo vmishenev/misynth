@@ -8,7 +8,8 @@ def_module_params(module_name='misynth',
                           ('trivial_attempts_simultaneously_branches', UINT, 2, 'trivial attempts for simultaneously search branches'),
                           ('type_heuristic_branches', UINT, 2, '1 all c0_* are equals; 2 c0_* = 0; 3 c0_* = 1;'),
                           ('type_heuristic', UINT, 1, '1 dis join; 2 con join; 3 with constants from specification;'),
-                          ('fairness', BOOL, True, 'fairness for coeff model'),
+                          ('reused_brances', BOOL, True, 'reused_brances for search of branch at the time (alg 1)'),
+                          ('fairness', BOOL, False, 'fairness for coeff model'),
                           ('check_assumptions', BOOL, True, 'check unrealizability'),
                           ('debug_abduce', BOOL, False, 'debug_abducey')))
 
