@@ -22,7 +22,7 @@ namespace misynth
             function_utils m_futils;
             vector<func_decl_ref_vector> m_coeff_decl_vec;
             multi_abducer m_abducer;
-            //params_ref m_params;
+            synth_params m_params;
             ref<solver> m_coeff_solver;
         public:
             search_simultaneously_branches(cmd_context &cmd_ctx, ast_manager &m)
@@ -141,19 +141,87 @@ namespace misynth
 
             }
 
+            model_ref get_coeff_model_from_slv(ref<solver> &slv, expr_ref spec_for_concrete_x, expr_ref heuristic)
+            {
+                bool is_added_heuristic = heuristic.get();
+                slv->push();
+                slv->assert_expr(spec_for_concrete_x);
+
+                if (is_added_heuristic)
+                {
+                    slv->push();
+                    slv->assert_expr(heuristic);
+                }
+
+                lbool res_spec_for_x = slv->check_sat();
+
+                model_ref mdl_for_coeff;
+
+                if (res_spec_for_x != lbool::l_true)
+                {
+                    //TODO: take into account a heuristic
+                    if (is_added_heuristic)
+                    {
+                        std::cout << "WARNING!!! Heuristic for this spec and model x is unsat. " << std::endl;
+                        is_added_heuristic = false;
+                        slv->pop(1); // remove a heuristic
+                        lbool res_spec_for_x = slv->check_sat();
+                        if (res_spec_for_x != lbool::l_true)
+                        {
+                            return mdl_for_coeff;//not found
+                        }
+                    }
+                    else
+                    {
+                        return mdl_for_coeff;//not found
+                    }
+
+                }
+                if (is_added_heuristic)
+                {
+                    slv->pop(1);
+                    is_added_heuristic = false;
+                }
+
+                slv->get_model(mdl_for_coeff);
+                slv->pop(1);
+
+
+                return mdl_for_coeff;
+
+            }
             void operator()(func_decl_ref_vector & synth_funs, expr_ref_vector & constraints, model_ref mdl_for_x, func_decl_ref_vector &synth_fun_args, expr_ref_vector & branches,   expr_ref_vector & precs, int is_added_heuristic = 0)
             {
+                expr_ref spec = m_utils.con_join(constraints);
+                invocations_rewriter inv_rwr(m_cmd, m);
+
+                expr_ref spec_and_reused_branches(spec, m);
+                vector<unsigned int> used_branches;
+                if (m_params.reused_brances())
+                {
+                    inv_rwr.rewrite_app_with_branch(spec, synth_funs, precs, branches, synth_fun_args, spec_and_reused_branches, mdl_for_x, used_branches);
+                    std::cout << "Reused spec_and_reused_branches: " << mk_ismt2_pp(spec_and_reused_branches, m, 3)  << std::endl;
+                }
+
                 vector<app_ref_vector> distinct_invocation;
-                for (auto it = constraints.begin(); it != constraints.end(); it++)
-                    collect_distinct_invocation(*it, synth_funs, mdl_for_x, distinct_invocation);
+                //for (auto it = constraints.begin(); it != constraints.end(); it++)
+                collect_distinct_invocation(spec_and_reused_branches, synth_funs, mdl_for_x, distinct_invocation);
                 std::cout << "distinct_invocation.size() : " << distinct_invocation.size()  << std::endl;
                 if (distinct_invocation.size() <= 1)
                 {
                     std::cout << "WARNING!!! This spec isn't multiinvocation " << std::endl;
+                    if (used_branches.size() == 0)
+                        return;
+                    std::cout << "Try to remove reused branches " << std::endl;
+                    for (unsigned int i : used_branches)
+                    {
+                        precs.set(i, m.mk_false());
+                    }
+                    (*this)(synth_funs, constraints, mdl_for_x, synth_fun_args, branches, precs, is_added_heuristic);
                     return;
                 }
                 generate_coeff_decl(synth_funs, distinct_invocation.size());
-                expr_ref spec = m_utils.con_join(constraints);
+
                 func_decl_ref_vector used_vars(m);
                 collect_used_variables(spec, synth_funs, used_vars);
 
@@ -167,42 +235,73 @@ namespace misynth
 
 
 
-                m_coeff_solver->push();
-                m_coeff_solver->assert_expr(m.mk_and(spec_with_x_coeffs, constraint));
-                if (is_added_heuristic)
+
+
+
+                expr_ref spec_with_x_coeffs_and_reused_branches_constrainted = expr_ref(m.mk_and(spec_with_coeffs, constraint), m);
+                /* m_coeff_solver->push();
+                 m_coeff_solver->assert_expr(m.mk_and(spec_with_x_coeffs_and_reused_branches, constraint));
+                 if (is_added_heuristic)
+                 {
+                     expr_ref heuristic = generate_heuristic(is_added_heuristic);
+                     m_coeff_solver->push();
+                     m_coeff_solver->assert_expr(heuristic);
+                     std::cout << "added heuristic: " << mk_ismt2_pp(heuristic, m, 3)  << std::endl;
+                 }
+
+                 model_ref mdl_for_coeff;
+
+                 if (m_coeff_solver->check_sat() != lbool::l_true)
+                 {
+
+                     if (is_added_heuristic)
+                     {
+                         is_added_heuristic = false;
+                         m_coeff_solver->pop(1);
+                         if (m_coeff_solver->check_sat() != lbool::l_true)
+                         {
+                             std::cout << "WARNING!!!!  search_simultaneously_branches is unsat" << std::endl;
+
+                         }
+                     }
+                     else
+                         std::cout << "WARNING!!!!  search_simultaneously_branches is unsat" << std::endl;
+                 }
+                 m_coeff_solver->get_model(mdl_for_coeff);
+                 m_coeff_solver->pop(1);
+                 if (is_added_heuristic)
+                     m_coeff_solver->pop(1);
+                 //model_ref mdl_for_coeff = m_utils.get_model(expr_ref(m.mk_and(spec_with_x_coeffs, constraint), m));
+                 if (!mdl_for_coeff.get())
+                 {
+                     std::cout << "WARNING!!!!  search_simultaneously_branches is unsat" << std::endl;
+                     return;
+                 }
+                 */
+
+
+
+                model_ref mdl_for_coeff =  get_coeff_model_from_slv(m_coeff_solver, spec_with_x_coeffs_and_reused_branches_constrainted, is_added_heuristic ? generate_heuristic(is_added_heuristic) : expr_ref(m));
+                if (!mdl_for_coeff)
                 {
-                    expr_ref heuristic = generate_heuristic(is_added_heuristic);
-                    m_coeff_solver->push();
-                    m_coeff_solver->assert_expr(heuristic);
-                    std::cout << "added heuristic: " << mk_ismt2_pp(heuristic, m, 3)  << std::endl;
-                }
+                    std::cout << "Reused mdl_for_coeff have not found " << std::endl;
 
-                model_ref mdl_for_coeff;
-
-                if (m_coeff_solver->check_sat() != lbool::l_true)
-                {
-
-                    if (is_added_heuristic)
+                    if (used_branches.size() == 0)
+                        return;
+                    std::cout << "Remove used branches" << std::endl;
+                    // remove used branches
+                    for (unsigned int i : used_branches)
                     {
-                        is_added_heuristic = false;
-                        m_coeff_solver->pop(1);
-                        if (m_coeff_solver->check_sat() != lbool::l_true)
-                            std::cout << "WARNING!!!!  search_simultaneously_branches is unsat" << std::endl;
+                        precs.set(i, m.mk_false());
                     }
-                    else
-                        std::cout << "WARNING!!!!  search_simultaneously_branches is unsat" << std::endl;
-                }
-                m_coeff_solver->get_model(mdl_for_coeff);
-                m_coeff_solver->pop(1);
-                if (is_added_heuristic)
-                    m_coeff_solver->pop(1);
-                //model_ref mdl_for_coeff = m_utils.get_model(expr_ref(m.mk_and(spec_with_x_coeffs, constraint), m));
-                if (!mdl_for_coeff.get())
-                {
-                    std::cout << "WARNING!!!!  search_simultaneously_branches is unsat" << std::endl;
+                    (*this)(synth_funs, constraints, mdl_for_x, synth_fun_args, branches, precs, is_added_heuristic);
                     return;
                 }
+
+
+
                 std::cout << "mdl_for_coeff : " << (*mdl_for_coeff) << std::endl;
+
                 add_coeff_to_blacklist(mdl_for_coeff);
 
                 // after 9
@@ -212,15 +311,16 @@ namespace misynth
                 expr_ref single_conjuncts = m_utils.con_join(res_single_conjuncts);
                 std::cout << "single_conjuncts: " << mk_ismt2_pp(single_conjuncts, m, 3)  << std::endl;
 
+
                 vector<invocation_operands> current_ops;
                 collect_invocation_operands(single_conjuncts, synth_funs, current_ops);
 
-
                 expr_ref_vector precs_temp(m), branches_temp(m);
+
                 for (unsigned int i = 0; i < distinct_invocation.size(); ++i)
                 {
                     func_decl_ref_vector & crnt_coeffs = m_coeff_decl_vec.get(i);
-                    invocations_rewriter inv_rwr(m_cmd, m);
+
                     expr_ref single_conjuncts_with_coeff(m);
 
                     inv_rwr.rewriter_functions_to_linear_term(crnt_coeffs, synth_funs, single_conjuncts, single_conjuncts_with_coeff);
@@ -358,18 +458,18 @@ namespace misynth
 
             expr_ref generate_heuristic_constaraint_coeff(vector<func_decl_ref_vector> &coeff_decls)
             {
-              expr_ref_vector v(m);
-              for (auto & a : coeff_decls)
-                for (func_decl * fd : a)
-                {
-                  expr_ref e(m.mk_const(fd), m);
-                  v.push_back(m.mk_or(
-                                      m.mk_eq(e, m_arith.mk_int(-1)),
-                                      m.mk_eq(e, m_arith.mk_int(0)),
-                                      m.mk_eq(e, m_arith.mk_int(1))
-                                      ));
-                }
-              return m_utils.con_join(v);
+                expr_ref_vector v(m);
+                for (auto & a : coeff_decls)
+                    for (func_decl * fd : a)
+                    {
+                        expr_ref e(m.mk_const(fd), m);
+                        v.push_back(m.mk_or(
+                                        m.mk_eq(e, m_arith.mk_int(-1)),
+                                        m.mk_eq(e, m_arith.mk_int(0)),
+                                        m.mk_eq(e, m_arith.mk_int(1))
+                                    ));
+                    }
+                return m_utils.con_join(v);
             }
 
             expr_ref generate_heuristic(int num)

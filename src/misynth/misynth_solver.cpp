@@ -572,16 +572,19 @@ namespace misynth
         unsigned int iter = 0;
         bool is_infinity_loop = false;
 
+        expr_ref_vector local_branches(m_branches), local_precs(m_precs);
         if (mdl_for_x.get())
         {
             is_infinity_loop = true; // if alg1 gave a model
             std::cout << "start search_simultaneously_branches with mdl: " << *mdl_for_x << std::endl;
 
-            m_branches.reset();
-            m_precs.reset();
-            search(synth_funs, constraints, mdl_for_x, *synth_fun_args, m_branches, m_precs, is_added_heuristic);
+            //m_branches.reset();
+            //m_precs.reset();
+
+
+            search(synth_funs, constraints, mdl_for_x, *synth_fun_args, local_branches, local_precs, is_added_heuristic);
             m_slv_for_prec_completing_cond = m_cmd.get_solver_factory()(m, params_slv, false, true, false, symbol::null);
-            for (expr * e : m_precs)
+            for (expr * e : local_precs)
             {
                 m_slv_for_prec_completing_cond->push();
                 m_slv_for_prec_completing_cond->assert_expr(m.mk_not(e));
@@ -590,9 +593,8 @@ namespace misynth
         }
 
 
-
         sanity_checker sanity(m_cmd, m);
-        while (is_infinity_loop || m_precs.size() == 0 || m_slv_for_prec_completing_cond->check_sat() == lbool::l_false)
+        while (is_infinity_loop || local_precs.size() == 0 || m_slv_for_prec_completing_cond->check_sat() == lbool::l_false)
         {
             if (iter >= m_params.trivial_attempts_simultaneously_branches())
             {
@@ -601,11 +603,15 @@ namespace misynth
             // else ++is_added_heuristic;
 
             std::cout << "Completing condition is sat!  "  << std::endl;
-            expr_ref fun_body = generate_clia_fun_body(true);
+            expr_ref fun_body = generate_clia_fun_body(local_precs, local_branches, true);
 
             bool sanity_res = sanity.check(constraints, m_used_vars, fun_body, synth_funs, *synth_fun_args, mdl_for_x);
             if (sanity_res)
             {
+                m_precs.reset();
+                m_precs.append(local_precs);
+                m_branches.reset();
+                m_branches.append(local_branches);
                 completed_solving(synth_funs, constraints);
                 return true;
             }
@@ -613,17 +619,20 @@ namespace misynth
             {
                 std::cout << "Sanity failed, start   search_simultaneously_branches"  << *mdl_for_x << std::endl;
 
-                m_branches.reset();
-                m_precs.reset();
+                local_branches.reset();
+                local_precs.reset();
+                local_branches.append(m_branches);
+                local_precs.append(m_precs);
+
                 alg3_run++;
-                search(synth_funs, constraints, mdl_for_x, *synth_fun_args, m_branches, m_precs, is_added_heuristic);
+                search(synth_funs, constraints, mdl_for_x, *synth_fun_args, local_branches, local_precs, is_added_heuristic);
 
                 m_slv_for_prec_completing_cond = m_cmd.get_solver_factory()(m, params_slv, false, true, false, symbol::null);
-                if (m_precs.size() > 0)
+                if (local_branches.size() > 0)
                 {
                     sanity.reset_constraint_for_model_x();
                 }
-                for (expr * e : m_precs)
+                for (expr * e : local_precs)
                 {
                     m_slv_for_prec_completing_cond->push();
                     m_slv_for_prec_completing_cond->assert_expr(m.mk_not(e));
@@ -644,9 +653,9 @@ namespace misynth
         args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
 
         std::cout << "Incompact solution: ";
-        print_def_fun(std::cout, synth_funs.get(0), *synth_fun_args, generate_clia_fun_body());
+        print_def_fun(std::cout, synth_funs.get(0), *synth_fun_args, generate_clia_fun_body(m_precs, m_branches));
 
-        expr_ref fun_body = generate_clia_fun_body(true);
+        expr_ref fun_body = generate_clia_fun_body(m_precs, m_branches, true);
         print_def_fun(std::cout, synth_funs.get(0), *synth_fun_args, fun_body);
 
 
@@ -929,11 +938,11 @@ namespace misynth
         out << ") " << std::endl;
     }
 
-    expr_ref misynth_solver::generate_clia_fun_body(bool is_compact)
+    expr_ref misynth_solver::generate_clia_fun_body(expr_ref_vector &precs, expr_ref_vector &branches, bool is_compact)
     {
-        SASSERT(m_precs.size() == m_branches.size());
+        SASSERT(precs.size() == m_branches.size());
         expr_ref res(m);
-        if (m_precs.size() == 0) return res;
+        if (precs.size() == 0) return res;
 
         std::set<unsigned int> todo_remove;
         //[+] compaction
@@ -941,13 +950,13 @@ namespace misynth
         {
 
 
-            for (unsigned int i = 0 ; i < m_precs.size() - 1; ++i)
+            for (unsigned int i = 0 ; i < precs.size() - 1; ++i)
             {
                 if (todo_remove.find(i) != todo_remove.end())
                 {
                     continue;
                 }
-                for (unsigned int j = 0 ; j < m_precs.size(); ++j)
+                for (unsigned int j = 0 ; j < precs.size(); ++j)
                 {
                     if (i != j)
                     {
@@ -955,14 +964,14 @@ namespace misynth
                         {
                             continue;
                         }
-                        if (m_utils.implies(m_precs.get(i), m_precs.get(j)))
+                        if (m_utils.implies(precs.get(i), precs.get(j)))
                         {
                             //std::cout << "remove " <<  mk_ismt2_pp(m_precs.get(j), m, 0)
                             //          << " ===> " << mk_ismt2_pp(m_precs.get(i), m, 0) << std::endl;
                             todo_remove.insert(i);
                             break;
                         }
-                        else if (m_utils.implies(m_precs.get(j), m_precs.get(i)))
+                        else if (m_utils.implies(precs.get(j), precs.get(i)))
                         {
                             todo_remove.insert(j);
                             //std::cout << "remove " <<  mk_ismt2_pp(m_precs.get(i), m, 0)
@@ -976,25 +985,25 @@ namespace misynth
         }
         //[-] compaction
 
-        for (unsigned int i = m_precs.size() - 1 ; i < m_precs.size(); --i)
+        for (unsigned int i = precs.size() - 1 ; i < precs.size(); --i)
         {
             if (todo_remove.find(i) != todo_remove.end())
             {
                 continue;
             }
-            res = m_branches.get(i);
+            res = branches.get(i);
             break;
         }
 
         expr_ref_vector v(m);
 
-        for (unsigned int i = 0 ; i < m_precs.size() - 1; ++i)
+        for (unsigned int i = 0 ; i < precs.size() - 1; ++i)
         {
             if (todo_remove.find(i) != todo_remove.end())
             {
                 continue;
             }
-            res = m.mk_ite(m_precs.get(i), m_branches.get(i), res);
+            res = m.mk_ite(precs.get(i), branches.get(i), res);
         }
         return res;
     }

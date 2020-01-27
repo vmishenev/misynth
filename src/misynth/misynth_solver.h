@@ -55,7 +55,7 @@ namespace misynth
             model_ref get_coeff_model_from_slv(ref<solver> &slv, expr_ref spec_for_concrete_x, expr_ref heuristic);
             model_ref get_coeff_model(expr_ref spec_for_concrete_x, expr_ref heuristic);
             expr_ref generate_heuristic_constaraint_coeff(expr_ref spec, func_decl_ref_vector &coeff_decls);
-            expr_ref generate_clia_fun_body(bool is_compact = false);
+            expr_ref generate_clia_fun_body(expr_ref_vector &precs, expr_ref_vector &branches, bool is_compact = false);
             bool try_find_simultaneously_branches(func_decl_ref_vector &synth_funs, expr_ref_vector &constraints, model_ref mdl);
             void print_def_fun(std::ostream &out, func_decl * f, func_decl_ref_vector &args, expr_ref body);
             //void print_sorted_var_list(std::ostream &out,  func_decl_ref_vector & sorted_var);

@@ -92,9 +92,44 @@ namespace misynth
                 expr_ref linear_term = m_arith.mk_add_simplify(mult_terms);
                 return linear_term;
             }
+            void rewrite_app_with_branch(expr_ref e,  func_decl_ref_vector &synth_funs, expr_ref_vector & precs,   expr_ref_vector & branches, func_decl_ref_vector & pattern, expr_ref & res, model_ref mdl_for_x, vector<unsigned int> &used_branches)
+            {
+                invocation_collector collector(synth_funs);
+                collector(e);
+                obj_hashtable<app > set = collector.get_invocation();
 
-            void rewriter_functions_to_linear_term_with_prec(func_decl_ref_vector coeff_decl_vec, func_decl_ref_vector &synth_funs,
-                    expr_ref spec, expr_ref &new_spec, func_decl_ref_vector& pattern, expr_ref_vector &precs, expr_ref_vector &branches)
+                app2expr_map  term_subst;
+                for (auto it = set.begin(); it != set.end(); it++)
+                {
+                    app *ap_f = (*it);
+
+                    //[+] use founded precs
+                    expr_ref_vector op(m, ap_f->get_num_args(), ap_f->get_args());
+                    bool is_found = false;
+                    for (unsigned i = 0; i < precs.size(); ++i)
+                    {
+                        expr_ref called_prec = (*mdl_for_x)(m_utils.replace_vars_decl(precs.get(i), pattern, op));
+                        if (m_utils.is_true(called_prec))
+                        {
+                            std::cout << "Reused prec " << mk_ismt2_pp(precs.get(i), m, 0) << " for " << mk_ismt2_pp(called_prec, m, 0) << std::endl;
+                            expr_ref called_branch = m_utils.replace_vars_decl(branches.get(i), pattern, op);
+                            term_subst.insert(ap_f, called_branch);
+                            std::cout << "Reused branch " << mk_ismt2_pp(branches.get(i), m, 0) << " for " << mk_ismt2_pp(called_branch, m, 0) << std::endl;
+                            is_found = true;
+                            used_branches.insert(i);
+                            break;
+                        }
+
+                    }
+                    if (is_found)
+                        continue;
+                    //[-]
+                }
+                rewrite_expr(e, res, term_subst);
+            }
+
+            void rewriter_functions_to_linear_term_with_prec(func_decl_ref_vector coeff_decl_vec, func_decl_ref_vector & synth_funs,
+                    expr_ref spec, expr_ref & new_spec, func_decl_ref_vector & pattern, expr_ref_vector & precs, expr_ref_vector & branches)
             {
                 invocation_collector collector(synth_funs);
                 collector(spec);
@@ -149,8 +184,8 @@ namespace misynth
 
             }
 
-            void rewriter_functions_to_linear_term(func_decl_ref_vector coeff_decl_vec, func_decl_ref_vector &synth_funs,
-                                                   expr_ref spec, expr_ref &new_spec)
+            void rewriter_functions_to_linear_term(func_decl_ref_vector coeff_decl_vec, func_decl_ref_vector & synth_funs,
+                                                   expr_ref spec, expr_ref & new_spec)
             {
                 invocation_collector collector(synth_funs);
                 collector(spec);
