@@ -106,10 +106,14 @@ namespace misynth
                 return true;
             }
 
-
+            //expr * last_body;
             bool check(expr_ref_vector &constraints, func_decl_ref_vector used_vars, expr_ref body_fun, func_decl_ref_vector &synth_funs, func_decl_ref_vector args, model_ref &mdl)
             {
-
+                /*if (last_body != body_fun.get())
+                {
+                    last_body = body_fun.get();
+                    reset_constraint_for_model_x();
+                }*/
                 if (!body_fun.get())
                 {
                     lbool r = m_solver->check_sat();
@@ -133,9 +137,13 @@ namespace misynth
 
 
 
+
                 m_solver->push();
                 m_solver->assert_expr(macros);
-
+                for (unsigned int i = 0; i < m_solver->get_num_assertions(); ++i)
+                {
+                    std::cout << "Sanity checker:: assert: " << mk_ismt2_pp(m_solver->get_assertion(i), m, 3) << std::endl;
+                }
                 for (unsigned int i = 0; i < constraints.size(); ++i)
                 {
                     m_solver->push();
@@ -148,12 +156,13 @@ namespace misynth
                         m_solver->get_model(mdl);
                         std::cout << *mdl << std::endl;
 
-                        m_solver->pop(1);
+                        m_solver->pop(2); // remove macros and constraint
                         add_blacklist(mdl, used_vars);
                         return false;
                     }
                     m_solver->pop(1);
                 }
+                m_solver->pop(1);// remove macros
                 return true;
             }
             void add_blacklist(model_ref mdl,  func_decl_ref_vector used_vars)

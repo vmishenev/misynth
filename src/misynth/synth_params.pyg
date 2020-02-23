@@ -11,5 +11,6 @@ def_module_params(module_name='misynth',
                           ('reused_brances', BOOL, True, 'reused_brances for search of branch at the time (alg 1)'),
                           ('fairness', BOOL, False, 'fairness for coeff model'),
                           ('check_assumptions', BOOL, True, 'check unrealizability'),
+                          ('incremental_multiabduction', BOOL, True, 'incremental multiabduction'),
                           ('debug_abduce', BOOL, False, 'debug_abducey')))
 

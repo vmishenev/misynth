@@ -8,6 +8,7 @@
 #include "ast/ast_pp.h"
 #include "misynth/multi_abducer.h"
 #include "misynth/function_utils.h"
+#include "misynth/ite_function.h"
 
 namespace misynth
 {
@@ -86,6 +87,9 @@ namespace misynth
 
             expr_ref generate_constraints()
             {
+                if (m_coeff_decl_vec.size() <= 1)
+                    return expr_ref(m.mk_true(), m);
+
                 expr_ref_vector v(m);
                 for (unsigned int i = 0; i < m_coeff_decl_vec.size(); ++i)
                 {
@@ -168,6 +172,7 @@ namespace misynth
                         lbool res_spec_for_x = slv->check_sat();
                         if (res_spec_for_x != lbool::l_true)
                         {
+                            slv->pop(1);//remove spec
                             return mdl_for_coeff;//not found
                         }
                     }
@@ -190,8 +195,12 @@ namespace misynth
                 return mdl_for_coeff;
 
             }
-            void operator()(func_decl_ref_vector & synth_funs, expr_ref_vector & constraints, model_ref mdl_for_x, func_decl_ref_vector &synth_fun_args, expr_ref_vector & branches,   expr_ref_vector & precs, int is_added_heuristic = 0)
+            void operator()(func_decl_ref_vector & synth_funs, expr_ref_vector & constraints, model_ref mdl_for_x, func_decl_ref_vector &synth_fun_args, ite_function &fn, ite_function &result_fn, int is_added_heuristic = 0)
             {
+                expr_ref_vector precs(fn.get_precs());
+                expr_ref_vector branches(fn.get_branches());
+                std::cout << "Search simulteneosly "  << std::endl;
+                std::cout << "for current partial-fn:" <<  mk_ismt2_pp(fn.generate_clia_fun_body(true), m, 0) << std::endl;
                 expr_ref spec = m_utils.con_join(constraints);
                 invocations_rewriter inv_rwr(m_cmd, m);
 
@@ -207,17 +216,18 @@ namespace misynth
                 //for (auto it = constraints.begin(); it != constraints.end(); it++)
                 collect_distinct_invocation(spec_and_reused_branches, synth_funs, mdl_for_x, distinct_invocation);
                 std::cout << "distinct_invocation.size() : " << distinct_invocation.size()  << std::endl;
-                if (distinct_invocation.size() <= 1)
+                if (distinct_invocation.size() < 1)
                 {
                     std::cout << "WARNING!!! This spec isn't multiinvocation " << std::endl;
                     if (used_branches.size() == 0)
                         return;
                     std::cout << "Try to remove reused branches " << std::endl;
-                    for (unsigned int i : used_branches)
+                    fn.remove_branches(used_branches);
+                    /*for (unsigned int i : used_branches)
                     {
                         precs.set(i, m.mk_false());
-                    }
-                    (*this)(synth_funs, constraints, mdl_for_x, synth_fun_args, branches, precs, is_added_heuristic);
+                    }*/
+                    (*this)(synth_funs, constraints, mdl_for_x, synth_fun_args, fn, result_fn, is_added_heuristic);
                     return;
                 }
                 generate_coeff_decl(synth_funs, distinct_invocation.size());
@@ -225,7 +235,7 @@ namespace misynth
                 func_decl_ref_vector used_vars(m);
                 collect_used_variables(spec, synth_funs, used_vars);
 
-                expr_ref spec_with_coeffs = replace_invocations(spec, distinct_invocation);
+                expr_ref spec_with_coeffs = replace_invocations(spec_and_reused_branches, distinct_invocation);
 
                 std::cout << "spec_with_coeffs: " << mk_ismt2_pp(spec_with_coeffs, m, 3)  << std::endl;
                 expr_ref spec_with_x_coeffs =  m_utils.replace_vars_according_to_model(spec_with_coeffs, mdl_for_x, used_vars, true);
@@ -238,7 +248,7 @@ namespace misynth
 
 
 
-                expr_ref spec_with_x_coeffs_and_reused_branches_constrainted = expr_ref(m.mk_and(spec_with_coeffs, constraint), m);
+                expr_ref spec_with_x_coeffs_and_reused_branches_constrainted = expr_ref(m.mk_and(spec_with_x_coeffs, constraint), m);
                 /* m_coeff_solver->push();
                  m_coeff_solver->assert_expr(m.mk_and(spec_with_x_coeffs_and_reused_branches, constraint));
                  if (is_added_heuristic)
@@ -290,11 +300,12 @@ namespace misynth
                         return;
                     std::cout << "Remove used branches" << std::endl;
                     // remove used branches
-                    for (unsigned int i : used_branches)
+                    fn.remove_branches(used_branches);
+                    /*for (unsigned int i : used_branches)
                     {
                         precs.set(i, m.mk_false());
-                    }
-                    (*this)(synth_funs, constraints, mdl_for_x, synth_fun_args, branches, precs, is_added_heuristic);
+                    }*/
+                    (*this)(synth_funs, constraints, mdl_for_x, synth_fun_args, fn, result_fn, is_added_heuristic);
                     return;
                 }
 
@@ -378,8 +389,10 @@ namespace misynth
                         }
                         if (i > 0) precs_temp.set(i, m.mk_not(precs_temp.get(i - 1)));
                         else if (i < precs_temp.size() - 1) precs_temp.set(i, m.mk_not(precs_temp.get(i + 1)));
-                        else std::cout << "WARNING!!!  True-branch is only one" << std::endl;
-
+                        else
+                        {
+                            std::cout << "WARNING!!!  True-branch is only one" << std::endl;
+                        }
                         is_single_true = false;
 
                     }
@@ -387,6 +400,14 @@ namespace misynth
                 }
                 precs.append(precs_temp);
                 branches.append(branches_temp);
+
+                //fn.clear();
+                //fn.add_branches(precs_temp, branches_temp);
+                result_fn.clear();
+                result_fn.add_branches(precs_temp, branches_temp);
+
+                //what does it deal with unused branches?
+                result_fn.unite(fn);
             }
 
 

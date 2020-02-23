@@ -368,6 +368,11 @@ namespace misynth
                 out << "(" << v->get_name() << " " << v->get_range()->get_name() << ")";
             }
         }
+
+        expr_ref get_non_deter_const()
+        {
+            return expr_ref(m.mk_const("non_det", m_arith.mk_int()), m);//rvo
+        }
     }; // smt_utils
 } // misynth
 #endif // SMT_UTILS_H

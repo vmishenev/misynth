@@ -12,6 +12,7 @@
 #include "search_simultaneously_branches.h"
 #include "misynth/function_utils.h"
 #include "misynth/collector_constants.h"
+
 #include "model/model2expr.h"
 
 #include <iomanip>
@@ -40,11 +41,12 @@ namespace misynth
         , m_coeff_decl_vec(m),
 
           m_used_vars(m),
-          m_precs(m),
-          m_branches(m),
+          //m_precs(m),
+          //m_branches(m),
           m_terms(m),
           m_assumptions(m),
-          m_abducer(cmd_ctx, m)
+          m_abducer(cmd_ctx, m),
+          fn(m_cmd, m)
     {
     }
 
@@ -76,6 +78,7 @@ namespace misynth
                 lbool res_spec_for_x = slv->check_sat();
                 if (res_spec_for_x != lbool::l_true)
                 {
+                    slv->pop(1);//remove spec
                     return mdl_for_coeff;//not found
                 }
             }
@@ -275,11 +278,13 @@ namespace misynth
 
         args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
 
+
+
         expr_ref_vector all_precs_for_ops(m);
         slv_for_prec->push();
         slv_for_prec->assert_expr(m.mk_true());
 
-        for (unsigned int i = 0; i < MAX_ITERATION; ++i)
+        for (unsigned int i = 0; i < MAX_ITERATION ; ++i)
         {
             iters_main_alg++;
             if (DEBUG_MODE)
@@ -376,7 +381,7 @@ namespace misynth
                 {
                     std::cout << "!!! UNSAT of precs with replaced operands"  << std::endl;
                     model_ref mdl = m_utils.get_model(spec_with_coeff);
-                    if (try_find_simultaneously_branches(synth_funs, constraints, mdl))
+                    if (try_find_simultaneously_branches(synth_funs, constraints, 0, true))
                         return true;
                     continue;
 
@@ -395,8 +400,9 @@ namespace misynth
                     std::cout << "!!! UNSAT of precs with replaced operands"  << std::endl;
                     std::cout << "ERROR!!!! TODO: simply check sat of prec" << r << std::endl;
                     //completed_solving(synth_funs, constraints);
+
                     model_ref mdl = m_utils.get_model(spec_with_coeff);
-                    if (try_find_simultaneously_branches(synth_funs, constraints, mdl))
+                    if (try_find_simultaneously_branches(synth_funs, constraints, 0, true))
                         return true;
                     continue;
 
@@ -417,54 +423,10 @@ namespace misynth
             {
                 std::cout << "pushed heuristic constaraint for coeff" << std::endl;
                 is_added_heuristic = true;
-                //slv_for_coeff->push();
-                //slv_for_coeff->assert_expr(heuristic_constaraint_coeff);
             }
-            /*else if (current_iter_trivial_model_x >= m_params.trivial_attempts_per_one_model_x() && is_added_heuristic)
-            {
-                std::cout << "popped heuristic constaraint for coeff" << std::endl;
-                is_added_heuristic = false;
-                slv_for_coeff->pop(1);
-            }*/
+
             ++current_iter_trivial_model_x;
 
-
-
-
-            /*
-            slv_for_coeff->push();
-            slv_for_coeff->assert_expr(spec_for_concrete_x);
-            lbool res_spec_for_x = slv_for_coeff->check_sat();
-
-            model_ref mdl_for_coeff;
-
-            if (res_spec_for_x != lbool::l_true)
-            {
-                //TODO: take into account a heuristic
-                if (is_added_heuristic)
-                {
-                    std::cout << "WARNING!!! Heuristic for this spec and model x is unsat. " << std::endl;
-                    is_added_heuristic = false;
-                    slv_for_coeff->pop(2); // remove spec_for_concrete_x and heuristic
-                    continue;
-                }
-
-                std::cout << "WARNING!!! There are several branches. " << std::endl;
-
-                if (try_find_simultaneously_branches(synth_funs, constraints, mdl_for_x))
-                    return true;
-
-                //return false;
-            }
-
-            slv_for_coeff->get_model(mdl_for_coeff);
-            slv_for_coeff->pop(1);
-            if (is_added_heuristic)
-            {
-                slv_for_coeff->pop(1);
-                is_added_heuristic = false;
-            }
-            */
 
             model_ref mdl_for_coeff = get_coeff_model(spec_for_concrete_x, is_added_heuristic ? heuristic_constaraint_coeff : expr_ref(m));
             is_added_heuristic = false;
@@ -487,25 +449,9 @@ namespace misynth
             expr_ref simplified_spec = m_utils.simplify_context_cond(spec, additional_cond);
             std::cout << "simplified_spec for concrete coeff " << mk_ismt2_pp(simplified_spec, m, 3) << std::endl;
 
-            //
-            //expr_ref spec_for_concrete_coeff(m);
-            //spec_for_concrete_coeff = m_utils.replace_vars_according_to_model(spec_with_coeff, mdl_for_coeff, m_coeff_decl_vec, true);
-            // std::cout << "spec_for_concrete_coeff " << mk_ismt2_pp(spec_for_concrete_coeff, m, 3) << std::endl;
-            /*[-] */
-
-
 
             /*[+] Find a precondition*/
             last_precond = find_precondition(synth_funs, simplified_spec, mdl_for_coeff);
-
-            /*expr_ref_vector eval_coeff_model(m);
-            for (func_decl *fd : m_coeff_decl_vec)
-            {
-                eval_coeff_model.push_back((*mdl_for_coeff)(m.mk_const(fd)));
-            }
-            //remember this coef
-            slv_for_coeff->push();
-            slv_for_coeff->assert_expr(m.mk_not(m_utils.mk_eq(m_coeff_decl_vec, eval_coeff_model)));*/
 
             if (m_utils.is_unsat(last_precond))
             {
@@ -519,33 +465,27 @@ namespace misynth
             if (m_utils.is_unsat(m.mk_not(last_precond)))
                 //if(m.is_true(last_precond))
             {
-                m_branches.reset();
-                m_precs.reset();
-                m_precs.push_back(m.mk_true());
-                m_branches.push_back(branch);
+                fn.clear();
+                fn.add_branch(m.mk_true(), branch);
                 completed_solving(synth_funs, constraints);
                 return true;
             }
 
-            m_precs.push_back(last_precond);
-            m_branches.push_back(branch);
 
-            m_slv_for_prec_completing_cond->push();
-            m_slv_for_prec_completing_cond->assert_expr(m.mk_not(last_precond));
-
-
+            fn.add_branch(last_precond, branch);
 
             /*[-] */
             if (DEBUG_MODE)
             {
                 std::cout << "-------------------" << std::endl;
-                std::cout << mk_ismt2_pp(last_precond, m, 0) << "  ==> " << mk_ismt2_pp(m_branches.back(), m, 0) << std::endl;
+                std::cout << mk_ismt2_pp(last_precond, m, 0) << "  ==> " << mk_ismt2_pp(fn.get_branches().back(), m, 0) << std::endl;
             }
-
-            if (try_find_simultaneously_branches(synth_funs, constraints, 0))
-                return true;
-
-
+            if (fn.is_completed())
+            {
+                if (try_find_simultaneously_branches(synth_funs, constraints, 0))
+                    return true;
+            }
+            std::cout << "-------------------" << std::endl;
 
 
         }
@@ -556,46 +496,59 @@ namespace misynth
 
 
 
-    bool misynth_solver::try_find_simultaneously_branches(func_decl_ref_vector & synth_funs, expr_ref_vector & constraints, model_ref mdl_for_x)
+    bool misynth_solver::try_find_simultaneously_branches(func_decl_ref_vector & synth_funs, expr_ref_vector & constraints, model_ref mdl_for_x, bool is_infinity_loop)
     {
+
+        std::cout << "try_find_simultaneously_branches" << std::endl;
         args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
 
 
         search_simultaneously_branches search(m_cmd, m);
         int is_added_heuristic = m_params.type_heuristic_branches();
 
-        params_ref params_slv;
+        //params_ref params_slv;
         //slv_for_x_prec = m_cmd.get_solver_factory()(m, params_slv, false, true, false, symbol::null);
 
 
 
         unsigned int iter = 0;
-        bool is_infinity_loop = false;
 
-        expr_ref_vector local_branches(m_branches), local_precs(m_precs);
+
+        //expr_ref_vector local_branches(m), local_precs(m);
+
+        ite_function source_fn(m_cmd, m);
+        ite_function result_fn(m_cmd, m);
+
+
+        if (m_params.reused_brances())
+        {
+            source_fn.unite(fn);
+            result_fn.unite(fn);
+        }
         if (mdl_for_x.get())
         {
             is_infinity_loop = true; // if alg1 gave a model
             std::cout << "start search_simultaneously_branches with mdl: " << *mdl_for_x << std::endl;
 
-            //m_branches.reset();
-            //m_precs.reset();
 
 
-            search(synth_funs, constraints, mdl_for_x, *synth_fun_args, local_branches, local_precs, is_added_heuristic);
-            m_slv_for_prec_completing_cond = m_cmd.get_solver_factory()(m, params_slv, false, true, false, symbol::null);
-            for (expr * e : local_precs)
-            {
-                m_slv_for_prec_completing_cond->push();
-                m_slv_for_prec_completing_cond->assert_expr(m.mk_not(e));
-                std::cout << "prec " << mk_ismt2_pp(e, m, 3) << std::endl;
-            }
+
+            search(synth_funs, constraints, mdl_for_x, *synth_fun_args, source_fn, result_fn, is_added_heuristic);
+            /* m_slv_for_prec_completing_cond = m_cmd.get_solver_factory()(m, params_slv, false, true, false, symbol::null);
+             for (expr * e : local_precs)
+             {
+                 m_slv_for_prec_completing_cond->push();
+                 m_slv_for_prec_completing_cond->assert_expr(m.mk_not(e));
+                 std::cout << "prec " << mk_ismt2_pp(e, m, 3) << std::endl;
+             }*/
         }
 
-
+        std::cout << "start main while loop for search sumult. "  << std::endl;
         sanity_checker sanity(m_cmd, m);
-        while (is_infinity_loop || local_precs.size() == 0 || m_slv_for_prec_completing_cond->check_sat() == lbool::l_false)
+        while (is_infinity_loop || result_fn.is_empty() || result_fn.is_completed())
         {
+
+            std::cout << "###source_fn:  " <<  mk_ismt2_pp(source_fn.generate_clia_fun_body(true), m, 3) << std::endl;
             if (iter >= m_params.trivial_attempts_simultaneously_branches())
             {
                 is_added_heuristic = 0;
@@ -603,15 +556,17 @@ namespace misynth
             // else ++is_added_heuristic;
 
             std::cout << "Completing condition is sat!  "  << std::endl;
-            expr_ref fun_body = generate_clia_fun_body(local_precs, local_branches, true);
-
+            expr_ref fun_body = result_fn.generate_clia_fun_body(true);
+            std::cout << "###current result_fn:  " <<  mk_ismt2_pp(fun_body, m, 3) << std::endl;
             bool sanity_res = sanity.check(constraints, m_used_vars, fun_body, synth_funs, *synth_fun_args, mdl_for_x);
             if (sanity_res)
             {
-                m_precs.reset();
+                /*m_precs.reset();
                 m_precs.append(local_precs);
                 m_branches.reset();
-                m_branches.append(local_branches);
+                m_branches.append(local_branches);*/
+
+                fn = result_fn;
                 completed_solving(synth_funs, constraints);
                 return true;
             }
@@ -619,32 +574,29 @@ namespace misynth
             {
                 std::cout << "Sanity failed, start   search_simultaneously_branches"  << *mdl_for_x << std::endl;
 
-                local_branches.reset();
-                local_precs.reset();
-                local_branches.append(m_branches);
-                local_precs.append(m_precs);
+                /*local_fn.clear();
+                if (m_params.reused_brances())
+                {
+                    local_fn.unite(fn);
+                }*/
 
                 alg3_run++;
-                search(synth_funs, constraints, mdl_for_x, *synth_fun_args, local_branches, local_precs, is_added_heuristic);
+                search(synth_funs, constraints, mdl_for_x, *synth_fun_args, source_fn, result_fn, is_added_heuristic);
 
-                m_slv_for_prec_completing_cond = m_cmd.get_solver_factory()(m, params_slv, false, true, false, symbol::null);
-                if (local_branches.size() > 0)
+
+                if (result_fn.is_empty())
                 {
                     sanity.reset_constraint_for_model_x();
                 }
-                for (expr * e : local_precs)
-                {
-                    m_slv_for_prec_completing_cond->push();
-                    m_slv_for_prec_completing_cond->assert_expr(m.mk_not(e));
-                    std::cout << "prec " << mk_ismt2_pp(e, m, 3) << std::endl;
-                }
-                //try_find_simultaneously_branches(synth_funs, constraints, mdl_for_x);
+
             }
+
             iter++;
         }
         std::cout << "Completing condition is unsat!  "  << std::endl;
         return false;
     }
+
 
     void misynth_solver::completed_solving(func_decl_ref_vector & synth_funs, expr_ref_vector & constraints)
     {
@@ -652,23 +604,21 @@ namespace misynth
 
         args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
 
-        std::cout << "Incompact solution: ";
-        print_def_fun(std::cout, synth_funs.get(0), *synth_fun_args, generate_clia_fun_body(m_precs, m_branches));
+        //std::cout << "Incompact solution: ";
+        //print_def_fun(std::cout, synth_funs.get(0), *synth_fun_args, generate_clia_fun_body(m_precs, m_branches));
 
-        expr_ref fun_body = generate_clia_fun_body(m_precs, m_branches, true);
+        //expr_ref fun_body = generate_clia_fun_body(m_precs, m_branches, true);
+        expr_ref fun_body = fn.generate_clia_fun_body(true);
         print_def_fun(std::cout, synth_funs.get(0), *synth_fun_args, fun_body);
 
 
         sanity_checker sanity(m_cmd, m);
         bool sanity_res = sanity.check(constraints, fun_body, synth_funs, *synth_fun_args);
         std::cout << "Sanity Checker Result: " << sanity_res << std::endl;
-        std::cout << iters_main_alg << " " << max_iter_iso_mor << " " << m_precs.size()  << std::endl;
+        std::cout << iters_main_alg << " " << max_iter_iso_mor << " " << fn.get_incompact_depth()  << std::endl;
         std::cout  << " alg3_run: " << alg3_run << std::endl;
-
-        //bool sanity_res2 = sanity.check_through_implication(m_utils.con_join(constraints),  m_precs, m_branches, synth_funs, *synth_fun_args);
-        //std::cout << "Sanity Checker implication Result: " << sanity_res2 << std::endl;
-
     }
+
     expr_ref misynth_solver::find_precondition(func_decl_ref_vector & synth_funs, expr_ref & spec, model_ref mdl_for_coeff)
     {
         args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
@@ -679,7 +629,7 @@ namespace misynth
         invocations_rewriter inv_rwr(m_cmd, m);
         if (m_params.reused_brances())
         {
-            inv_rwr.rewriter_functions_to_linear_term_with_prec(m_coeff_decl_vec, synth_funs, spec, spec_with_coeff, *synth_fun_args, m_precs, m_branches);
+            inv_rwr.rewriter_functions_to_linear_term_with_prec(m_coeff_decl_vec, synth_funs, spec, spec_with_coeff, *synth_fun_args, fn.get_precs(), fn.get_branches());
         }
         else
         {
@@ -777,8 +727,15 @@ namespace misynth
 
             }
             else
-                res = m_abducer.nonlinear_abduce(current_ops, expr_ref(m.mk_true(), m), th_res, *synth_fun_args);
+            {
+                if (m_params.incremental_multiabduction())
+                {
+                    res = incremental_multiabduction(synth_funs, th_res, current_ops);
 
+                }
+                else
+                    res = m_abducer.nonlinear_abduce(current_ops, expr_ref(m.mk_true(), m), th_res, *synth_fun_args);
+            }
 
             //lit(x1) /\ lit(x2) => phi(x1, x2)
             //try_to_separate_into_disjoint_sets();
@@ -789,6 +746,9 @@ namespace misynth
         return res;
     }
 
+
+
+
     args_t *misynth_solver::get_args_decl_for_synth_fun(func_decl * f)
     {
         return m_synth_fun_args_decl[f];
@@ -797,7 +757,9 @@ namespace misynth
     bool misynth_solver::prove_unrealizability_with_mdl(expr_ref spec, model_ref & mdl)
     {
         expr_ref logic_mdl(m);
-        model2expr(mdl, logic_mdl);
+        //model2expr(mdl, logic_mdl);
+        logic_mdl = m_utils.get_logic_model_with_default_value(mdl, m_used_vars);
+
         if (m_utils.is_unsat(m.mk_and(spec, logic_mdl)))
         {
             if (VERBOSE)
@@ -1086,5 +1048,98 @@ namespace misynth
         expr_ref macros(m_utils.universal_quantified(fd_eq_body_fun, args));
 
         return macros;
+    }
+
+
+    class generator_permutation_with_repetitions
+    {
+            // URL: https://rosettacode.org/wiki/Permutations_with_repetitions#C.2B.2B
+        public:
+            generator_permutation_with_repetitions(int s, int v)
+                : m_slots(s),
+                  m_values(v),
+                  m_a(s)
+            {
+                reset();
+            }
+
+
+
+            bool do_next()
+            {
+                for (;;)
+                {
+                    if (m_a[m_next_ind - 1] == m_values)
+                    {
+                        m_next_ind--;
+                        if (m_next_ind == 0)
+                            return false;
+                    }
+                    else
+                    {
+                        m_a[m_next_ind - 1]++;
+                        while (m_next_ind < m_slots)
+                        {
+                            m_next_ind++;
+                            m_a[m_next_ind - 1] = 1;
+                        }
+
+                        return true;
+                    }
+                }
+            }
+
+            vector<unsigned int> &get_next()
+            {
+                return m_a;
+            }
+            void reset()
+            {
+                for (unsigned int i = 0; i < m_slots - 1; i++)
+                {
+                    m_a[i] = 1;
+                }
+                m_a[m_slots - 1] = 0;
+
+                m_next_ind = m_slots;
+            }
+            void do_print()
+            {
+                printf("(");
+                for (int i = 0; i < m_slots; i++)
+                {
+                    printf("%d", m_a[i]);
+                }
+                printf(")");
+            }
+
+        private:
+            int m_slots;
+            int m_values;
+            int m_next_ind;
+            vector<unsigned int> m_a;
+
+    };
+
+
+
+
+    expr_ref misynth_solver::incremental_multiabduction(func_decl_ref_vector & synth_funs, expr_ref & simplified_spec, vector<invocation_operands> &current_ops)
+    {
+        args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
+
+        //[+try trivial abduction]
+        unsigned int k = current_ops.size();
+        generator_permutation_with_repetitions comb(current_ops.size(), fn.get_incompact_depth());
+
+        while (comb.do_next())
+        {
+            vector<unsigned int> v = comb.get_next();
+        }
+        //[-]
+
+        expr_ref res(m);
+        res = m_abducer.nonlinear_abduce(current_ops, expr_ref(m.mk_true(), m), simplified_spec, *synth_fun_args);
+        return res;
     }
 } // namespace misynth

@@ -7,6 +7,8 @@
 #include "smt_utils.h"
 #include "function_utils.h"
 #include "misynth/synth_params.hpp"
+#include "misynth/ite_function.h"
+
 namespace misynth
 {
 
@@ -33,7 +35,7 @@ namespace misynth
 
             func_decl_ref_vector m_coeff_decl_vec;
             func_decl_ref_vector m_used_vars;
-            expr_ref_vector m_precs, m_branches;
+            //expr_ref_vector m_precs, m_branches;
             expr_ref_vector m_terms, m_assumptions;
             app2expr_map m_term_subst;
 
@@ -48,7 +50,7 @@ namespace misynth
 
             vector<ref<solver> > m_slv_for_coeff_vec;
             unsigned int m_current_slv_for_coeff;
-
+            ite_function fn;
         public:
             misynth_solver(cmd_context &cmd_ctx, ast_manager &m, solver *solver);
 
@@ -56,8 +58,10 @@ namespace misynth
             model_ref get_coeff_model(expr_ref spec_for_concrete_x, expr_ref heuristic);
             expr_ref generate_heuristic_constaraint_coeff(expr_ref spec, func_decl_ref_vector &coeff_decls);
             expr_ref generate_clia_fun_body(expr_ref_vector &precs, expr_ref_vector &branches, bool is_compact = false);
-            bool try_find_simultaneously_branches(func_decl_ref_vector &synth_funs, expr_ref_vector &constraints, model_ref mdl);
+            bool try_find_simultaneously_branches(func_decl_ref_vector &synth_funs, expr_ref_vector &constraints, model_ref mdl, bool is_infinity_loop = false);
             void print_def_fun(std::ostream &out, func_decl * f, func_decl_ref_vector &args, expr_ref body);
+
+            expr_ref incremental_multiabduction(func_decl_ref_vector & synth_funs, expr_ref & simplified_spec, vector<invocation_operands> &current_ops);
             //void print_sorted_var_list(std::ostream &out,  func_decl_ref_vector & sorted_var);
 
 
