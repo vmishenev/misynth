@@ -62,6 +62,9 @@ namespace misynth
             void print_def_fun(std::ostream &out, func_decl * f, func_decl_ref_vector &args, expr_ref body);
 
             expr_ref incremental_multiabduction(func_decl_ref_vector & synth_funs, expr_ref & simplified_spec, vector<invocation_operands> &current_ops);
+            expr_ref solve_abduction_for_comb(vector<unsigned int> &comb, func_decl_ref_vector & synth_funs, expr_ref & simplified_spec, vector<invocation_operands> &current_ops);
+
+
             //void print_sorted_var_list(std::ostream &out,  func_decl_ref_vector & sorted_var);
 
 

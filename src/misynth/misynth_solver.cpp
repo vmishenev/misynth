@@ -519,11 +519,16 @@ namespace misynth
         ite_function source_fn(m_cmd, m);
         ite_function result_fn(m_cmd, m);
 
+        result_fn.unite(fn);
+
 
         if (m_params.reused_brances())
         {
-            source_fn.unite(fn);
-            result_fn.unite(fn);
+            if (!m_params.clear_run_alg2())
+            {
+                source_fn.unite(fn);
+            }
+
         }
         if (mdl_for_x.get())
         {
@@ -1122,20 +1127,145 @@ namespace misynth
     };
 
 
+    class generator_combination_with_repetiton
+    {
+
+        public:
+            generator_combination_with_repetiton(unsigned int s, unsigned int v)
+                : m_slots(s),
+                  m_values(v),
+                  m_v(s),
+                  m_is_first(true)
+            {
+                //reset();
+            }
 
 
-    expr_ref misynth_solver::incremental_multiabduction(func_decl_ref_vector & synth_funs, expr_ref & simplified_spec, vector<invocation_operands> &current_ops)
+
+            bool do_next()
+            {
+                if (!m_is_first)
+                    m_v[0] += 1;
+                else
+                {
+                    m_is_first = false;
+                    return true;
+                }
+                for (unsigned int i = 0; i < m_slots; ++i)                 //vai um
+                {
+                    if (m_v[i] + 1 > m_values)//if (m_v[i] > (m_values - 1))
+                    {
+                        if (i + 1 >= m_slots)
+                            return false;
+                        m_v[i + 1] += 1;
+                        for (int k = i; k >= 0; --k)
+                        {
+                            m_v[k] = m_v[i + 1];
+                        }
+
+                    }
+                }
+
+
+                return true;
+            }
+
+            vector<unsigned int> &get_next()
+            {
+                return m_v;
+            }
+            void reset()
+            {
+                m_v.resize(m_slots, 0);
+            }
+            void do_print()
+            {
+                printf("(");
+                for (unsigned int i = 0; i < m_slots; i++)
+                {
+                    printf("%d", m_v[i]);
+                }
+                printf(")");
+            }
+
+        private:
+            unsigned int m_slots;
+            unsigned int m_values;
+            vector<unsigned int> m_v;
+            bool m_is_first;
+
+    };
+    template<class T>
+    void print_vector(const vector<T> &v)
+    {
+        for (size_t i = 0; i < v.size(); ++i)
+            printf("%d", v[i]);
+        printf("\n");
+    }
+
+
+    expr_ref misynth_solver::solve_abduction_for_comb(vector<unsigned int> &comb, func_decl_ref_vector & synth_funs, expr_ref & simplified_spec, vector<invocation_operands> &current_ops)
+    {
+        args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
+
+        vector<invocation_operands> unknown_pred;
+        unsigned int n = fn.get_incompact_depth();
+        for (unsigned int i = 0; i < current_ops.size(); ++i)
+        {
+            if (comb[i] == n)
+            {
+                unknown_pred.push_back(current_ops[i]);
+            }
+            else
+            {
+                fn.get_precs();
+            }
+
+        }
+
+        expr_ref res(m);
+        res = m_abducer.nonlinear_abduce(current_ops, expr_ref(m.mk_true(), m), simplified_spec, *synth_fun_args);
+        return res;
+    }
+    expr_ref misynth_solver::incremental_multiabduction(func_decl_ref_vector &synth_funs, expr_ref & simplified_spec, vector<invocation_operands> &current_ops)
     {
         args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
 
         //[+try trivial abduction]
         unsigned int k = current_ops.size();
-        generator_permutation_with_repetitions comb(current_ops.size(), fn.get_incompact_depth());
+        unsigned int n = fn.get_incompact_depth();
+        /*generator_permutation_with_repetitions comb(current_ops.size(), fn.get_incompact_depth());
 
-        while (comb.do_next())
+         while (comb.do_next())
+         {
+             vector<unsigned int> v = comb.get_next();
+             int freq = std::count(v.begin(), v.end(), n);
+         }*/
+
+        std::cout << "k = " << k << "; n = " << n << std::endl;
+        if (n == 0)
         {
-            vector<unsigned int> v = comb.get_next();
+            return  m_abducer.nonlinear_abduce(current_ops, expr_ref(m.mk_true(), m), simplified_spec, *synth_fun_args);
         }
+        //increase "complexity" multiabduction
+        // i - number of unknown predicates
+        for (int i = 1; i < k; ++i)
+        {
+            std::cout << "k   "   << std::endl;
+            generator_combination_with_repetiton comb(k - i, n);
+            while (comb.do_next())
+            {
+                std::cout << "k :  " << i  << std::endl;
+                //print_vector(comb.get_next());
+                vector<unsigned int> permutation = comb.get_next();
+                permutation.resize(k, n);
+                //todo
+                solve_abduction_for_comb(permutation, synth_funs, simplified_spec, current_ops);
+                print_vector(permutation);
+                std::cout << "---"  << std::endl;
+            }
+        }
+
         //[-]
 
         expr_ref res(m);
