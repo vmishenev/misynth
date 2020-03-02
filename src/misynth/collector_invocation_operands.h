@@ -116,6 +116,20 @@ void collect_invocation_operands(expr * n, func_decl_ref_vector&   fun_list, vec
     }
 }
 
+
+void collect_invocation_operands(app_ref_vector &apps, vector<invocation_operands> &l)
+{
+
+    for (auto it = apps.begin(); it != apps.end(); it++)
+    {
+        app * ap_f = (*it);
+
+
+        invocation_operands ops(apps.get_manager());
+        ops.append(ap_f->get_num_args(), ap_f->get_args());
+        l.insert(ops);
+    }
+}
 void collect_invocation(expr * n, func_decl_ref_vector&   fun_list,  app_ref_vector &l)
 {
     invocation_collector collector(fun_list);

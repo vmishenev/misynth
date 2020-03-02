@@ -5,6 +5,7 @@
 #include "ast/rewriter/rewriter.h"
 #include "ast/rewriter/rewriter_def.h"
 
+
 #include "ast/used_vars.h"
 #include "ast/rewriter/th_rewriter.h"
 #include "misynth/synth_params.hpp"
@@ -232,14 +233,14 @@ namespace misynth
         init_used_variables(synth_funs, spec);
 
         generate_coeff_decl(synth_funs);
-        expr_ref spec_with_coeff(m);
+        /*expr_ref spec_with_coeff(m);
         invocations_rewriter inv_rwr(m_cmd, m);
         inv_rwr.rewriter_functions_to_linear_term(m_coeff_decl_vec, synth_funs, spec, spec_with_coeff);
 
         if (VERBOSE)
         {
             std::cout << "spec_with_coeff: " << mk_ismt2_pp(spec_with_coeff, m, 3) << std::endl;
-        }
+        }*/
 
 
         //params_ref params;
@@ -380,7 +381,7 @@ namespace misynth
                 else
                 {
                     std::cout << "!!! UNSAT of precs with replaced operands"  << std::endl;
-                    model_ref mdl = m_utils.get_model(spec_with_coeff);
+                    //model_ref mdl = m_utils.get_model(spec_with_coeff);
                     if (try_find_simultaneously_branches(synth_funs, constraints, 0, true))
                         return true;
                     continue;
@@ -390,7 +391,7 @@ namespace misynth
                 }
 
 
-                spec_for_concrete_x = m_utils.replace_vars_according_to_model(spec_with_coeff, mdl_for_x, m_used_vars, true);
+                spec_for_concrete_x = m_utils.replace_vars_according_to_model(spec, mdl_for_x, m_used_vars, true);
             }
             else// simply check sat of prec
             {
@@ -401,7 +402,7 @@ namespace misynth
                     std::cout << "ERROR!!!! TODO: simply check sat of prec" << r << std::endl;
                     //completed_solving(synth_funs, constraints);
 
-                    model_ref mdl = m_utils.get_model(spec_with_coeff);
+                    //model_ref mdl = m_utils.get_model(spec_with_coeff);
                     if (try_find_simultaneously_branches(synth_funs, constraints, 0, true))
                         return true;
                     continue;
@@ -411,7 +412,7 @@ namespace misynth
             }
             if (DEBUG_MODE)
             {
-                std::cout << "spec_with_coeff " << mk_ismt2_pp(spec_with_coeff, m, 3) << std::endl;
+                //std::cout << "spec_with_coeff " << mk_ismt2_pp(spec_with_coeff, m, 3) << std::endl;
                 std::cout << "spec_for_concrete_x " << mk_ismt2_pp(spec_for_concrete_x, m, 3) << std::endl;
             }
 
@@ -428,7 +429,28 @@ namespace misynth
             ++current_iter_trivial_model_x;
 
 
-            model_ref mdl_for_coeff = get_coeff_model(spec_for_concrete_x, is_added_heuristic ? heuristic_constaraint_coeff : expr_ref(m));
+
+            //
+
+            expr_ref spec_with_coeff_and_x(m);
+            invocations_rewriter inv_rwr(m_cmd, m);
+            if (m_params.reused_brances())
+            {
+                inv_rwr.rewriter_functions_to_linear_term_with_prec(m_coeff_decl_vec, synth_funs, spec_for_concrete_x, spec_with_coeff_and_x, *synth_fun_args, fn.get_precs(), fn.get_branches());
+            }
+            else
+            {
+                inv_rwr.rewriter_functions_to_linear_term(m_coeff_decl_vec, synth_funs, spec_for_concrete_x, spec_with_coeff_and_x);
+            }
+
+
+            if (DEBUG_MODE)
+            {
+                std::cout << "spec_with_coeff " << mk_ismt2_pp(spec_with_coeff_and_x, m) << std::endl;
+                //std::cout << "spec_for_concrete_x " << mk_ismt2_pp(spec_for_concrete_x, m, 3) << std::endl;
+            }
+            //
+            model_ref mdl_for_coeff = get_coeff_model(spec_with_coeff_and_x, is_added_heuristic ? heuristic_constaraint_coeff : expr_ref(m));
             is_added_heuristic = false;
 
             if (!mdl_for_coeff)
@@ -443,15 +465,16 @@ namespace misynth
             }
             std::cout << "SAT res_spec_for_x!! " << *mdl_for_coeff << std::endl;
             //simplify spec for concrete coef
+
             expr_ref branch = m_futils.generate_branch(m_coeff_decl_vec, *synth_fun_args, synth_funs, mdl_for_coeff);
 
-            expr_ref additional_cond = generate_fun_macros(branch, synth_funs, *synth_fun_args);
+            /*expr_ref additional_cond = generate_fun_macros(branch, synth_funs, *synth_fun_args);
             expr_ref simplified_spec = m_utils.simplify_context_cond(spec, additional_cond);
-            std::cout << "simplified_spec for concrete coeff " << mk_ismt2_pp(simplified_spec, m, 3) << std::endl;
+            std::cout << "simplified_spec for concrete coeff " << mk_ismt2_pp(simplified_spec, m, 3) << std::endl;*/
 
 
             /*[+] Find a precondition*/
-            last_precond = find_precondition(synth_funs, simplified_spec, mdl_for_coeff);
+            last_precond = find_precondition(synth_funs, spec, mdl_for_coeff);
 
             if (m_utils.is_unsat(last_precond))
             {
@@ -630,31 +653,15 @@ namespace misynth
 
         vector<invocation_operands> current_ops;
         collect_invocation_operands(spec, synth_funs, current_ops);
+
         expr_ref spec_with_coeff(m);
         invocations_rewriter inv_rwr(m_cmd, m);
-        if (m_params.reused_brances())
-        {
-            inv_rwr.rewriter_functions_to_linear_term_with_prec(m_coeff_decl_vec, synth_funs, spec, spec_with_coeff, *synth_fun_args, fn.get_precs(), fn.get_branches());
-        }
-        else
-        {
-            inv_rwr.rewriter_functions_to_linear_term(m_coeff_decl_vec, synth_funs, spec, spec_with_coeff);
-        }
 
-        std::cout << "spec_with_coeff " << mk_ismt2_pp(spec_with_coeff, m, 3) << std::endl;
+        inv_rwr.rewriter_functions_to_linear_term(m_coeff_decl_vec, synth_funs, spec, spec_with_coeff);
 
         expr_ref spec_for_concrete_coeff = m_utils.replace_vars_according_to_model(spec_with_coeff, mdl_for_coeff, m_coeff_decl_vec, true);
         std::cout << "spec_for_concrete_coeff " << mk_ismt2_pp(spec_for_concrete_coeff, m, 3) << std::endl;
 
-        //simplify
-        /*expr_ref th_res(m);
-        proof_ref pr(m);
-
-        params_ref th_solv_params;
-        th_rewriter s(m, th_solv_params);
-        th_solver solver(m_cmd);
-        s.set_solver(alloc(th_solver, m_cmd));
-        s(spec_for_concrete_coeff, th_res, pr);*/
         expr_ref th_res = m_utils.simplify_context(spec_for_concrete_coeff);
         std::cout << "Simplified precondition candidate: " << mk_ismt2_pp(th_res, m, 3) << std::endl;
         //
@@ -735,8 +742,9 @@ namespace misynth
             {
                 if (m_params.incremental_multiabduction())
                 {
-                    res = incremental_multiabduction(synth_funs, th_res, current_ops);
-
+                    expr_ref new_branch = m_futils.generate_branch(m_coeff_decl_vec, *synth_fun_args, synth_funs, mdl_for_coeff);;
+                    res = incremental_multiabduction(synth_funs, spec, new_branch);
+                    std::cout << "incremental_multiabduction" << mk_ismt2_pp(res, m, 3) << std::endl;
                 }
                 else
                     res = m_abducer.nonlinear_abduce(current_ops, expr_ref(m.mk_true(), m), th_res, *synth_fun_args);
@@ -1145,7 +1153,11 @@ namespace misynth
             bool do_next()
             {
                 if (!m_is_first)
+                {
+                    if (m_v.size() == 0)
+                        return false;
                     m_v[0] += 1;
+                }
                 else
                 {
                     m_is_first = false;
@@ -1203,36 +1215,140 @@ namespace misynth
         printf("\n");
     }
 
-
-    expr_ref misynth_solver::solve_abduction_for_comb(vector<unsigned int> &comb, func_decl_ref_vector & synth_funs, expr_ref & simplified_spec, vector<invocation_operands> &current_ops)
+    bool misynth_solver::check_all_abductions(func_decl_ref_vector & synth_funs, expr_ref & spec, app_ref_vector &invocations, expr_ref & new_prec, expr_ref & new_branch)
     {
+        unsigned int k = invocations.size();
+        unsigned int n = fn.get_incompact_depth();
+
+
+
+
+
+        for (int i = 1; i <= k; ++i)
+        {
+            generator_combination_with_repetiton comb(k - i, n);
+            while (comb.do_next())
+            {
+                vector<unsigned int> permutation = comb.get_next();
+                permutation.resize(k, n);
+                std::sort(permutation.begin(), permutation.end());
+                do
+                {
+                    //todo
+                    print_vector(permutation);
+                    if (!check_abduction_for_comb(permutation, synth_funs, spec, invocations, new_prec, new_branch))
+                    {
+                        std::cout << "!!! ABDUCTION PROBLEM IS UNSAT" << std::endl;
+                        return false;
+
+                    }
+
+                }
+                while (std::next_permutation(permutation.begin(), permutation.end()));
+
+            }
+
+
+        }
+        return true;
+    }
+
+    bool misynth_solver::check_abduction_for_comb(vector<unsigned int> &comb, func_decl_ref_vector & synth_funs, expr_ref & spec, app_ref_vector &invocations, expr_ref & new_prec, expr_ref & new_branch)
+    {
+        SASSERT(invocations.size() == comb.size());
+
+        app2expr_map  term_subst;
+
+        unsigned int k = invocations.size();
+        unsigned int n = fn.get_incompact_depth();
+
+        vector<invocation_operands> current_ops;
+        collect_invocation_operands(invocations, current_ops);
+        args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
+
+        expr_ref_vector preds(m), temp(m);
+
+        for (unsigned int i = 0; i < invocations.size(); ++i)
+        {
+            if (comb[i] == n)
+            {
+                expr_ref concrete_prec =  m_utils.replace_vars_decl(new_prec, *synth_fun_args, current_ops[i]);
+                preds.push_back(concrete_prec);
+                expr_ref concrete_branch =  m_utils.replace_vars_decl(new_branch, *synth_fun_args, current_ops[i]);
+                temp.push_back(concrete_branch);
+                term_subst.insert(invocations[i].get(), concrete_branch);
+
+            }
+            else
+            {
+                expr_ref concrete_prec =  m_utils.replace_vars_decl(fn.get_precs()[comb[i]].get(), *synth_fun_args, current_ops[i]);
+                preds.push_back(concrete_prec);
+                expr_ref concrete_branch =  m_utils.replace_vars_decl(fn.get_branches()[comb[i]].get(), *synth_fun_args, current_ops[i]);
+                temp.push_back(concrete_branch);
+                term_subst.insert(invocations[i].get(), concrete_branch);
+            }
+        }
+
+        invocations_rewriter inv_rwr(m_cmd, m);
+        expr_ref spec_with_branches(m);
+        inv_rwr.rewrite_expr(spec, spec_with_branches, term_subst);
+        expr_ref premise = m_utils.con_join(preds);
+        std::cout << "check_abduction_for_comb " << mk_ismt2_pp(premise, m) << " ==> " << mk_ismt2_pp(spec_with_branches, m) << std::endl;
+        return m_utils.implies(premise, spec_with_branches);
+    }
+
+
+    expr_ref misynth_solver::solve_abduction_for_comb(vector<unsigned int> &comb, func_decl_ref_vector & synth_funs, expr_ref & spec, app_ref_vector &invocations, expr_ref & new_branch)
+    {
+        SASSERT(invocations.size() == comb.size());
+        app2expr_map  term_subst;
+        vector<invocation_operands> current_ops;
+        collect_invocation_operands(invocations, current_ops);
+
         args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
 
         vector<invocation_operands> unknown_pred;
         unsigned int n = fn.get_incompact_depth();
-        for (unsigned int i = 0; i < current_ops.size(); ++i)
+        expr_ref_vector known_pred(m), temp(m);
+        for (unsigned int i = 0; i < invocations.size(); ++i)
         {
+            //std::cout << "comb[i] " << comb[i] << std::endl;
+            //std::cout << "inv[i] " << mk_ismt2_pp(invocations[i].get(), m)  << std::endl;
             if (comb[i] == n)
             {
+
                 unknown_pred.push_back(current_ops[i]);
+                expr_ref concrete_branch =  m_utils.replace_vars_decl(new_branch, *synth_fun_args, current_ops[i]);
+                temp.push_back(concrete_branch);
+                term_subst.insert(invocations[i].get(), concrete_branch);
+
             }
             else
             {
-                fn.get_precs();
+                expr_ref concrete_prec =  m_utils.replace_vars_decl(fn.get_precs()[comb[i]].get(), *synth_fun_args, current_ops[i]);
+                known_pred.push_back(concrete_prec);
+                expr_ref concrete_branch =  m_utils.replace_vars_decl(fn.get_branches()[comb[i]].get(), *synth_fun_args, current_ops[i]);
+                temp.push_back(concrete_branch);
+                term_subst.insert(invocations[i].get(), concrete_branch);
             }
 
         }
 
-        expr_ref res(m);
-        res = m_abducer.nonlinear_abduce(current_ops, expr_ref(m.mk_true(), m), simplified_spec, *synth_fun_args);
+        invocations_rewriter inv_rwr(m_cmd, m);
+        expr_ref spec_with_branches(m);
+        inv_rwr.rewrite_expr(spec, spec_with_branches, term_subst);
+        // std::cout << "spec_with_branches " << mk_ismt2_pp(spec_with_branches, m) << std::endl;
+        expr_ref res = m_abducer.nonlinear_abduce(unknown_pred, m_utils.con_join(known_pred), spec_with_branches, *synth_fun_args);
         return res;
     }
-    expr_ref misynth_solver::incremental_multiabduction(func_decl_ref_vector &synth_funs, expr_ref & simplified_spec, vector<invocation_operands> &current_ops)
+    expr_ref misynth_solver::incremental_multiabduction(func_decl_ref_vector &synth_funs, expr_ref & spec, expr_ref & new_branch)
     {
         args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
 
-        //[+try trivial abduction]
-        unsigned int k = current_ops.size();
+        app_ref_vector invocations(m);
+        collect_invocation(spec, synth_funs, invocations);
+
+        unsigned int k = invocations.size();
         unsigned int n = fn.get_incompact_depth();
         /*generator_permutation_with_repetitions comb(current_ops.size(), fn.get_incompact_depth());
 
@@ -1245,11 +1361,15 @@ namespace misynth
         std::cout << "k = " << k << "; n = " << n << std::endl;
         if (n == 0)
         {
-            return  m_abducer.nonlinear_abduce(current_ops, expr_ref(m.mk_true(), m), simplified_spec, *synth_fun_args);
+            /*vector<invocation_operands> current_ops;
+            collect_invocation_operands(invocations, current_ops);
+            return  m_abducer.nonlinear_abduce(current_ops, expr_ref(m.mk_true(), m), spec, *synth_fun_args);*/
+            vector<unsigned int> permutation(k, n);
+            return solve_abduction_for_comb(permutation, synth_funs, spec, invocations, new_branch);
         }
         //increase "complexity" multiabduction
         // i - number of unknown predicates
-        for (int i = 1; i < k; ++i)
+        for (int i = 1; i <= k; ++i)
         {
             std::cout << "k   "   << std::endl;
             generator_combination_with_repetiton comb(k - i, n);
@@ -1259,17 +1379,27 @@ namespace misynth
                 //print_vector(comb.get_next());
                 vector<unsigned int> permutation = comb.get_next();
                 permutation.resize(k, n);
-                //todo
-                solve_abduction_for_comb(permutation, synth_funs, simplified_spec, current_ops);
-                print_vector(permutation);
+                std::sort(permutation.begin(), permutation.end());
+                do
+                {
+                    //todo
+                    print_vector(permutation);
+                    expr_ref potential_prec = solve_abduction_for_comb(permutation, synth_funs, spec, invocations, new_branch);
+                    if (check_all_abductions(synth_funs, spec, invocations, potential_prec, new_branch))
+                    {
+                        std::cout << "!!! a prec is FOUND (incremental abduction)" << std::endl;
+                        return potential_prec;
+                    }
+                }
+                while (std::next_permutation(permutation.begin(), permutation.end()));
                 std::cout << "---"  << std::endl;
             }
         }
-
+        std::cout << "------"  << std::endl;
+        std::cout << "All abduction problems have been enumerated"  << std::endl;
         //[-]
 
-        expr_ref res(m);
-        res = m_abducer.nonlinear_abduce(current_ops, expr_ref(m.mk_true(), m), simplified_spec, *synth_fun_args);
+        expr_ref res(m.mk_false(), m);
         return res;
     }
 } // namespace misynth

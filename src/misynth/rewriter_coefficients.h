@@ -138,7 +138,7 @@ namespace misynth
                 obj_hashtable<app > set = collector.get_invocation();
 
                 app2expr_map  term_subst;
-                expr_ref_vector accumulator_terms(m);
+                expr_ref_vector accumulator_terms(m), accumulator_branches(m);
                 for (auto it = set.begin(); it != set.end(); it++)
                 {
                     app *ap_f = (*it);
@@ -154,6 +154,7 @@ namespace misynth
                             std::cout << "Reused prec " << mk_ismt2_pp(precs.get(i), m, 0) << " for " << mk_ismt2_pp(called_prec, m, 0) << std::endl;
                             expr_ref called_branch = m_utils.replace_vars_decl(branches.get(i), pattern, op);
                             term_subst.insert(ap_f, called_branch);
+                            accumulator_branches.push_back(called_branch);
                             std::cout << "Reused branch " << mk_ismt2_pp(branches.get(i), m, 0) << " for " << mk_ismt2_pp(called_branch, m, 0) << std::endl;
                             is_found = true;
                             break;

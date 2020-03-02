@@ -2,6 +2,7 @@
 #include "ast/rewriter/rewriter.h"
 #include "ast/rewriter/rewriter_def.h"
 #include "ast/rewriter/th_rewriter.h"
+#include "util/symbol.h"
 
 #include "ast/used_vars.h"
 #include "multi_abducer.h"
@@ -47,6 +48,25 @@ namespace misynth
 
     expr_ref multi_abducer::nonlinear_abduce(vector<expr_ref_vector> &inv_args, expr_ref premise, expr_ref conclusion, func_decl_ref_vector &pattern)
     {
+        //[+] debug output
+        std::cout << "Abduction ";
+        expr_ref_vector unknown_pred(m);
+
+        sort_ref_vector parameters(m);
+        for (unsigned int i = 0; i < inv_args.get(0).size(); ++i)
+        {
+            parameters.push_back(m_arith.mk_int());
+        }
+        func_decl_ref pred(m.mk_func_decl(symbol("R"), parameters.size(), parameters.c_ptr(), m.mk_bool_sort()),  m);
+        for (expr_ref_vector &a : inv_args)
+        {
+            unknown_pred.push_back(m.mk_app(pred, a.size(), a.c_ptr()));
+
+        }
+        std::cout << mk_ismt2_pp(m_utils.con_join(unknown_pred), m, 3);
+        std::cout << mk_ismt2_pp(premise, m, 3) << " ==>"  << mk_ismt2_pp(conclusion, m, 3) << std::endl;
+        //[-] debug output
+
         //TODO: check inv_args.size>1
         vector<func_decl_ref_vector> decl_args;
         expr_ref flat_premise = to_flat(inv_args, decl_args);
