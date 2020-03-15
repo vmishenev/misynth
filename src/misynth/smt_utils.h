@@ -141,7 +141,7 @@ namespace misynth
         /*
          * Return (and (= a[0] b[0]) ... (= a[n-1] b[n-1]))
          * */
-        expr_ref mk_eq(expr_ref_vector &a, expr_ref_vector &b)
+        expr_ref mk_eq(const expr_ref_vector &a, const expr_ref_vector &b)
         {
             SASSERT(a.size() == b.size());
             expr_ref_vector vec_of_equals(m);
@@ -153,7 +153,7 @@ namespace misynth
 
             return con_join(vec_of_equals);
         }
-        expr_ref mk_eq(func_decl_ref_vector &a, expr_ref_vector &b)
+        expr_ref mk_eq(const func_decl_ref_vector &a, const expr_ref_vector &b)
         {
             SASSERT(a.size() == b.size());
             expr_ref_vector vec_of_equals(m);
@@ -166,7 +166,7 @@ namespace misynth
             return con_join(vec_of_equals);
         }
 
-        expr_ref mk_eq(func_decl_ref_vector &a, func_decl_ref_vector &b)
+        expr_ref mk_eq(const func_decl_ref_vector &a, const func_decl_ref_vector &b)
         {
             SASSERT(a.size() == b.size());
             expr_ref_vector vec_of_equals(m);

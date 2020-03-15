@@ -10,6 +10,8 @@
 #include "misynth/function_utils.h"
 #include "misynth/ite_function.h"
 
+#include "misynth/combinators.h"
+
 namespace misynth
 {
     extern bool DEBUG_MODE;
@@ -315,6 +317,37 @@ namespace misynth
 
                 add_coeff_to_blacklist(mdl_for_coeff);
 
+
+                //permutatiom for distinct_invocation.size()
+
+                expr_ref_vector new_branches(m);
+
+                for (unsigned int i = 0; i < distinct_invocation.size(); ++i)
+                {
+                    func_decl_ref_vector & crnt_coeffs = m_coeff_decl_vec.get(i);
+                    expr_ref branch = m_futils.generate_branch(crnt_coeffs, synth_fun_args, synth_funs, mdl_for_coeff);
+                    new_branches.push_back(branch);
+                    std::cout << "  Branch: "  << mk_ismt2_pp(branch, m) << std::endl;
+                }
+                expr_ref_vector new_precs = incremental_multiabduction(fn, synth_fun_args, synth_funs, spec, new_branches);
+                if (!new_precs.size())
+                {
+
+                    std::cout << "  NEW PRECS ARE NOT FOUND"   << std::endl;
+                    return;
+
+                }
+
+                result_fn.clear();
+                result_fn.add_branches(new_precs, new_branches);
+
+                //what does it deal with unused branches?
+                result_fn.unite(fn);
+
+                return;
+
+
+                ////////////////////////
                 // after 9
                 expr_ref_vector res_single_conjuncts(m);
                 collects_single_conjuncts(constraints, synth_funs, mdl_for_x, res_single_conjuncts);
@@ -526,6 +559,241 @@ namespace misynth
                 }
                 v.push_back(generate_heuristic_constaraint_coeff(m_coeff_decl_vec));
                 return m_utils.con_join(v);
+            }
+
+
+
+
+
+
+
+
+
+            bool check_abduction_for_comb(vector<unsigned int> &comb, ite_function &fn, func_decl_ref_vector &synth_fun_args,  func_decl_ref_vector & synth_funs, expr_ref & spec, app_ref_vector &invocations, expr_ref_vector & new_precs, expr_ref_vector & new_branches)
+            {
+                SASSERT(invocations.size() == comb.size());
+                if (new_precs.size() != new_branches.size())
+                    return false;
+
+                app2expr_map  term_subst;
+
+                unsigned int k = invocations.size();
+                unsigned int n = fn.get_incompact_depth();
+
+                vector<invocation_operands> current_ops;
+                collect_invocation_operands(invocations, current_ops);
+                //args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
+
+                expr_ref_vector preds(m), temp(m);
+
+                for (unsigned int i = 0; i < invocations.size(); ++i)
+                {
+                    if (comb[i] >= n)
+                    {
+                        expr_ref concrete_prec =  m_utils.replace_vars_decl(new_precs.get(comb[i] - n), synth_fun_args, current_ops[i]);
+                        preds.push_back(concrete_prec);
+                        expr_ref concrete_branch =  m_utils.replace_vars_decl(new_branches.get(comb[i] - n), synth_fun_args, current_ops[i]);
+                        temp.push_back(concrete_branch);
+                        term_subst.insert(invocations[i].get(), concrete_branch);
+
+                    }
+                    else
+                    {
+                        expr_ref concrete_prec =  m_utils.replace_vars_decl(fn.get_precs()[comb[i]].get(), synth_fun_args, current_ops[i]);
+                        preds.push_back(concrete_prec);
+                        expr_ref concrete_branch =  m_utils.replace_vars_decl(fn.get_branches()[comb[i]].get(), synth_fun_args, current_ops[i]);
+                        temp.push_back(concrete_branch);
+                        term_subst.insert(invocations[i].get(), concrete_branch);
+                    }
+                }
+
+                invocations_rewriter inv_rwr(m_cmd, m);
+                expr_ref spec_with_branches(m);
+                inv_rwr.rewrite_expr(spec, spec_with_branches, term_subst);
+                expr_ref premise = m_utils.con_join(preds);
+                std::cout << "check_abduction_for_comb " << mk_ismt2_pp(premise, m) << " ==> " << mk_ismt2_pp(spec_with_branches, m) << std::endl;
+                return m_utils.implies(premise, spec_with_branches);
+            }
+
+
+            expr_ref_vector  solve_abduction_for_comb(vector<unsigned int> &comb, ite_function &fn, func_decl_ref_vector &synth_fun_args, func_decl_ref_vector & synth_funs, expr_ref & spec, app_ref_vector &invocations, expr_ref_vector & new_branches)
+            {
+                SASSERT(invocations.size() == comb.size());
+
+                // generate predicate symbols for unknown precs
+                func_decl_ref_vector unknown_symbols_preds(m);
+                std::string prefix = "R_";
+
+                sort_ref_vector parameters(m);
+                for (unsigned int i = 0; i < synth_fun_args.size(); ++i)
+                {
+                    parameters.push_back(m_arith.mk_int());
+                }
+
+                for (unsigned int i = 0; i < new_branches.size(); ++i)
+                {
+                    func_decl_ref pred(m.mk_func_decl(symbol((prefix + std::to_string(i)).c_str()), parameters.size(), parameters.c_ptr(), m.mk_bool_sort()),  m);
+                    unknown_symbols_preds.push_back(pred);
+                }
+
+                //
+
+                app2expr_map  term_subst;
+                vector<invocation_operands> current_ops;
+                collect_invocation_operands(invocations, current_ops);
+
+                //args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
+
+                expr_ref_vector unknown_pred(m);
+                unsigned int n = fn.get_incompact_depth();
+                expr_ref_vector known_pred(m), temp(m);
+                for (unsigned int i = 0; i < invocations.size(); ++i)
+                {
+                    //std::cout << "comb[i] " << comb[i] << std::endl;
+                    //std::cout << "inv[i] " << mk_ismt2_pp(invocations[i].get(), m)  << std::endl;
+                    if (comb[i] >= n)
+                    {
+                        func_decl *r = unknown_symbols_preds.get(comb[i] - n);
+                        unknown_pred.push_back(m.mk_app(r, current_ops[i].size(), current_ops[i].c_ptr()));
+                        //unknown_pred.push_back(current_ops[i]);
+                        expr_ref concrete_branch =  m_utils.replace_vars_decl(new_branches.get(comb[i] - n), synth_fun_args, current_ops[i]);
+                        temp.push_back(concrete_branch);
+                        term_subst.insert(invocations[i].get(), concrete_branch);
+
+                    }
+                    else
+                    {
+                        expr_ref concrete_prec =  m_utils.replace_vars_decl(fn.get_precs()[comb[i]].get(), synth_fun_args, current_ops[i]);
+                        known_pred.push_back(concrete_prec);
+                        expr_ref concrete_branch =  m_utils.replace_vars_decl(fn.get_branches()[comb[i]].get(), synth_fun_args, current_ops[i]);
+                        temp.push_back(concrete_branch);
+                        term_subst.insert(invocations[i].get(), concrete_branch);
+                    }
+
+                }
+
+                invocations_rewriter inv_rwr(m_cmd, m);
+                expr_ref spec_with_branches(m);
+                inv_rwr.rewrite_expr(spec, spec_with_branches, term_subst);
+                // std::cout << "spec_with_branches " << mk_ismt2_pp(spec_with_branches, m) << std::endl;
+                //expr_ref res = m_abducer.nonlinear_abduce(unknown_pred, m_utils.con_join(known_pred), spec_with_branches, synth_fun_args);
+
+                expr_ref_vector unordered_res(m);
+                decl2expr_map map;
+                bool r = m_abducer.multi_abduce(unknown_pred, m_utils.con_join(known_pred), spec_with_branches, synth_fun_args, unordered_res, map);
+                if (!r)
+                {
+                    return expr_ref_vector(m);
+                }
+                expr_ref_vector ordered_res(m);
+
+                for (unsigned int i = 0; i < unknown_symbols_preds.size(); ++i)
+                {
+                    ordered_res.push_back(map[unknown_symbols_preds.get(i)]);
+
+                }
+                return ordered_res;
+            }
+
+
+
+            expr_ref_vector incremental_multiabduction(ite_function &fn, func_decl_ref_vector &synth_fun_args, func_decl_ref_vector &synth_funs, expr_ref & spec, expr_ref_vector & new_branches)
+            {
+                //args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
+
+                app_ref_vector invocations(m);
+                collect_invocation(spec, synth_funs, invocations);
+
+                unsigned int k = invocations.size();
+                unsigned int n = fn.get_incompact_depth() + new_branches.size();
+
+
+                std::cout << "k = " << k << "; n = " << n << std::endl;
+                if (n == 0)
+                {
+                    vector<unsigned int> permutation(k, n);
+                    return solve_abduction_for_comb(permutation, fn, synth_fun_args, synth_funs, spec, invocations, new_branches);
+                }
+
+
+                //increase "complexity" multiabduction
+                // i - number of unknown predicates
+
+                // for (int i = 1; i <= k; ++i)
+                {
+                    std::cout << "k   "   << std::endl;
+                    generator_combination_with_repetiton comb(k, n + 1);
+                    while (comb.do_next())
+                    {
+
+                        //print_vector(comb.get_next());
+                        vector<unsigned int> permutation = comb.get_next();
+                        //permutation.resize(k, n);
+                        std::sort(permutation.begin(), permutation.end());
+                        do
+                        {
+                            //todo
+                            print_vector(permutation);
+                            expr_ref_vector potential_precs = solve_abduction_for_comb(permutation, fn, synth_fun_args, synth_funs, spec, invocations, new_branches);
+                            if (check_all_abductions(fn, synth_fun_args, synth_funs, spec, invocations, potential_precs, new_branches))
+                            {
+                                std::cout << "!!! a prec is FOUND (incremental abduction)" << std::endl;
+                                return potential_precs;
+                            }
+                        }
+                        while (std::next_permutation(permutation.begin(), permutation.end()));
+                        std::cout << "---"  << std::endl;
+                    }
+                }
+                std::cout << "------"  << std::endl;
+                std::cout << "All abduction problems have been enumerated"  << std::endl;
+                //[-]
+
+
+                return expr_ref_vector(m);
+            }
+
+
+
+
+
+
+            bool check_all_abductions(ite_function &fn, func_decl_ref_vector &synth_fun_args, func_decl_ref_vector & synth_funs, expr_ref & spec, app_ref_vector &invocations, expr_ref_vector & new_precs, expr_ref_vector & new_branches)
+            {
+                unsigned int k = invocations.size();
+                unsigned int n = fn.get_incompact_depth() + new_branches.size();
+
+
+
+
+
+                // for (int i = 1; i <= k; ++i)
+                {
+                    generator_combination_with_repetiton comb(k, n + 1);
+                    while (comb.do_next())
+                    {
+                        vector<unsigned int> permutation = comb.get_next();
+                        //permutation.resize(k, n);
+                        std::sort(permutation.begin(), permutation.end());
+                        do
+                        {
+                            //todo
+                            print_vector(permutation);
+                            if (!check_abduction_for_comb(permutation, fn, synth_fun_args, synth_funs, spec, invocations, new_precs, new_branches))
+                            {
+                                std::cout << "!!! ABDUCTION PROBLEM IS UNSAT" << std::endl;
+                                return false;
+
+                            }
+
+                        }
+                        while (std::next_permutation(permutation.begin(), permutation.end()));
+
+                    }
+
+
+                }
+                return true;
             }
 
     };

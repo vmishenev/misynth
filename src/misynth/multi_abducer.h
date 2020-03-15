@@ -27,7 +27,7 @@ Notes:
 namespace misynth
 {
 
-
+    typedef obj_map<func_decl, expr *> decl2expr_map;
     class multi_abducer
     {
         private:
@@ -38,6 +38,10 @@ namespace misynth
             smt_utils m_utils;
 
         public:
+
+
+
+
             multi_abducer(cmd_context &cmd_ctx, ast_manager &m);
             /*
              * simple abduction problem R(x) ∧ χ ⇒ C
@@ -55,9 +59,18 @@ namespace misynth
 
             expr_ref nonlinear_abduce(vector<expr_ref_vector> &inv_args, expr_ref premise, expr_ref conclusion, func_decl_ref_vector &pattern);
             expr_ref to_flat(vector<expr_ref_vector> &inv_args, vector<func_decl_ref_vector> &new_decl_args);
+            bool multi_abduce(expr_ref_vector &unknown_preds, expr_ref premise, expr_ref conclusion,
+                              func_decl_ref_vector &pattern, expr_ref_vector &res, decl2expr_map &res_map);
+            expr_ref  to_flat_multi(const func_decl_ref_vector &preds, const vector<vector<expr_ref_vector>> &inv_args_all, vector<vector<func_decl_ref_vector>> &new_decl_args_all);
+            void generate_fresh_constant(const func_decl_ref_vector &preds, const vector<vector<func_decl_ref_vector>> &decl_args_all, vector<vector<func_decl_ref_vector>> &fresh_constant_all);
 
         private:
-            expr_ref  iso_decomp(expr_ref conclusion_model, expr_ref init_soln, expr_ref conclusion, vector<expr_ref_vector> &inv_args,
+            void cart_decomp(expr_ref implic,
+                             vector<vector<func_decl_ref_vector>> &decl_args, vector<vector<func_decl_ref_vector>> &fresh_constant,
+                             func_decl_ref_vector &preds,
+                             func_decl_ref_vector &pattern, expr_ref conclusion, expr_ref_vector &res, decl2expr_map &soln);
+
+            expr_ref  iso_decomp(expr_ref conclusion_model, expr_ref init_soln, expr_ref conclusion,
                                  vector<func_decl_ref_vector> &fresh_constant, func_decl_ref_vector &pattern, vector<func_decl_ref_vector> &decl_args);
             expr_ref  get_soln_according_to_model(model_ref mdl,   vector<func_decl_ref_vector> &fresh_constant,
                                                   func_decl_ref_vector &pattern);

@@ -14,6 +14,7 @@
 
 #define DEBUG_ABDUCE m_params.debug_abduce()
 #define VERBOSE_ABDUCE true
+#define DEBUG(x) std::cout<< x << std::endl;
 
 namespace misynth
 {
@@ -21,6 +22,39 @@ namespace misynth
     multi_abducer::multi_abducer(cmd_context &cmd_ctx, ast_manager &m) : m_cmd(cmd_ctx), m(m), m_arith(m), m_utils(cmd_ctx, m)
     {
     }
+    void multi_abducer::generate_fresh_constant(const func_decl_ref_vector &preds, const vector<vector<func_decl_ref_vector>> &decl_args_all, vector<vector<func_decl_ref_vector>> &fresh_constant_all)
+    {
+        std::string coeff_prefix = "m";
+        std::string separator = "_";
+        func_decl_ref_vector m_coeff_decl_vec(m);
+        for (unsigned pred_ind = 0; pred_ind < decl_args_all.size(); ++pred_ind)
+        {
+
+            const vector<func_decl_ref_vector> &decl_args = decl_args_all.get(pred_ind);
+
+            fresh_constant_all.push_back(vector<func_decl_ref_vector>());
+            vector<func_decl_ref_vector> &fresh_constant = fresh_constant_all.back();
+
+            for (unsigned i = 0; i < decl_args.size(); ++i)
+            {
+                const func_decl_ref_vector &invocation_decl = decl_args.get(i);
+                func_decl_ref_vector current_fresh_constant_for_one_invocation(m);
+                for (unsigned j = 0; j < invocation_decl.size(); ++j)
+                {
+                    //sort * range = m_arith.is_int(invocation.get(0)) ? m_arith.mk_int() : m_arith.mk_real();
+                    sort * range = invocation_decl.get(0)->get_range();
+                    func_decl_ref fresh_const(
+                        m.mk_const_decl(coeff_prefix + std::to_string(i) + separator + std::to_string(j) + separator + preds.get(pred_ind)->get_name().str(),
+                                        range), m);
+                    current_fresh_constant_for_one_invocation.push_back(fresh_const);
+                    m_coeff_decl_vec.push_back(fresh_const);
+                }
+                fresh_constant.push_back(current_fresh_constant_for_one_invocation);
+
+            }
+        }
+    }
+
     void multi_abducer::generate_fresh_constant(vector<func_decl_ref_vector> &fresh_constant, vector<func_decl_ref_vector> &decl_args)
     {
         std::string coeff_prefix = "m";
@@ -45,8 +79,196 @@ namespace misynth
 
         }
     }
+    /*
+     * all preds are from the same pattern (template)
+     * */
+    bool multi_abducer::multi_abduce(expr_ref_vector &unknown_preds, expr_ref premise,
+                                     expr_ref conclusion, func_decl_ref_vector &pattern,
+                                     expr_ref_vector &res,  decl2expr_map &res_map)
+    {
+        vector<vector<expr_ref_vector>> inv_args_vec; // for storing all inv arguments for each a predicator
+        func_decl_ref_vector preds(m);
+        obj_map<func_decl, vector<expr_ref_vector> *>  preds2arguments;//maps preds to invocation arguments
 
-    expr_ref multi_abducer::nonlinear_abduce(vector<expr_ref_vector> &inv_args, expr_ref premise, expr_ref conclusion, func_decl_ref_vector &pattern)
+        for (expr *e : unknown_preds)
+        {
+            if (is_app(e))
+            {
+                app* a = to_app(e);
+                expr_ref_vector ops(m);
+                ops.append(a->get_num_args(), a->get_args());
+                auto it = preds2arguments.find_iterator(a->get_decl());
+                if (it == preds2arguments.end())
+                {
+                    vector<expr_ref_vector> v;
+                    v.push_back(ops);
+                    inv_args_vec.push_back(v);
+                    preds2arguments.insert(a->get_decl(), &(inv_args_vec.back()));
+                    preds.push_back(a->get_decl());
+                }
+                else
+                {
+                    it->m_value->push_back(ops);
+                }
+            }
+            else
+            {
+                std::cout << "ERROR! MultiAbduce try to treat no pred" << std::endl;
+            }
+        }
+
+
+
+        vector<vector<func_decl_ref_vector>> decl_args;
+        expr_ref flat_premise = to_flat_multi(preds, inv_args_vec, decl_args);
+        func_decl_ref_vector all_vars(m);
+        for (auto &a : decl_args)
+            for (auto &aa : a)
+            {
+
+                all_vars.append(aa);
+            }
+
+
+        expr_ref flat_conclusion(m.mk_implies(flat_premise, conclusion), m);
+        if (DEBUG_ABDUCE)
+            std::cout << "Abduction flat_conclusion formula: " << mk_ismt2_pp(flat_conclusion, m, 3) << std::endl;
+
+        expr_ref abduce_conclusion = simple_abduce(premise, flat_conclusion, all_vars);
+        abduce_conclusion = m_utils.simplify_context(abduce_conclusion);
+        if (DEBUG_ABDUCE)
+            std::cout << "Abduced flat_conclusion formula: " << mk_ismt2_pp(abduce_conclusion, m, 3) << std::endl;
+
+        /// generate fresh constant \/ m_ki=xx_ij, k=0.. invocation number, i - component index
+        ///
+        /// decl_args.size() is invocation number
+        ///
+
+
+        vector<vector<func_decl_ref_vector>> fresh_constant;
+        generate_fresh_constant(preds, decl_args, fresh_constant);
+
+        expr_ref fresh_consts_equals_inv_args(m.mk_true(), m);
+        /*
+         * Code below generates /\ \/ x_ij = m_ik for R_i(x_ij)
+         * */
+
+        for (unsigned pred_ind = 0; pred_ind < decl_args.size(); ++pred_ind)
+        {
+            vector<func_decl_ref_vector>& decl_args_pred = decl_args.get(pred_ind);
+            vector<func_decl_ref_vector>& fresh_constant_pred = fresh_constant.get(pred_ind);
+
+            ///////////
+            for (unsigned i = 0; i < decl_args_pred.size(); ++i)
+            {
+                auto& crnt_decl_args = decl_args_pred.get(i);
+                expr_ref_vector crnt_fresh_consts_equals_inv_args(m);
+                for (unsigned j = 0; j < fresh_constant_pred.size(); ++j)
+                {
+
+                    crnt_fresh_consts_equals_inv_args.push_back(m_utils.mk_eq(crnt_decl_args, fresh_constant_pred.get(j)));
+                }
+                fresh_consts_equals_inv_args = m.mk_and(fresh_consts_equals_inv_args, m_utils.dis_join(crnt_fresh_consts_equals_inv_args));
+            }
+            ///////
+        }
+        /// [-] generate fresh constant
+
+        /// [+] quantifier vars
+        ///
+        /*decl_collector decls(m);
+        decls.visit(abduce_conclusion);
+        func_decl_ref_vector quantifier_vars(m);
+        quantifier_vars.append(decls.get_num_decls(), decls.get_func_decls().c_ptr());
+        */
+        expr_ref implic(m_utils.universal_quantified(expr_ref(m.mk_implies(fresh_consts_equals_inv_args, abduce_conclusion), m), all_vars), m);
+
+        //if (DEBUG_ABDUCE)
+        std::cout << "INIT SOLN  abduction formula: " << mk_ismt2_pp(implic, m, 3) << std::endl;
+
+        /// [-] quantifier vars
+        ///
+
+        params_ref params;
+        ref<solver> slv = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
+
+        slv->push();
+        slv->assert_expr(implic);
+        slv->push();
+        slv->assert_expr(premise); // IMPORTANT TODO
+        lbool r = slv->check_sat();
+        //std::cout << "INIT SOLN  abduction formula result : " << r << std::endl;
+        decl2expr_map soln;
+        expr_ref_vector soln_vec(m);
+        if (r == lbool::l_true)
+        {
+            model_ref mdl;
+            slv->get_model(mdl);
+            expr_ref init_soln(m);
+            // estimate pattern
+            if (DEBUG_ABDUCE)
+                std::cout << "INIT SOLN  result mdl: " << *mdl << std::endl;
+            for (unsigned pred_ind = 0; pred_ind < decl_args.size(); ++pred_ind)
+            {
+
+                /*
+                 *INIT SOLN
+                 * R_i = \/_j x_i=Mdl(m_ij)
+                 * */
+                expr_ref res = get_soln_according_to_model(mdl, fresh_constant.get(pred_ind), pattern);
+                soln.insert(preds.get(pred_ind), res);
+                soln_vec.push_back(res);
+                if (DEBUG_ABDUCE)
+                    std::cout << "INIT SOLN  result formula: "  << (preds.get(pred_ind)->get_name().str()) << " " << mk_ismt2_pp(res, m, 3) << std::endl;
+            }
+
+            cart_decomp(implic, decl_args, fresh_constant, preds, pattern, abduce_conclusion, res, soln);
+            res_map = soln;
+            return true;
+            //return iso_decomp(implic, res, abduce_conclusion, inv_args, fresh_constant, pattern, decl_args);
+
+        }
+
+
+
+
+
+        return false;
+    }
+
+    void multi_abducer::cart_decomp(expr_ref implic,
+                                    vector<vector<func_decl_ref_vector>> &decl_args, vector<vector<func_decl_ref_vector>> &fresh_constant,
+                                    func_decl_ref_vector &preds,
+                                    func_decl_ref_vector &pattern, expr_ref conclusion, expr_ref_vector &res, decl2expr_map &soln)
+    {
+        for (unsigned pred_ind = 0; pred_ind < decl_args.size(); ++pred_ind)
+        {
+            expr_ref_vector concrete_preds(m);
+            for (unsigned k = 0; k < decl_args.size(); ++k) // for every  predicate except pred_ind
+            {
+                if (k == pred_ind) continue;
+                vector<func_decl_ref_vector> &occurrencies  = decl_args.get(k);
+                for (unsigned j = 0; j < decl_args.size(); ++j)   // for every occurrency
+                {
+
+                    expr_ref concrete_pred = m_utils.replace_vars_decl(soln[preds.get(k)], pattern, occurrencies.get(j));
+                    concrete_preds.push_back(concrete_pred);
+                }
+
+
+            }
+
+            expr_ref conj_all_preds = m_utils.con_join(concrete_preds); // line 8
+            DEBUG("line 8 before: "   << mk_ismt2_pp(conj_all_preds, m, 3))
+            expr_ref phi_i = simple_abduce(conj_all_preds, conclusion, pattern);
+
+            DEBUG("line 8 phi_i: "   << mk_ismt2_pp(conj_all_preds, m, 3))
+            expr_ref res_pred = iso_decomp(implic, phi_i, conclusion,   fresh_constant.get(pred_ind), pattern, decl_args.get(pred_ind));
+            res.push_back(res_pred);
+            soln.insert(preds.get(pred_ind), res_pred);
+        }
+    }
+    expr_ref multi_abducer::nonlinear_abduce(vector<expr_ref_vector> &inv_args, expr_ref premise, expr_ref conclusion, func_decl_ref_vector & pattern)
     {
         //[+] debug output
         std::cout << "Abduction ";
@@ -147,11 +369,49 @@ namespace misynth
             if (DEBUG_ABDUCE)
                 std::cout << "INIT SOLN  result formula: " << mk_ismt2_pp(res, m, 3) << std::endl;
 
-            return iso_decomp(implic, res, abduce_conclusion, inv_args, fresh_constant, pattern, decl_args);
+            return iso_decomp(implic, res, abduce_conclusion, fresh_constant, pattern, decl_args);
 
         }
 
         return expr_ref(m.mk_false(), m);
+    }
+
+    expr_ref multi_abducer::to_flat_multi(const func_decl_ref_vector & preds, const vector<vector<expr_ref_vector>> &inv_args_all, vector<vector<func_decl_ref_vector>> &new_decl_args_all)
+    {
+        std::string coeff_prefix = "xx";
+        std::string separator = "_";
+
+
+        expr_ref_vector asserts(m);
+        func_decl_ref_vector m_coeff_decl_vec(m);
+        for (unsigned pred_ind = 0; pred_ind < inv_args_all.size(); ++pred_ind)
+        {
+
+            const vector<expr_ref_vector> &inv_args = inv_args_all.get(pred_ind);
+
+            new_decl_args_all.push_back(vector<func_decl_ref_vector>());
+            vector<func_decl_ref_vector> &new_decl_args = new_decl_args_all.back();
+
+            for (unsigned i = 0; i < inv_args.size(); ++i)
+            {
+                const expr_ref_vector &invocation = inv_args.get(i);
+                func_decl_ref_vector current_new_vars_for_one_invocation(m);
+                for (unsigned j = 0; j < invocation.size(); ++j)
+                {
+                    //WARNIN!!! sort * range = m_arith.is_int(invocation.get(0)) ? m_arith.mk_int() : m_arith.mk_real();
+                    sort * range =   m_arith.mk_int();
+                    func_decl_ref coef(
+                        m.mk_const_decl(coeff_prefix + std::to_string(i) + separator + std::to_string(j) + separator + preds.get(pred_ind)->get_name().str(),
+                                        range), m);
+                    current_new_vars_for_one_invocation.push_back(coef);
+                    m_coeff_decl_vec.push_back(coef);
+                }
+                new_decl_args.push_back(current_new_vars_for_one_invocation);
+                asserts.push_back(m_utils.mk_eq(current_new_vars_for_one_invocation, invocation));
+            }
+        }
+        return m_utils.con_join(asserts);
+
     }
 
     expr_ref multi_abducer::to_flat(vector<expr_ref_vector> &inv_args, vector<func_decl_ref_vector> &new_decl_args)
@@ -185,7 +445,7 @@ namespace misynth
     }
 
 
-    expr_ref  multi_abducer::get_soln_according_to_model(model_ref mdl, vector<func_decl_ref_vector> &fresh_constant, func_decl_ref_vector &pattern)
+    expr_ref  multi_abducer::get_soln_according_to_model(model_ref mdl, vector<func_decl_ref_vector> &fresh_constant, func_decl_ref_vector & pattern)
     {
 
         expr_ref_vector exprs(m);
@@ -207,7 +467,7 @@ namespace misynth
         return m_utils.dis_join(exprs);
     }
 
-    expr_ref  multi_abducer::iso_decomp(expr_ref conclusion_model, expr_ref init_soln, expr_ref conclusion, vector<expr_ref_vector> &inv_args, vector<func_decl_ref_vector> &fresh_constant, func_decl_ref_vector &pattern, vector<func_decl_ref_vector> &decl_args)
+    expr_ref  multi_abducer::iso_decomp(expr_ref conclusion_model, expr_ref init_soln, expr_ref conclusion, vector<func_decl_ref_vector> &fresh_constant, func_decl_ref_vector & pattern, vector<func_decl_ref_vector> &decl_args)
     {
         unsigned int num_iter = 0;
 
