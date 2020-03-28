@@ -3,6 +3,8 @@
 #include "ast/rewriter/rewriter_def.h"
 #include "ast/rewriter/th_rewriter.h"
 #include "util/symbol.h"
+#include "muz/spacer/spacer_util.h"
+#include "qe/qe_mbp.h"
 
 #include "ast/used_vars.h"
 #include "multi_abducer.h"
@@ -369,7 +371,10 @@ namespace misynth
             if (DEBUG_ABDUCE)
                 std::cout << "INIT SOLN  result formula: " << mk_ismt2_pp(res, m, 3) << std::endl;
 
-            return iso_decomp(implic, res, abduce_conclusion, fresh_constant, pattern, decl_args);
+            if (m_params.mbp_abduce())
+                return iso_decomp_mbp(implic, res, abduce_conclusion, fresh_constant, pattern, decl_args);
+            else
+                return iso_decomp(implic, res, abduce_conclusion, fresh_constant, pattern, decl_args);
 
         }
 
@@ -565,6 +570,106 @@ namespace misynth
         return expr_ref(m.mk_false(), m);
     }
 
+
+
+    expr_ref  multi_abducer::iso_decomp_mbp(expr_ref conclusion_model, expr_ref init_soln, expr_ref conclusion, vector<func_decl_ref_vector> &fresh_constant, func_decl_ref_vector & pattern, vector<func_decl_ref_vector> &decl_args)
+    {
+        unsigned int num_iter = 0;
+
+        expr_ref phi = init_soln;
+        while (true)
+        {
+            if (VERBOSE_ABDUCE)
+                std::cout << "------ iso_decomp iteration #" << num_iter << "  ------ " << std::endl;
+
+            //   /\not phi[m_ij/x_i]
+            expr_ref not_phi_replaced(conclusion_model, m);
+            for (unsigned i = 0; i < fresh_constant.size(); ++i)
+            {
+                expr_ref replaced = m_utils.replace_vars_decl(phi, pattern, fresh_constant.get(i));
+                not_phi_replaced = m.mk_and(not_phi_replaced, m.mk_not(replaced));
+            }
+            /////////
+
+            if (DEBUG_ABDUCE)
+                std::cout << "iso_decomp  not_phi_replaced formula: " << mk_ismt2_pp(not_phi_replaced, m, 3) << std::endl;
+
+            params_ref params;
+            ref<solver> slv = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
+
+            slv->push();
+            slv->assert_expr(not_phi_replaced);
+            lbool r = slv->check_sat();
+            if (VERBOSE_ABDUCE)
+                std::cout << "got model iso_decomp "  << r << std::endl;
+
+            if (r != lbool::l_true)
+            {
+                max_iter_iso_mor = std::max(max_iter_iso_mor, num_iter);
+                return phi;
+            }
+            if (num_iter >= m_params.theshold_iso_decomp())
+            {
+                if (VERBOSE_ABDUCE)
+                    std::cout << "!!! ISO_DECOMP_ITERS_TRESHOLD " << std::endl;
+                return expr_ref(m.mk_false(), m);
+            }
+            model_ref mdl;
+            slv->get_model(mdl);
+            slv->pop(1);
+            expr_ref res = get_soln_according_to_model(mdl, fresh_constant, pattern);
+            phi = m.mk_or(phi, res);
+            if (DEBUG_ABDUCE)
+                std::cout << "new phi(line 23) "  << mk_ismt2_pp(phi, m, 3) << std::endl;
+
+            expr_ref_vector phi_i(m);
+            for (unsigned i = 0; i < decl_args.size(); ++i)
+            {
+                phi_i.push_back(m_utils.replace_vars_decl(phi, pattern, decl_args.get(i)));
+            }
+
+            for (unsigned i = 0; i < decl_args.size(); ++i)
+            {
+                expr_ref phi_except_i(m.mk_true(), m);
+                for (unsigned j = 0; j < decl_args.size(); ++j)
+                {
+                    if (j != i)
+                        phi_except_i  = m.mk_and(phi_except_i, phi_i.get(j));
+                }
+                phi_except_i = m_utils.simplify_context(phi_except_i);
+                if (DEBUG_ABDUCE)
+                    std::cout << "phi_except_i " << i <<  mk_ismt2_pp(phi_except_i, m, 3) << std::endl;
+                //expr_ref old_phi_i(phi_i[i].get(), m);
+
+                phi_i[i] = simple_abduce_mbp(phi_except_i, conclusion, decl_args.get(i));
+                if (VERBOSE_ABDUCE)
+                {
+                    //std::cout << "check either old phi_i implies abduced phi_i: " << m_utils.implies(old_phi_i, phi_i[i].get()) << std::endl;
+                    //std::cout << m_utils.simplify_context(old_phi_i) << " ==>" << m_utils.simplify_context(expr_ref(phi_i[i].get(), m)) << std::endl;
+                }
+            }
+
+            phi = m.mk_true();
+            for (unsigned i = 0; i < decl_args.size(); ++i)
+            {
+                phi = m.mk_and(phi, m_utils.replace_vars_decl(expr_ref(phi_i[i].get(), m), decl_args.get(i), pattern));
+            }
+
+            //if (VERBOSE_ABDUCE)
+            //    std::cout << "crnt phi (line after 27) "   << mk_ismt2_pp(phi, m, 3) << std::endl;
+            phi = m_utils.simplify_context(phi);
+
+            clock_t start = clock();
+            if (VERBOSE_ABDUCE)
+            {
+                std::cout << "crnt phi-simplified (line after 27) "   << mk_ismt2_pp(phi, m, 3) << std::endl;
+                std::cout << "time :" << ((double)(clock() - start) / CLOCKS_PER_SEC) << std::endl;;
+            }
+            num_iter++;
+        }
+        return expr_ref(m.mk_false(), m);
+    }
+
     expr_ref multi_abducer::simple_abduce(expr_ref premise, expr_ref conclusion, func_decl_ref_vector vars)
     {
         expr_ref implic(m.mk_implies(premise, conclusion), m);
@@ -607,5 +712,77 @@ namespace misynth
         return result;
     }
 
+    expr_ref multi_abducer::simple_abduce_mbp(expr_ref premise, expr_ref conclusion, func_decl_ref_vector vars)
+    {
+        expr_ref implic(m.mk_implies(premise, conclusion), m);
+        decl_collector decls(m);
+        decls.visit(implic.get());
+        func_decl_ref_vector quantifier_vars(m);
 
+        app_ref_vector quantifier_vars_apps(m);
+
+
+        for (func_decl *fd :  decls.get_func_decls())
+        {
+            if (!vars.contains(fd))
+            {
+                quantifier_vars.push_back(fd);
+                quantifier_vars_apps.push_back(m.mk_const(fd));
+            }
+        }
+
+
+        smt_params params;
+        expr_ref result_qe(m.mk_false(), m);
+        expr_ref implic_q = m_utils.universal_quantified(implic, quantifier_vars);
+        qe::expr_quant_elim      expr_qe(m, params);
+        expr_qe(m.mk_true(), implic_q, result_qe);
+
+
+        implic = mk_not(implic);
+        if (DEBUG_ABDUCE)
+            std::cout << "Simple abduction mbp : " << mk_ismt2_pp(implic, m, 3) << std::endl;
+        params_ref params_slv;
+        ref<solver> slv = m_cmd.get_solver_factory()(m, params_slv, false, true, false, symbol::null);
+
+        slv->push();
+        slv->assert_expr(implic);
+        lbool r = slv->check_sat();
+
+        if (r != lbool::l_true)
+        {
+            std::cout << "ERROR!!! Simple abduction(MBP) is unsat: " << mk_ismt2_pp(implic, m, 3) << std::endl;
+            return expr_ref(m.mk_true(), m);
+        }
+        model_ref model;
+        slv->get_model(model);
+        if (DEBUG_ABDUCE)
+            std::cout << "ERROR!!! Simple abduction(MBP) model " << *model << std::endl;
+        expr_ref result_qembp(m.mk_false(), m);
+        expr_ref_vector res_v(m);
+        res_v.push_back(implic);
+        qe::mbp mbp(m);
+        mbp(true,  quantifier_vars_apps, *model, res_v);
+        result_qembp = m.mk_not(m_utils.con_join(res_v));
+
+
+        expr_ref result_spacer(implic, m);
+        spacer::qe_project(m, quantifier_vars_apps, result_spacer, *model);
+        result_spacer = m.mk_not(result_spacer);
+
+        //[check]
+        std::cout << "Simple abduction(MBP) checking: "  << m_utils.implies(result_qe, result_qembp) << std::endl;
+        std::cout << "Simple abduction(MBP) checking for spacer: "  << m_utils.implies(result_qe, result_spacer) << std::endl;
+
+        std::cout << "Simple abduction(MBP) checking: "  << m_utils.implies(implic_q, result_qembp) << std::endl;
+        std::cout << "Simple abduction(MBP) checking for spacer: "  << m_utils.implies(implic_q, result_spacer) << std::endl;
+        //
+        if (DEBUG_ABDUCE)
+        {
+            std::cout << "Simple abduction(Full qe) result: " << mk_ismt2_pp(result_qe, m, 3) << std::endl;
+            std::cout << "Simple abduction(MBP) result: " << mk_ismt2_pp(result_qembp, m, 3) << std::endl;
+            std::cout << "Simple abduction(MBP spacer) result: " << mk_ismt2_pp(result_spacer, m, 3) << std::endl;
+        }
+        return result_qembp;
+    }
 }

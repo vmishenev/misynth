@@ -49,7 +49,7 @@ namespace misynth
              * */
 
             expr_ref simple_abduce(expr_ref premise, expr_ref conclusion, func_decl_ref_vector vars);
-
+            expr_ref simple_abduce_mbp(expr_ref premise, expr_ref conclusion, func_decl_ref_vector vars);
 
             /*
              *
@@ -72,6 +72,8 @@ namespace misynth
 
             expr_ref  iso_decomp(expr_ref conclusion_model, expr_ref init_soln, expr_ref conclusion,
                                  vector<func_decl_ref_vector> &fresh_constant, func_decl_ref_vector &pattern, vector<func_decl_ref_vector> &decl_args);
+            expr_ref  iso_decomp_mbp(expr_ref conclusion_model, expr_ref init_soln, expr_ref conclusion,
+                                     vector<func_decl_ref_vector> &fresh_constant, func_decl_ref_vector &pattern, vector<func_decl_ref_vector> &decl_args);
             expr_ref  get_soln_according_to_model(model_ref mdl,   vector<func_decl_ref_vector> &fresh_constant,
                                                   func_decl_ref_vector &pattern);
             void generate_fresh_constant(vector<func_decl_ref_vector> &fresh_constant, vector<func_decl_ref_vector> &decl_args);

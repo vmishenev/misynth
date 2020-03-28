@@ -427,7 +427,7 @@ namespace misynth
                 is_added_heuristic = true;
             }
 
-            ++current_iter_trivial_model_x;
+            //++current_iter_trivial_model_x;
 
 
 
@@ -484,7 +484,7 @@ namespace misynth
                 continue;
             }
 
-
+            //current_iter_model_x = UINT_MAX - 1; // reset model X
 
             if (m_utils.is_unsat(m.mk_not(last_precond)))
                 //if(m.is_true(last_precond))
