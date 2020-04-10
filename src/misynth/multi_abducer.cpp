@@ -88,6 +88,7 @@ namespace misynth
                                      expr_ref conclusion, func_decl_ref_vector &pattern,
                                      expr_ref_vector &res,  decl2expr_map &res_map)
     {
+        DEBUG("MULTI ABDUCE" << mk_ismt2_pp(m_utils.con_join(unknown_preds), m) << "; " << mk_ismt2_pp(premise, m) << " ==> " << mk_ismt2_pp(conclusion, m))
         vector<vector<expr_ref_vector>> inv_args_vec; // for storing all inv arguments for each a predicator
         func_decl_ref_vector preds(m);
         obj_map<func_decl, vector<expr_ref_vector> *>  preds2arguments;//maps preds to invocation arguments
@@ -138,8 +139,8 @@ namespace misynth
 
         expr_ref abduce_conclusion = simple_abduce(premise, flat_conclusion, all_vars);
         abduce_conclusion = m_utils.simplify_context(abduce_conclusion);
-        if (DEBUG_ABDUCE)
-            std::cout << "Abduced flat_conclusion formula: " << mk_ismt2_pp(abduce_conclusion, m, 3) << std::endl;
+        //if (DEBUG_ABDUCE)
+        std::cout << "Abduced flat_conclusion formula: " << mk_ismt2_pp(abduce_conclusion, m, 3) << std::endl;
 
         /// generate fresh constant \/ m_ki=xx_ij, k=0.. invocation number, i - component index
         ///
@@ -200,7 +201,7 @@ namespace misynth
         slv->assert_expr(premise); // IMPORTANT TODO
         lbool r = slv->check_sat();
         //std::cout << "INIT SOLN  abduction formula result : " << r << std::endl;
-        decl2expr_map soln;
+        // decl2expr_map soln;
         expr_ref_vector soln_vec(m);
         if (r == lbool::l_true)
         {
@@ -217,15 +218,17 @@ namespace misynth
                  *INIT SOLN
                  * R_i = \/_j x_i=Mdl(m_ij)
                  * */
-                expr_ref res = get_soln_according_to_model(mdl, fresh_constant.get(pred_ind), pattern);
-                soln.insert(preds.get(pred_ind), res);
-                soln_vec.push_back(res);
+                expr_ref initial_soln = get_soln_according_to_model(mdl, fresh_constant.get(pred_ind), pattern);
+                res_map.insert(preds.get(pred_ind), initial_soln);
+                DEBUG("INIT SOLN: "  << (preds.get(pred_ind)->get_name().str()) << " == " << mk_ismt2_pp(res_map[preds.get(pred_ind)], m))
+
+                soln_vec.push_back(initial_soln);
                 if (DEBUG_ABDUCE)
-                    std::cout << "INIT SOLN  result formula: "  << (preds.get(pred_ind)->get_name().str()) << " " << mk_ismt2_pp(res, m, 3) << std::endl;
+                    std::cout << "INIT SOLN  result formula: "  << (preds.get(pred_ind)->get_name().str()) << " " << mk_ismt2_pp(initial_soln, m, 3) << std::endl;
             }
 
-            cart_decomp(implic, decl_args, fresh_constant, preds, pattern, abduce_conclusion, res, soln);
-            res_map = soln;
+            cart_decomp(implic, decl_args, fresh_constant, preds, pattern, abduce_conclusion, res, res_map);
+            //res_map = soln;
             return true;
             //return iso_decomp(implic, res, abduce_conclusion, inv_args, fresh_constant, pattern, decl_args);
 
@@ -250,9 +253,8 @@ namespace misynth
             {
                 if (k == pred_ind) continue;
                 vector<func_decl_ref_vector> &occurrencies  = decl_args.get(k);
-                for (unsigned j = 0; j < decl_args.size(); ++j)   // for every occurrency
+                for (unsigned j = 0; j < occurrencies.size(); ++j)   // for every occurrency
                 {
-
                     expr_ref concrete_pred = m_utils.replace_vars_decl(soln[preds.get(k)], pattern, occurrencies.get(j));
                     concrete_preds.push_back(concrete_pred);
                 }
@@ -261,13 +263,28 @@ namespace misynth
             }
 
             expr_ref conj_all_preds = m_utils.con_join(concrete_preds); // line 8
-            DEBUG("line 8 before: "   << mk_ismt2_pp(conj_all_preds, m, 3))
-            expr_ref phi_i = simple_abduce(conj_all_preds, conclusion, pattern);
+            DEBUG("line 8 before (conj all preds except " << preds.get(pred_ind)->get_name() << "): "   << mk_ismt2_pp(conj_all_preds, m, 3))
 
-            DEBUG("line 8 phi_i: "   << mk_ismt2_pp(conj_all_preds, m, 3))
+            //TODO
+            //ATTENTION
+            //WHAT ARE VARIABLES need eliminate
+
+            func_decl_ref_vector all_vars_pred_ind(m);
+            vector<func_decl_ref_vector> &occurrencies  = decl_args.get(pred_ind);
+            for (auto&& it : occurrencies)
+            {
+                all_vars_pred_ind.append(it);
+                m_utils.print_sorted_var_list(std::cout, it);
+            }
+
+            DEBUG("Abduction problem: "   << mk_ismt2_pp(m.mk_implies(conj_all_preds, conclusion), m))
+            expr_ref phi_i = simple_abduce(conj_all_preds, conclusion, all_vars_pred_ind);
+
+            DEBUG("line 8 phi_i: "   << mk_ismt2_pp(phi_i, m, 3))
             expr_ref res_pred = iso_decomp(implic, phi_i, conclusion,   fresh_constant.get(pred_ind), pattern, decl_args.get(pred_ind));
             res.push_back(res_pred);
             soln.insert(preds.get(pred_ind), res_pred);
+            DEBUG(preds.get(pred_ind)->get_name()  << " := "  << mk_ismt2_pp(res_pred, m))
         }
     }
     expr_ref multi_abducer::nonlinear_abduce(vector<expr_ref_vector> &inv_args, expr_ref premise, expr_ref conclusion, func_decl_ref_vector & pattern)
@@ -684,7 +701,10 @@ namespace misynth
                 quantifier_vars.push_back(fd);
             }
         }
-
+        if (quantifier_vars.size() == 0)
+        {
+            return implic;
+        }
         implic = m_utils.universal_quantified(implic, quantifier_vars);
         if (DEBUG_ABDUCE)
             std::cout << "Simple abduction : " << mk_ismt2_pp(implic, m, 3) << std::endl;

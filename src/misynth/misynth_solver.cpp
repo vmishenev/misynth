@@ -33,6 +33,9 @@ namespace misynth
     unsigned int alg3_run = 0;
 
     bool DEBUG_MODE = true;
+
+
+
     misynth_solver::misynth_solver(cmd_context &cmd_ctx, ast_manager &m, solver *solver)
         : m_cmd(cmd_ctx)
         , m(m)
@@ -295,13 +298,21 @@ namespace misynth
             if (last_precond.get()) // non first iteration
             {
 
-                expr_ref_vector precs_for_one_op(m);
+                all_precs_for_ops.reset();
                 for (unsigned int i = 0; i < m_ops.size(); ++i)
                 {
+                    expr_ref_vector precs_for_one_op(m);
                     invocation_operands &op = m_ops.get(i);
+                    for (unsigned int j = 0; j < fn.get_precs().size(); ++j)
+                    {
+                        expr_ref called_prec = m_utils.replace_vars_decl(fn.get_precs().get(j), *args_decl, op);
+                        precs_for_one_op.push_back(m.mk_not(called_prec));
 
-                    expr_ref called_prec = m_utils.replace_vars_decl(last_precond, *args_decl, op);
-                    precs_for_one_op.push_back(m.mk_not(called_prec));
+                    }
+
+                    all_precs_for_ops.push_back(m_utils.con_join(precs_for_one_op));
+
+
 
                     //slv_for_prec->push();
                     //slv_for_prec->assert_expr(m.mk_not(called_prec));
@@ -312,7 +323,7 @@ namespace misynth
                     }
                 }
 
-                all_precs_for_ops.push_back(m_utils.con_join(precs_for_one_op));
+
 
                 slv_for_prec->pop(1);// pop previos precs
                 slv_for_prec->push();
@@ -475,7 +486,13 @@ namespace misynth
 
 
             /*[+] Find a precondition*/
-            last_precond = find_precondition(synth_funs, spec, mdl_for_coeff);
+            bool prec_res = find_precondition(synth_funs, spec, mdl_for_coeff, last_precond);
+            std::cout << " prec_res " << prec_res << std::endl;
+            if (!prec_res)
+            {
+                if (try_find_simultaneously_branches(synth_funs, constraints, mdl_for_x, true))
+                    return true;
+            }
 
             if (m_utils.is_unsat(last_precond))
             {
@@ -648,7 +665,7 @@ namespace misynth
         std::cout  << " alg3_run: " << alg3_run << std::endl;
     }
 
-    expr_ref misynth_solver::find_precondition(func_decl_ref_vector & synth_funs, expr_ref & spec, model_ref mdl_for_coeff)
+    bool misynth_solver::find_precondition(func_decl_ref_vector & synth_funs, expr_ref & spec, model_ref mdl_for_coeff, expr_ref &res)
     {
         args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
 
@@ -682,11 +699,13 @@ namespace misynth
         }
 
 
+        expr_ref new_branch = m_futils.generate_branch(m_coeff_decl_vec, *synth_fun_args, synth_funs, mdl_for_coeff);
+        // expr_ref res(m);
 
-        expr_ref res(m);
 
+        // some optimization
         if (used_vars.size() == 0 || (synth_fun_args->size() == 1 && used_vars.size() == 1))
-            //if (used_vars.size() <= synth_fun_args->size())
+
         {
             res = m_utils.replace_vars_decl(th_res, used_vars, *synth_fun_args);
 
@@ -696,7 +715,13 @@ namespace misynth
 
             }
 
-            return res;
+            app_ref_vector invocations(m);
+            collect_invocation(spec, synth_funs, invocations);
+            auto res_abd = check_all_abductions(synth_funs, spec, invocations, res, new_branch);
+            if (res_abd == result_incremental_abd::total_false)
+            {
+                return  false;
+            }
         }
         else
         {
@@ -734,7 +759,7 @@ namespace misynth
                     th_res = to_app(th_res)->get_arg(i);
                     res = m_abducer.nonlinear_abduce(current_ops, expr_ref(m.mk_true(), m), th_res, *synth_fun_args);
                     if (!m_utils.is_unsat(res))
-                        return res;
+                        return true;
                 }
                 // we take first argument
 
@@ -743,9 +768,14 @@ namespace misynth
             {
                 if (m_params.incremental_multiabduction())
                 {
-                    expr_ref new_branch = m_futils.generate_branch(m_coeff_decl_vec, *synth_fun_args, synth_funs, mdl_for_coeff);;
-                    res = incremental_multiabduction(synth_funs, spec, new_branch);
+
+
+                    result_incremental_abd res_abd = incremental_multiabduction(synth_funs, spec, new_branch, res);
                     std::cout << "incremental_multiabduction" << mk_ismt2_pp(res, m, 3) << std::endl;
+                    if (res_abd == result_incremental_abd::total_false)
+                    {
+                        return  false;
+                    }
                 }
                 else
                     res = m_abducer.nonlinear_abduce(current_ops, expr_ref(m.mk_true(), m), th_res, *synth_fun_args);
@@ -757,7 +787,7 @@ namespace misynth
 
         }
 
-        return res;
+        return true;
     }
 
 
@@ -916,7 +946,7 @@ namespace misynth
 
     expr_ref misynth_solver::generate_clia_fun_body(expr_ref_vector &precs, expr_ref_vector &branches, bool is_compact)
     {
-        SASSERT(precs.size() == m_branches.size());
+        SASSERT(precs.size() == branches.size());
         expr_ref res(m);
         if (precs.size() == 0) return res;
 
@@ -1068,7 +1098,7 @@ namespace misynth
 
 
 
-    bool misynth_solver::check_all_abductions(func_decl_ref_vector & synth_funs, expr_ref & spec, app_ref_vector &invocations, expr_ref & new_prec, expr_ref & new_branch)
+    result_incremental_abd misynth_solver::check_all_abductions(func_decl_ref_vector & synth_funs, expr_ref & spec, app_ref_vector &invocations, expr_ref & new_prec, expr_ref & new_branch)
     {
         unsigned int k = invocations.size();
         unsigned int n = fn.get_incompact_depth();
@@ -1089,10 +1119,18 @@ namespace misynth
                 {
                     //todo
                     print_vector(permutation);
-                    if (!check_abduction_for_comb(permutation, synth_funs, spec, invocations, new_prec, new_branch))
+                    auto res = check_abduction_for_comb(permutation, synth_funs, spec, invocations, new_prec, new_branch);
+                    if (res == result_incremental_abd::false_v)
                     {
                         std::cout << "!!! ABDUCTION PROBLEM IS UNSAT" << std::endl;
-                        return false;
+                        return result_incremental_abd::false_v;
+
+                    }
+                    else if (res == result_incremental_abd::total_false)
+                    {
+
+                        std::cout << "!!! CONCLUSION of ABDUCTION PROBLEM IS UNSAT" << std::endl;
+                        return result_incremental_abd::total_false;
 
                     }
 
@@ -1103,10 +1141,10 @@ namespace misynth
 
 
         }
-        return true;
+        return result_incremental_abd::true_v;
     }
 
-    bool misynth_solver::check_abduction_for_comb(vector<unsigned int> &comb, func_decl_ref_vector & synth_funs, expr_ref & spec, app_ref_vector &invocations, expr_ref & new_prec, expr_ref & new_branch)
+    result_incremental_abd misynth_solver::check_abduction_for_comb(vector<unsigned int> &comb, func_decl_ref_vector & synth_funs, expr_ref & spec, app_ref_vector &invocations, expr_ref & new_prec, expr_ref & new_branch)
     {
         SASSERT(invocations.size() == comb.size());
 
@@ -1147,7 +1185,11 @@ namespace misynth
         inv_rwr.rewrite_expr(spec, spec_with_branches, term_subst);
         expr_ref premise = m_utils.con_join(preds);
         std::cout << "check_abduction_for_comb " << mk_ismt2_pp(premise, m) << " ==> " << mk_ismt2_pp(spec_with_branches, m) << std::endl;
-        return m_utils.implies(premise, spec_with_branches);
+        if (m_utils.is_unsat(spec_with_branches))
+        {
+            return result_incremental_abd::total_false;
+        }
+        return m_utils.implies(premise, spec_with_branches) ? result_incremental_abd::true_v : result_incremental_abd::false_v;
     }
 
 
@@ -1194,7 +1236,7 @@ namespace misynth
         expr_ref res = m_abducer.nonlinear_abduce(unknown_pred, m_utils.con_join(known_pred), spec_with_branches, *synth_fun_args);
         return res;
     }
-    expr_ref misynth_solver::incremental_multiabduction(func_decl_ref_vector &synth_funs, expr_ref & spec, expr_ref & new_branch)
+    result_incremental_abd misynth_solver::incremental_multiabduction(func_decl_ref_vector &synth_funs, expr_ref & spec, expr_ref & new_branch, expr_ref &result)
     {
         args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
 
@@ -1218,7 +1260,8 @@ namespace misynth
             collect_invocation_operands(invocations, current_ops);
             return  m_abducer.nonlinear_abduce(current_ops, expr_ref(m.mk_true(), m), spec, *synth_fun_args);*/
             vector<unsigned int> permutation(k, n);
-            return solve_abduction_for_comb(permutation, synth_funs, spec, invocations, new_branch);
+            result =  solve_abduction_for_comb(permutation, synth_funs, spec, invocations, new_branch);
+            return result_incremental_abd::true_v;
         }
         //increase "complexity" multiabduction
         // i - number of unknown predicates
@@ -1238,10 +1281,16 @@ namespace misynth
                     //todo
                     print_vector(permutation);
                     expr_ref potential_prec = solve_abduction_for_comb(permutation, synth_funs, spec, invocations, new_branch);
-                    if (check_all_abductions(synth_funs, spec, invocations, potential_prec, new_branch))
+                    result_incremental_abd res = check_all_abductions(synth_funs, spec, invocations, potential_prec, new_branch);
+                    if (res == result_incremental_abd::true_v)
                     {
                         std::cout << "!!! a prec is FOUND (incremental abduction)" << std::endl;
-                        return potential_prec;
+                        result = potential_prec;
+                        return result_incremental_abd::true_v;
+                    }
+                    else if (res == result_incremental_abd::total_false)
+                    {
+                        return result_incremental_abd::total_false;
                     }
                 }
                 while (std::next_permutation(permutation.begin(), permutation.end()));
@@ -1253,6 +1302,7 @@ namespace misynth
         //[-]
 
         expr_ref res(m.mk_false(), m);
-        return res;
+        result = res;
+        return result_incremental_abd::false_v;
     }
 } // namespace misynth

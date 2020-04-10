@@ -271,6 +271,7 @@ namespace misynth
          * */
         expr_ref universal_quantified(expr_ref e, func_decl_ref_vector &quantifier_vars)
         {
+            SASSERT(quantifier_vars.size() > 0);
             sort_ref_vector quantifier_vars_sort(m);
             vector<symbol > quantifier_vars_names;
             expr_ref_vector subst(m);

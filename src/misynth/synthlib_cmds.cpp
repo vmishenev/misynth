@@ -38,7 +38,7 @@ Notes:
 #include <iomanip>
 #include <iostream>
 #include <set>
-
+#include <string>
 
 #define VERBOSE true
 #define DEBUG true

@@ -12,6 +12,9 @@
 
 #include "misynth/combinators.h"
 
+#include <iostream>
+#define DEBUG(x) std::cout<< x << std::endl;
+
 namespace misynth
 {
     extern bool DEBUG_MODE;
@@ -571,7 +574,9 @@ namespace misynth
 
             bool check_abduction_for_comb(vector<unsigned int> &comb, ite_function &fn, func_decl_ref_vector &synth_fun_args,  func_decl_ref_vector & synth_funs, expr_ref & spec, app_ref_vector &invocations, expr_ref_vector & new_precs, expr_ref_vector & new_branches)
             {
+
                 SASSERT(invocations.size() == comb.size());
+                DEBUG("check_abduction_for_comb")
                 if (new_precs.size() != new_branches.size())
                     return false;
 
@@ -588,12 +593,14 @@ namespace misynth
 
                 for (unsigned int i = 0; i < invocations.size(); ++i)
                 {
+
                     if (comb[i] >= n)
                     {
                         expr_ref concrete_prec =  m_utils.replace_vars_decl(new_precs.get(comb[i] - n), synth_fun_args, current_ops[i]);
                         preds.push_back(concrete_prec);
                         expr_ref concrete_branch =  m_utils.replace_vars_decl(new_branches.get(comb[i] - n), synth_fun_args, current_ops[i]);
                         temp.push_back(concrete_branch);
+
                         term_subst.insert(invocations[i].get(), concrete_branch);
 
                     }
@@ -606,7 +613,6 @@ namespace misynth
                         term_subst.insert(invocations[i].get(), concrete_branch);
                     }
                 }
-
                 invocations_rewriter inv_rwr(m_cmd, m);
                 expr_ref spec_with_branches(m);
                 inv_rwr.rewrite_expr(spec, spec_with_branches, term_subst);
@@ -704,16 +710,23 @@ namespace misynth
                 app_ref_vector invocations(m);
                 collect_invocation(spec, synth_funs, invocations);
 
+                unsigned int n2 =  new_branches.size();
                 unsigned int k = invocations.size();
-                unsigned int n = fn.get_incompact_depth() + new_branches.size();
+                unsigned int n = fn.get_incompact_depth() ;
 
 
                 std::cout << "k = " << k << "; n = " << n << std::endl;
-                if (n == 0)
-                {
-                    vector<unsigned int> permutation(k, n);
-                    return solve_abduction_for_comb(permutation, fn, synth_fun_args, synth_funs, spec, invocations, new_branches);
-                }
+                /* if (n == 0)
+                 {
+                     vector<unsigned int> permutation(k - n2, n);
+                     for (unsigned int i = 0; i < n2; ++i)
+                     {
+                         permutation.push_back(i + n);
+                     }
+                     DEBUG("n == 0")
+                     print_vector(permutation);
+                     return solve_abduction_for_comb(permutation, fn, synth_fun_args, synth_funs, spec, invocations, new_branches);
+                 }*/
 
 
                 //increase "complexity" multiabduction
@@ -721,13 +734,19 @@ namespace misynth
 
                 // for (int i = 1; i <= k; ++i)
                 {
+
                     std::cout << "k   "   << std::endl;
-                    generator_combination_with_repetiton comb(k, n + 1);
+                    generator_combination_with_repetiton comb(k - n2, n);
                     while (comb.do_next())
                     {
 
                         //print_vector(comb.get_next());
                         vector<unsigned int> permutation = comb.get_next();
+                        for (int i = 0; i < n2; ++i)
+                        {
+                            permutation.push_back(i + n);
+                        }
+
                         //permutation.resize(k, n);
                         std::sort(permutation.begin(), permutation.end());
                         do
@@ -763,13 +782,20 @@ namespace misynth
                 unsigned int k = invocations.size();
                 unsigned int n = fn.get_incompact_depth() + new_branches.size();
 
+                //todo
+                for (int i = 0; i < new_precs.size(); ++i)
+                {
+                    if (m_utils.is_unsat(new_precs.get(i)))
+                    {
+                        std::cout << "!!! NEW ONE PREC IS UNSAT" << std::endl;
+                        return false;
+                    }
+                }
 
-
-
-
+                DEBUG("check_all_abductions")
                 // for (int i = 1; i <= k; ++i)
                 {
-                    generator_combination_with_repetiton comb(k, n + 1);
+                    generator_combination_with_repetiton comb(k, n);
                     while (comb.do_next())
                     {
                         vector<unsigned int> permutation = comb.get_next();

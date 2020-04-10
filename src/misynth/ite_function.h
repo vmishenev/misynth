@@ -61,7 +61,7 @@ namespace misynth
 
             void add_branch(expr * prec, expr * br)
             {
-                SASSERT(precs.size() == m_branches.size());
+
 
                 slv_for_prec->push();
                 slv_for_prec->assert_expr(m.mk_not(prec));

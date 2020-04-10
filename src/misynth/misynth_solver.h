@@ -20,6 +20,15 @@ namespace misynth
     typedef obj_map<func_decl, expr *> decl2expr_map;
     typedef obj_map<func_decl, expr_ref_vector> decl2expr_ref_vec;
 
+
+    enum struct result_incremental_abd
+    {
+        false_v = 0,
+        true_v,
+        total_false
+
+    };
+
     class misynth_solver
     {
 
@@ -61,11 +70,11 @@ namespace misynth
             bool try_find_simultaneously_branches(func_decl_ref_vector &synth_funs, expr_ref_vector &constraints, model_ref mdl, bool is_infinity_loop = false);
             void print_def_fun(std::ostream &out, func_decl * f, func_decl_ref_vector &args, expr_ref body);
 
-            expr_ref incremental_multiabduction(func_decl_ref_vector & synth_funs, expr_ref & simplified_spec, expr_ref & new_branch);
+            result_incremental_abd incremental_multiabduction(func_decl_ref_vector & synth_funs, expr_ref & simplified_spec, expr_ref & new_branch, expr_ref &result);
             expr_ref solve_abduction_for_comb(vector<unsigned int> &comb, func_decl_ref_vector & synth_funs, expr_ref & spec, app_ref_vector &invocations, expr_ref & new_branch);
 
-            bool check_all_abductions(func_decl_ref_vector & synth_funs, expr_ref & spec, app_ref_vector &invocations, expr_ref & new_prec, expr_ref & new_branch);
-            bool check_abduction_for_comb(vector<unsigned int> &comb, func_decl_ref_vector & synth_funs, expr_ref & spec, app_ref_vector &invocations, expr_ref & new_prec, expr_ref & new_branch);
+            result_incremental_abd check_all_abductions(func_decl_ref_vector & synth_funs, expr_ref & spec, app_ref_vector &invocations, expr_ref & new_prec, expr_ref & new_branch);
+            result_incremental_abd check_abduction_for_comb(vector<unsigned int> &comb, func_decl_ref_vector & synth_funs, expr_ref & spec, app_ref_vector &invocations, expr_ref & new_prec, expr_ref & new_branch);
 
             //void print_sorted_var_list(std::ostream &out,  func_decl_ref_vector & sorted_var);
 
@@ -79,7 +88,7 @@ namespace misynth
             //void rewrite_expr(expr *f, expr_ref &res, app2expr_map& subst);
 
             void init_used_variables(func_decl_ref_vector &synth_funs, expr_ref spec);
-            expr_ref find_precondition(func_decl_ref_vector &synth_funs,  expr_ref &spec, model_ref mdl_for_coeff);
+            bool find_precondition(func_decl_ref_vector &synth_funs,  expr_ref &spec, model_ref mdl_for_coeff, expr_ref &result);
             args_t *get_args_decl_for_synth_fun(func_decl *f);
             // expr_ref generate_branch(func_decl_ref_vector &synth_funs, model_ref mdl);
             expr_ref generate_fun_macros(expr_ref body_fun, func_decl_ref_vector &synth_funs, func_decl_ref_vector args);
