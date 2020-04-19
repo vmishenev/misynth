@@ -34,7 +34,7 @@ Notes:
 #include "ast/rewriter/rewriter_def.h"
 #include <ast/rewriter/th_rewriter.h>
 #include "muz/spacer/spacer_util.h"
-
+#include "misynth/multi_abducer.h"
 #include <iomanip>
 #include <iostream>
 #include <set>
@@ -60,6 +60,7 @@ namespace misynth
             ref<solver> m_solver;
             vector<args_t> args_vector;
             func_decl_ref_vector all_args_garbage_collection;
+            synth_params m_synth_params;
         public:
             misynth_solver_context(cmd_context &cmd_ctx)
                 : m_cmd(cmd_ctx)
@@ -100,7 +101,24 @@ namespace misynth
                 {
                     std::cout << "add_constraint: " << mk_ismt2_pp(constraint, m, 2) << std::endl;
                 }
+                if (m_synth_params.debug_abduction())
+                {
+                    multi_abducer abducer(m_cmd, m);
+                    expr_ref_vector unordered_res(m);
+                    decl2expr_map map;
+                    if (m.is_implies(constraint))
+                    {
+                        app *ap = to_app(constraint);
+                        // expr_ref unknown_pred(ap->get_arg(0), m);
+                        expr_ref_vector unknown_pred(m);
+                        app *premise = to_app(ap->get_arg(0));
+                        unknown_pred.append(premise->get_num_args(), premise->get_args());
+                        expr_ref conclusion(ap->get_arg(1), m);
+                        func_decl_ref_vector synth_fun_args(m);
 
+                        bool r = abducer.multi_abduce(unknown_pred,  expr_ref(m.mk_true(), m), conclusion, synth_fun_args, unordered_res, map);
+                    }
+                }
                 m_constraints_list.push_back(constraint);
             }
 
@@ -141,6 +159,7 @@ struct misynth_context
     params_ref m_params_ref;
     fp_params m_params;
     cmd_context &m_cmd;
+
 
     unsigned m_ref_count;
     scoped_ptr<misynth::misynth_solver_context> m_context;

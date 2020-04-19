@@ -93,6 +93,7 @@ namespace misynth
         func_decl_ref_vector preds(m);
         obj_map<func_decl, vector<expr_ref_vector> *>  preds2arguments;//maps preds to invocation arguments
 
+
         for (expr *e : unknown_preds)
         {
             if (is_app(e))
@@ -120,7 +121,15 @@ namespace misynth
             }
         }
 
-
+        if (pattern.empty())
+        {
+            func_decl * fd = preds.get(0);
+            unsigned num = fd->get_arity();
+            for (unsigned i = 0; i < num; ++i)
+            {
+                pattern.push_back(m.mk_const_decl("x_" + std::to_string(num), m_arith.mk_int()));
+            }
+        }
 
         vector<vector<func_decl_ref_vector>> decl_args;
         expr_ref flat_premise = to_flat_multi(preds, inv_args_vec, decl_args);
@@ -276,12 +285,15 @@ namespace misynth
                 all_vars_pred_ind.append(it);
                 m_utils.print_sorted_var_list(std::cout, it);
             }
-
-            DEBUG("Abduction problem: "   << mk_ismt2_pp(m.mk_implies(conj_all_preds, conclusion), m))
+            std::cout << std::endl;
+            DEBUG("Abduction problem for cart. decomp: "   << mk_ismt2_pp(m.mk_implies(conj_all_preds, conclusion), m))
             expr_ref phi_i = simple_abduce(conj_all_preds, conclusion, all_vars_pred_ind);
-
+            phi_i = m_utils.simplify_context(phi_i);
             DEBUG("line 8 phi_i: "   << mk_ismt2_pp(phi_i, m, 3))
-            expr_ref res_pred = iso_decomp(implic, phi_i, conclusion,   fresh_constant.get(pred_ind), pattern, decl_args.get(pred_ind));
+            expr_ref init_soln(soln[preds.get(pred_ind)], m);
+
+
+            expr_ref res_pred = iso_decomp(implic, init_soln, phi_i, fresh_constant.get(pred_ind), pattern, decl_args.get(pred_ind));
             res.push_back(res_pred);
             soln.insert(preds.get(pred_ind), res_pred);
             DEBUG(preds.get(pred_ind)->get_name()  << " := "  << mk_ismt2_pp(res_pred, m))
@@ -489,7 +501,37 @@ namespace misynth
         return m_utils.dis_join(exprs);
     }
 
-    expr_ref  multi_abducer::iso_decomp(expr_ref conclusion_model, expr_ref init_soln, expr_ref conclusion, vector<func_decl_ref_vector> &fresh_constant, func_decl_ref_vector & pattern, vector<func_decl_ref_vector> &decl_args)
+    /*
+     * generate /\(\/_j x_i=m_ij \/phi)
+     * */
+    expr_ref multi_abducer::build_conclusion_model(expr_ref phi, vector<func_decl_ref_vector> &decl_args, vector<func_decl_ref_vector> &fresh_constant, expr_ref abduce_conclusion, func_decl_ref_vector & pattern)   //phi_M
+    {
+        func_decl_ref_vector all_vars(m);
+        expr_ref fresh_consts_equals_inv_args(m.mk_true(), m);
+        for (unsigned i = 0; i < decl_args.size(); ++i)
+        {
+            auto& crnt_decl_args = decl_args.get(i);
+            all_vars.append(crnt_decl_args);
+            expr_ref_vector crnt_fresh_consts_equals_inv_args(m);
+            // [] add phi
+            crnt_fresh_consts_equals_inv_args.push_back(m_utils.replace_vars_decl(phi, pattern, crnt_decl_args));
+            //
+            for (unsigned j = 0; j < fresh_constant.size(); ++j)
+            {
+
+                crnt_fresh_consts_equals_inv_args.push_back(m_utils.mk_eq(crnt_decl_args, fresh_constant.get(j)));
+            }
+            fresh_consts_equals_inv_args = m.mk_and(fresh_consts_equals_inv_args, m_utils.dis_join(crnt_fresh_consts_equals_inv_args));
+        }
+        /// [-] generate fresh constant
+
+
+        expr_ref implic(m_utils.universal_quantified(expr_ref(m.mk_implies(fresh_consts_equals_inv_args, abduce_conclusion), m), all_vars), m);
+
+        return implic;
+    }
+
+    expr_ref  multi_abducer::iso_decomp(expr_ref conclusion_model/*unused*/, expr_ref init_soln, expr_ref conclusion, vector<func_decl_ref_vector> &fresh_constant, func_decl_ref_vector & pattern, vector<func_decl_ref_vector> &decl_args)
     {
         unsigned int num_iter = 0;
 
@@ -500,7 +542,9 @@ namespace misynth
                 std::cout << "------ iso_decomp iteration #" << num_iter << "  ------ " << std::endl;
 
             //   /\not phi[m_ij/x_i]
-            expr_ref not_phi_replaced(conclusion_model, m);
+
+            expr_ref conclusion_m = build_conclusion_model(phi, decl_args, fresh_constant, conclusion, pattern);
+            expr_ref not_phi_replaced(conclusion_m, m);
             for (unsigned i = 0; i < fresh_constant.size(); ++i)
             {
                 expr_ref replaced = m_utils.replace_vars_decl(phi, pattern, fresh_constant.get(i));

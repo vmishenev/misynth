@@ -65,6 +65,8 @@ namespace misynth
             void generate_fresh_constant(const func_decl_ref_vector &preds, const vector<vector<func_decl_ref_vector>> &decl_args_all, vector<vector<func_decl_ref_vector>> &fresh_constant_all);
 
         private:
+            expr_ref build_conclusion_model(expr_ref phi, vector<func_decl_ref_vector> &decl_args, vector<func_decl_ref_vector> &fresh_constant,
+                                            expr_ref abduce_conclusion, func_decl_ref_vector & pattern);
             void cart_decomp(expr_ref implic,
                              vector<vector<func_decl_ref_vector>> &decl_args, vector<vector<func_decl_ref_vector>> &fresh_constant,
                              func_decl_ref_vector &preds,
