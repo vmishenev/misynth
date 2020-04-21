@@ -350,7 +350,7 @@ namespace misynth
                 return;
 
 
-                ////////////////////////
+                //////////////////////// [Unused]
                 // after 9
                 expr_ref_vector res_single_conjuncts(m);
                 collects_single_conjuncts(constraints, synth_funs, mdl_for_x, res_single_conjuncts);
@@ -698,12 +698,35 @@ namespace misynth
                     ordered_res.push_back(map[unknown_symbols_preds.get(i)]);
 
                 }
+
+                //[+] HEURISTIC R_2 = not(R_1)
+                bool is_single_true = true;
+                for (unsigned int i = 0; i < ordered_res.size(); ++i)
+                {
+                    if (m_utils.is_true(ordered_res.get(i)))
+                    {
+                        if (!is_single_true)
+                        {
+                            std::cout << "WARNING!!!  Several true-branches exist" << std::endl;
+                            // return; //several true-branches exist
+                        }
+                        if (i > 0) ordered_res.set(i, m.mk_not(ordered_res.get(i - 1)));
+                        else if (i < ordered_res.size() - 1) ordered_res.set(i, m.mk_not(ordered_res.get(i + 1)));
+                        else
+                        {
+                            std::cout << "WARNING!!!  True-branch is only one" << std::endl;
+                        }
+                        is_single_true = false;
+
+                    }
+                }
+                //[-]
                 return ordered_res;
             }
 
 
 
-            expr_ref_vector incremental_multiabduction(ite_function &fn, func_decl_ref_vector &synth_fun_args, func_decl_ref_vector &synth_funs, expr_ref & spec, expr_ref_vector & new_branches)
+            expr_ref_vector incremental_multiabduction(ite_function & fn, func_decl_ref_vector & synth_fun_args, func_decl_ref_vector & synth_funs, expr_ref & spec, expr_ref_vector & new_branches)
             {
                 //args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
 
@@ -777,7 +800,7 @@ namespace misynth
 
 
 
-            bool check_all_abductions(ite_function &fn, func_decl_ref_vector &synth_fun_args, func_decl_ref_vector & synth_funs, expr_ref & spec, app_ref_vector &invocations, expr_ref_vector & new_precs, expr_ref_vector & new_branches)
+            bool check_all_abductions(ite_function & fn, func_decl_ref_vector & synth_fun_args, func_decl_ref_vector & synth_funs, expr_ref & spec, app_ref_vector & invocations, expr_ref_vector & new_precs, expr_ref_vector & new_branches)
             {
                 unsigned int k = invocations.size();
                 unsigned int n = fn.get_incompact_depth() + new_branches.size();

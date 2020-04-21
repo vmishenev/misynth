@@ -128,10 +128,14 @@ namespace misynth
 
                 if (m_synth_fun_list.size() == 0)
                 {
-                    //todo
+                    std::cerr << "None synth_fun is appeared " << std::endl;
                     return false;
                 }
-
+                if (m_synth_fun_list.size() > 1)
+                {
+                    std::cerr << "Only one synth_fun is expected " << std::endl;
+                    return false;
+                }
                 if (!m_solver)
                 {
                     m_solver = m_cmd.get_solver_factory()(m, m_params, false, true, false, symbol::null);
