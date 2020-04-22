@@ -218,6 +218,39 @@ namespace misynth
                 rewrite_expr(spec, new_spec, term_subst);
 
             }
+
+            void rewriter_fun_inv_to_var(expr_ref spec, func_decl_ref_vector & synth_funs,
+                                         app2expr_map &map, func_decl_ref_vector &fresh_vars, expr_ref & new_spec)
+            {
+                invocation_collector collector(synth_funs);
+                collector(spec);
+
+
+                obj_hashtable<app > set = collector.get_invocation();
+
+                app2expr_map  term_subst;
+                expr_ref_vector accumulator_terms(m);
+                std::string prefix = "y_";
+                int i = 0;
+                for (auto it = set.begin(); it != set.end(); it++)
+                {
+
+                    app *ap_f = (*it);
+
+                    func_decl_ref fresh_var(m.mk_const_decl(prefix + std::to_string(i), m_arith.mk_int()), m);
+                    fresh_vars.push_back(fresh_var);
+                    expr *y = m.mk_const(fresh_var);
+                    term_subst.insert(ap_f, y);
+                    accumulator_terms.push_back(y);
+                    //m_terms.push_back(linear_term);
+                    i++;
+                }
+
+                rewrite_expr(spec, new_spec, term_subst);
+
+            }
+
+
     }; //invocations_rewriter
 }
 #endif // REWRITER_COEFFICIENTS_H

@@ -287,6 +287,26 @@ namespace misynth
             subst.reverse();
             return replace_vars_decl(quant_e, quantifier_vars, subst);
         }
+
+
+        expr_ref exist_quantified(expr_ref e, func_decl_ref_vector &quantifier_vars)
+        {
+            SASSERT(quantifier_vars.size() > 0);
+            sort_ref_vector quantifier_vars_sort(m);
+            vector<symbol > quantifier_vars_names;
+            expr_ref_vector subst(m);
+            unsigned int idx = 0;
+            for (func_decl *fd :  quantifier_vars)
+            {
+                subst.push_back(m.mk_var(idx++, fd->get_range()));
+                quantifier_vars_sort.push_back(fd->get_range());
+                quantifier_vars_names.push_back(symbol("_x_"));  //fd->get_name()
+            }
+            expr_ref quant_e(m.mk_exists(quantifier_vars_sort.size(), quantifier_vars_sort.c_ptr(), quantifier_vars_names.c_ptr(), e), m);
+            subst.reverse();
+            return replace_vars_decl(quant_e, quantifier_vars, subst);
+        }
+
         //only performs "local simplifications"
         expr_ref simplify(expr_ref e)
         {
