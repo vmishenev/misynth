@@ -141,8 +141,8 @@ namespace misynth
                 all_vars.append(aa);
             }
 
-        //expr_ref flat_conclusion(m.mk_implies(flat_premise, conclusion), m);
         expr_ref flat_conclusion(m.mk_implies(flat_premise, conclusion), m);
+        //expr_ref flat_conclusion(m.mk_and(flat_premise, conclusion), m);
         if (DEBUG_ABDUCE)
             std::cout << "Abduction flat_conclusion formula: " << mk_ismt2_pp(flat_conclusion, m, 3) << std::endl;
 
@@ -329,6 +329,7 @@ namespace misynth
             all_vars.append(a);
         }
         expr_ref flat_conclusion(m.mk_implies(flat_premise, conclusion), m);
+        //expr_ref flat_conclusion(m.mk_and(flat_premise, conclusion), m);
         if (DEBUG_ABDUCE)
             std::cout << "Abduction flat_conclusion formula: " << mk_ismt2_pp(flat_conclusion, m, 3) << std::endl;
 
@@ -730,7 +731,50 @@ namespace misynth
         }
         return expr_ref(m.mk_false(), m);
     }
+    expr_ref multi_abducer::simple_abduce_exist(expr_ref premise, expr_ref conclusion, func_decl_ref_vector vars)
+    {
+        expr_ref implic(m.mk_implies(premise, conclusion), m);
+        decl_collector decls(m);
+        decls.visit(implic.get());
+        func_decl_ref_vector quantifier_vars(m);
 
+        for (func_decl *fd :  decls.get_func_decls())
+        {
+            if (!vars.contains(fd))
+            {
+                quantifier_vars.push_back(fd);
+            }
+        }
+        if (quantifier_vars.size() == 0)
+        {
+            return implic;
+        }
+        implic = m_utils.exist_quantified(implic, quantifier_vars);
+        if (DEBUG_ABDUCE)
+            std::cout << "Simple abduction : " << mk_ismt2_pp(implic, m, 3) << std::endl;
+
+        //std::cout << "Simple abduction implic2: " << mk_ismt2_pp(implic, m, 3) << std::endl;
+        smt_params params;
+        expr_ref result(m);
+        qe::expr_quant_elim      expr_qe(m, params);
+        expr_qe(m.mk_true(), implic, result);
+
+        //through tactic qe
+        /* tactic_ref tct = mk_qe_tactic(m);
+        goal_ref g = alloc(goal, m);
+
+        g->assert_expr(implic);
+
+        goal_ref_buffer result_goal;
+        (*tct)(g, result_goal);
+        goal *r = result_goal[0];
+        expr_ref_vector res_fmls(m);
+        r->get_formulas(res_fmls);
+        expr_ref result(m_utils.con_join(res_fmls), m);*/
+        if (DEBUG_ABDUCE)
+            std::cout << "Simple EXIST abduction result: " << mk_ismt2_pp(result, m, 3) << std::endl;
+        return result;
+    }
     expr_ref multi_abducer::simple_abduce(expr_ref premise, expr_ref conclusion, func_decl_ref_vector vars)
     {
         expr_ref implic(m.mk_implies(premise, conclusion), m);

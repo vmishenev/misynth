@@ -218,9 +218,9 @@ namespace misynth
 
     bool misynth_solver::solve(func_decl_ref_vector & synth_funs, expr_ref_vector & constraints,  obj_map<func_decl, args_t *> &synth_fun_args_decl)
     {
-        if (m_params.several_model_x())
+        if (m_params.simult_model_x())
         {
-            return solve_several_model_x(synth_funs, constraints, synth_fun_args_decl);
+            return solve_simult_model_x(synth_funs, constraints, synth_fun_args_decl);
         }
         // [+] INITIALIZE
         m_current_slv_for_coeff = 0;
@@ -389,11 +389,6 @@ namespace misynth
 
                         all_precs_for_ops.push_back(m_utils.con_join(precs_for_one_op));
 
-
-
-                        //slv_for_prec->push();
-                        //slv_for_prec->assert_expr(m.mk_not(called_prec));
-
                         if (DEBUG_MODE)
                         {
                             //std::cout << "add to solver called precondition: " << mk_ismt2_pp(slv_for_prec->get_assertion(slv_for_prec->get_num_assertions() - 1), m, 0) << std::endl;
@@ -409,97 +404,105 @@ namespace misynth
 
                     last_precond = 0;
                 }
-                if (++current_iter_model_x >= (m_params.attempts_per_one_model_x() + m_params.trivial_attempts_per_one_model_x()))
+                if (i != 0)
                 {
-                    current_iter_model_x = 0;
-                    current_iter_trivial_model_x = 0;
-                    if (attempt_number_current_assumption >= m_params.attempts_per_one_assumption())
+                    if (++current_iter_model_x >= (m_params.attempts_per_one_model_x() + m_params.trivial_attempts_per_one_model_x()))
                     {
-                        ++current_assumption_idx;
-                        attempt_number_current_assumption = 0;
-                    }
-                    if (current_assumption_idx < m_assumptions.size())
-                    {
-                        pushed_assumption = true;
-                        slv_for_prec->push();
-                        slv_for_prec->assert_expr(m_assumptions.get(current_assumption_idx));
-                        std::cout << "pushed assumption " << mk_ismt2_pp(m_assumptions.get(current_assumption_idx), m, 0) << std::endl;
-
-                        ++attempt_number_current_assumption;
-                    }
-
-                    lbool r = slv_for_prec->check_sat();
-                    if (pushed_assumption)
-                    {
-                        slv_for_prec->pop(1); //remove assumption
-                        pushed_assumption = false;
-                    }
-                    if (r != lbool::l_true)//without assumption
-                    {
-                        current_assumption_idx++;
-                        r = slv_for_prec->check_sat();
-                    }
-
-
-
-
-                    if (r == lbool::l_true)
-                    {
-
-                        slv_for_prec->get_model(mdl_for_x);
-                        std::cout << "SAT Precond!! "  << std::endl;
-
-                        if (prove_unrealizability_with_mdl(spec, mdl_for_x))
+                        current_iter_model_x = 0;
+                        current_iter_trivial_model_x = 0;
+                        if (attempt_number_current_assumption >= m_params.attempts_per_one_assumption())
                         {
-                            return false;
+                            ++current_assumption_idx;
+                            attempt_number_current_assumption = 0;
+                        }
+                        if (current_assumption_idx < m_assumptions.size())
+                        {
+                            pushed_assumption = true;
+                            slv_for_prec->push();
+                            slv_for_prec->assert_expr(m_assumptions.get(current_assumption_idx));
+                            std::cout << "pushed assumption " << mk_ismt2_pp(m_assumptions.get(current_assumption_idx), m, 0) << std::endl;
+
+                            ++attempt_number_current_assumption;
                         }
 
-                        //push to blacklist
-                        //slv_for_prec->push();
-                        //slv_for_prec->assert_expr(m.mk_not(m_utils.get_logic_model_with_default_value(mdl_for_x, m_used_vars)));
-
-                        // slv->pop(1);
-                        /*std::cout << "SAT Precond!! " << *mdl << std::endl;
-
-                        for (func_decl *fd : m_used_vars)
+                        lbool r = slv_for_prec->check_sat();
+                        if (pushed_assumption)
                         {
-                            expr_ref e( to_expr(m.mk_const(fd)), m) ;
-                            std::cout << fd->get_name() << " " <<  mk_ismt2_pp((*mdl)(e), m, 3) << std::endl;
-                        }*/
+                            slv_for_prec->pop(1); //remove assumption
+                            pushed_assumption = false;
+                        }
+                        if (r != lbool::l_true)//without assumption
+                        {
+                            current_assumption_idx++;
+                            r = slv_for_prec->check_sat();
+                        }
+
+
+
+
+                        if (r == lbool::l_true)
+                        {
+
+                            slv_for_prec->get_model(mdl_for_x);
+                            std::cout << "SAT Precond!! "  << std::endl;
+
+                            if (prove_unrealizability_with_mdl(spec, mdl_for_x))
+                            {
+                                return false;
+                            }
+
+                            //push to blacklist
+                            //slv_for_prec->push();
+                            //slv_for_prec->assert_expr(m.mk_not(m_utils.get_logic_model_with_default_value(mdl_for_x, m_used_vars)));
+
+                            // slv->pop(1);
+                            /*std::cout << "SAT Precond!! " << *mdl << std::endl;
+
+                            for (func_decl *fd : m_used_vars)
+                            {
+                                expr_ref e( to_expr(m.mk_const(fd)), m) ;
+                                std::cout << fd->get_name() << " " <<  mk_ismt2_pp((*mdl)(e), m, 3) << std::endl;
+                            }*/
+                        }
+                        else
+                        {
+                            std::cout << "!!! UNSAT of precs with replaced operands"  << std::endl;
+
+                            break;
+
+                            //unused
+                            if (try_find_simultaneously_branches(synth_funs, constraints, 0, true))
+                                return true;
+                            continue;
+
+
+                        }
+
+
+                        spec_for_concrete_x = m_utils.replace_vars_according_to_model(spec, mdl_for_x, m_used_vars, true);
                     }
-                    else
+                    else// simply check sat of prec
                     {
-                        std::cout << "!!! UNSAT of precs with replaced operands"  << std::endl;
+                        lbool r = slv_for_prec->check_sat();
+                        if (r == lbool::l_false)
+                        {
+                            std::cout << "!!! UNSAT of precs with replaced operands"  << std::endl;
+                            std::cout << "ERROR!!!! TODO: simply check sat of prec" << r << std::endl;
 
-                        break;
+                            break;
 
-                        //unused
-                        if (try_find_simultaneously_branches(synth_funs, constraints, 0, true))
-                            return true;
-                        continue;
+                            //unused
+                            if (try_find_simultaneously_branches(synth_funs, constraints, 0, true))
+                                return true;
+                            continue;
 
+                        }
 
                     }
-
-
-                    spec_for_concrete_x = m_utils.replace_vars_according_to_model(spec, mdl_for_x, m_used_vars, true);
                 }
-                else// simply check sat of prec
+                else
                 {
-                    lbool r = slv_for_prec->check_sat();
-                    if (r == lbool::l_false)
-                    {
-                        std::cout << "!!! UNSAT of precs with replaced operands"  << std::endl;
-                        std::cout << "ERROR!!!! TODO: simply check sat of prec" << r << std::endl;
-
-                        break;
-
-                        //unused
-                        if (try_find_simultaneously_branches(synth_funs, constraints, 0, true))
-                            return true;
-                        continue;
-
-                    }
+                    spec_for_concrete_x = m_utils.replace_vars_according_to_model(spec, mdl_for_mbp, m_used_vars, true);
 
                 }
                 if (DEBUG_MODE)
@@ -627,7 +630,7 @@ namespace misynth
 
 
 
-    bool misynth_solver::solve_several_model_x(func_decl_ref_vector & synth_funs, expr_ref_vector & constraints,  obj_map<func_decl, args_t *> &synth_fun_args_decl)
+    bool misynth_solver::solve_simult_model_x(func_decl_ref_vector & synth_funs, expr_ref_vector & constraints,  obj_map<func_decl, args_t *> &synth_fun_args_decl)
     {
         // [+] INITIALIZE
         m_current_slv_for_coeff = 0;
@@ -854,7 +857,7 @@ namespace misynth
                     {
 
 
-                        for (int i = 0; i < m_params.several_model_x(); ++i)
+                        for (int i = 0; i < m_params.simult_model_x(); ++i)
                         {
                             if (i > 0)
                             {

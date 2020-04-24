@@ -47,7 +47,7 @@ namespace misynth
              * simple abduction problem R(x) ∧ χ ⇒ C
              * QE (∀x. χ ⇒ C)
              * */
-
+            expr_ref simple_abduce_exist(expr_ref premise, expr_ref conclusion, func_decl_ref_vector vars);
             expr_ref simple_abduce(expr_ref premise, expr_ref conclusion, func_decl_ref_vector vars);
             expr_ref simple_abduce_mbp(expr_ref premise, expr_ref conclusion, func_decl_ref_vector vars);
 
