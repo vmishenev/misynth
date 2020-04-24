@@ -61,14 +61,18 @@ namespace misynth
             unsigned int m_current_slv_for_coeff;
             ite_function fn;
         public:
+
             misynth_solver(cmd_context &cmd_ctx, ast_manager &m, solver *solver);
 
             model_ref get_coeff_model_from_slv(ref<solver> &slv, expr_ref spec_for_concrete_x, expr_ref heuristic);
+            void init_coeff_solver(func_decl_ref_vector & synth_funs);
             model_ref get_coeff_model(expr_ref spec_for_concrete_x, expr_ref heuristic);
             expr_ref generate_heuristic_constaraint_coeff(expr_ref spec, func_decl_ref_vector &coeff_decls);
             expr_ref generate_clia_fun_body(expr_ref_vector &precs, expr_ref_vector &branches, bool is_compact = false);
             bool try_find_simultaneously_branches(func_decl_ref_vector &synth_funs, expr_ref_vector &constraints, model_ref mdl, bool is_infinity_loop = false);
             void print_def_fun(std::ostream &out, func_decl * f, func_decl_ref_vector &args, expr_ref body);
+
+
 
             result_incremental_abd incremental_multiabduction(func_decl_ref_vector & synth_funs, expr_ref & simplified_spec, expr_ref & new_branch, expr_ref &result);
             expr_ref solve_abduction_for_comb(vector<unsigned int> &comb, func_decl_ref_vector & synth_funs, expr_ref & spec, app_ref_vector &invocations, expr_ref & new_branch);

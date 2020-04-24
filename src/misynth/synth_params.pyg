@@ -15,5 +15,6 @@ def_module_params(module_name='misynth',
                           ('clear_run_alg2', BOOL, True, 'clear run alg2'),
                           ('mbp_abduce', BOOL, False, 'mbp_abduce'),
                           ('debug_abduce', BOOL, False, 'debug_abducey'),
-                          ('debug_abduction', BOOL, False, 'debug_abduction')))
+                          ('debug_abduction', BOOL, False, 'debug_abduction'),
+                          ('mbp', BOOL, True, 'mbp')))
 

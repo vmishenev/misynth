@@ -158,7 +158,16 @@ namespace misynth
 
     }
 
+    void misynth_solver::init_coeff_solver(func_decl_ref_vector & synth_funs)
+    {
+        params_ref params;
+        m_slv_for_coeff = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
 
+        for (unsigned int i = 0; i < synth_funs.get(0)->get_arity() + 1; ++i)
+        {
+            m_slv_for_coeff_vec.push_back(m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null));
+        }
+    }
 
     void misynth_solver::generate_coeff_decl(func_decl_ref_vector & synth_funs)
     {
@@ -214,12 +223,7 @@ namespace misynth
         params_ref params;
         expr_ref spec = m_utils.con_join(constraints);
 
-        m_slv_for_coeff = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
 
-        for (unsigned int i = 0; i < synth_funs.get(0)->get_arity() + 1; ++i)
-        {
-            m_slv_for_coeff_vec.push_back(m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null));
-        }
 
         // [-] INITIALIZE
 
@@ -315,7 +319,10 @@ namespace misynth
             lbool r = slv_for_mbp->check_sat();
             if (r != lbool::l_true)
             {
-                std::cerr << "UNREACHABLE STATE!!! Disj of mbp is valid" << std::endl;;
+                std::cout << "@@@@@@@ UNREACHABLE STATE!!! Disj of mbp is valid" << std::endl;;
+
+                if (try_find_simultaneously_branches(synth_funs, constraints, 0, true))
+                    return true;
                 return false;
 
             }
@@ -328,17 +335,28 @@ namespace misynth
             qe::mbp mbp(m);
             mbp(true,  fresh_vars_app, *mdl_for_mbp, res_v);
             expr_ref result_mbp = m_utils.con_join(res_v);
-            //std::cout << "RESULT mdl_for_mbp: " << *mdl_for_mbp << std::endl;
+            std::cout << "RESULT mdl_for_mbp: " << *mdl_for_mbp << std::endl;
             std::cout << "RESULT MBP: " << mk_ismt2_pp(result_mbp, m, 0) << std::endl;
 
             slv_for_mbp->push();
             slv_for_mbp->assert_expr(m.mk_not(result_mbp));
 
             slv_for_prec->pop(slv_for_prec->get_num_assertions());
-            slv_for_prec->push();
-            slv_for_prec->assert_expr(result_mbp);
+            if (m_params.mbp())
+            {
+                slv_for_prec->push();
+                slv_for_prec->assert_expr(result_mbp);
+            }
+            else
+            {
+                slv_for_mbp->assert_expr(m.mk_false());//for unsat of slv_for_mbp
+
+            }
             slv_for_prec->push();
             slv_for_prec->assert_expr(m.mk_true());
+
+            //reset coeff solver (blacklist model)
+            init_coeff_solver(synth_funs);
 
             //[-]mbp
             //disj of prec => mbp
@@ -448,13 +466,15 @@ namespace misynth
                     else
                     {
                         std::cout << "!!! UNSAT of precs with replaced operands"  << std::endl;
-                        //model_ref mdl = m_utils.get_model(spec_with_coeff);
+
+                        break;
+
+                        //unused
                         if (try_find_simultaneously_branches(synth_funs, constraints, 0, true))
                             return true;
                         continue;
 
-                        // completed_solving(synth_funs, constraints);
-                        //return true;
+
                     }
 
 
@@ -467,9 +487,10 @@ namespace misynth
                     {
                         std::cout << "!!! UNSAT of precs with replaced operands"  << std::endl;
                         std::cout << "ERROR!!!! TODO: simply check sat of prec" << r << std::endl;
-                        //completed_solving(synth_funs, constraints);
 
-                        //model_ref mdl = m_utils.get_model(spec_with_coeff);
+                        break;
+
+                        //unused
                         if (try_find_simultaneously_branches(synth_funs, constraints, 0, true))
                             return true;
                         continue;
