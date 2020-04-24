@@ -142,6 +142,7 @@ namespace misynth
                 }
 
                 misynth_solver tool(m_cmd, m, m_solver.get());
+
                 tool.solve(m_synth_fun_list, m_constraints_list, m_synth_fun_args_decl);
                 return false;
             }

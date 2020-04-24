@@ -84,7 +84,7 @@ namespace misynth
 
 
             bool solve(func_decl_ref_vector &synth_funs, expr_ref_vector &constraints,  obj_map<func_decl, args_t *> &synth_fun_args_decl);
-
+            bool solve_simult_model_x(func_decl_ref_vector &synth_funs, expr_ref_vector &constraints,  obj_map<func_decl, args_t *> &synth_fun_args_decl);
             void generate_coeff_decl(func_decl_ref_vector &synth_funs);
             //void rewriter_functions_to_linear_term(func_decl_ref_vector &synth_funs,
             //                                       expr_ref spec, expr_ref &new_spec);

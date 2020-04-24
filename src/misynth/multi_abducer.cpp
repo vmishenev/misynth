@@ -141,7 +141,7 @@ namespace misynth
                 all_vars.append(aa);
             }
 
-
+        //expr_ref flat_conclusion(m.mk_implies(flat_premise, conclusion), m);
         expr_ref flat_conclusion(m.mk_implies(flat_premise, conclusion), m);
         if (DEBUG_ABDUCE)
             std::cout << "Abduction flat_conclusion formula: " << mk_ismt2_pp(flat_conclusion, m, 3) << std::endl;
