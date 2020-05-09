@@ -328,12 +328,12 @@ namespace misynth
         {
             all_vars.append(a);
         }
-        expr_ref flat_conclusion(m.mk_implies(flat_premise, conclusion), m);
+        expr_ref flat_conclusion(m.mk_and(flat_premise, conclusion), m);
         //expr_ref flat_conclusion(m.mk_and(flat_premise, conclusion), m);
         if (DEBUG_ABDUCE)
             std::cout << "Abduction flat_conclusion formula: " << mk_ismt2_pp(flat_conclusion, m, 3) << std::endl;
 
-        expr_ref abduce_conclusion = simple_abduce(premise, flat_conclusion, all_vars);
+        expr_ref abduce_conclusion = simple_abduce_exist(premise, flat_conclusion, all_vars);
         abduce_conclusion = m_utils.simplify_context(abduce_conclusion);
         if (DEBUG_ABDUCE)
             std::cout << "Abduced flat_conclusion formula: " << mk_ismt2_pp(abduce_conclusion, m, 3) << std::endl;

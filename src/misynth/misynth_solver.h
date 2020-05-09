@@ -80,16 +80,16 @@ namespace misynth
             result_incremental_abd check_all_abductions(func_decl_ref_vector & synth_funs, expr_ref & spec, app_ref_vector &invocations, expr_ref & new_prec, expr_ref & new_branch);
             result_incremental_abd check_abduction_for_comb(vector<unsigned int> &comb, func_decl_ref_vector & synth_funs, expr_ref & spec, app_ref_vector &invocations, expr_ref & new_prec, expr_ref & new_branch);
 
-            //void print_sorted_var_list(std::ostream &out,  func_decl_ref_vector & sorted_var);
-
-
             bool solve(func_decl_ref_vector &synth_funs, expr_ref_vector &constraints,  obj_map<func_decl, args_t *> &synth_fun_args_decl);
+
+            //for test
+            bool solve2(func_decl_ref_vector &synth_funs, expr_ref_vector &constraints,  obj_map<func_decl, args_t *> &synth_fun_args_decl);
+
             bool solve_simult_model_x(func_decl_ref_vector &synth_funs, expr_ref_vector &constraints,  obj_map<func_decl, args_t *> &synth_fun_args_decl);
             void generate_coeff_decl(func_decl_ref_vector &synth_funs);
             //void rewriter_functions_to_linear_term(func_decl_ref_vector &synth_funs,
             //                                       expr_ref spec, expr_ref &new_spec);
 
-            //void rewrite_expr(expr *f, expr_ref &res, app2expr_map& subst);
 
             void init_used_variables(func_decl_ref_vector &synth_funs, expr_ref spec);
             bool find_precondition(func_decl_ref_vector &synth_funs,  expr_ref &spec, model_ref mdl_for_coeff, expr_ref &result);
@@ -100,6 +100,7 @@ namespace misynth
             /* [+] Unrealizability Algorithm*/
 
             bool prove_unrealizability_with_mdl(expr_ref spec, model_ref & mdl);
+            bool prove_unrealizability_simple(expr_ref spec);
             bool prove_unrealizability(expr_ref spec);
 
             bool check_assumptions(expr_ref spec, expr_ref_vector &assumptions);

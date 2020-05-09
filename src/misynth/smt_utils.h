@@ -338,6 +338,7 @@ namespace misynth
             return expr_ref(con_join(res_fmls), m);
         }
 
+
         expr_ref simplify_context_cond(expr_ref e, expr_ref condition, unsigned int max_repeat = UINT_MAX)
         {
             tactic_ref simplify_tct = mk_ctx_solver_simplify_tactic(m);
@@ -393,6 +394,14 @@ namespace misynth
         expr_ref get_non_deter_const()
         {
             return expr_ref(m.mk_const("non_det", m_arith.mk_int()), m);//rvo
+        }
+        void print_slv(std::ostream &out, ref<solver> &slv)
+        {
+            for (int i = 0; i < slv->get_num_assertions(); ++i)
+            {
+                std::cout << "Assert: " << mk_ismt2_pp(slv->get_assertion(i), m, 0) << std::endl;
+
+            }
         }
     }; // smt_utils
 } // misynth
