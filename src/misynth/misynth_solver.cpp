@@ -14,6 +14,7 @@
 #include "misynth/function_utils.h"
 #include "misynth/collector_constants.h"
 #include "misynth/combinators.h"
+#include "misynth/collector_literals.h"
 
 #include "model/model2expr.h"
 
@@ -221,322 +222,302 @@ namespace misynth
 
     bool misynth_solver::solve2(func_decl_ref_vector & synth_funs, expr_ref_vector & constraints,  obj_map<func_decl, args_t *> &synth_fun_args_decl)
     {
-        // [+] INITIALIZE
-        m_current_slv_for_coeff = 0;
-        params_ref params;
-        expr_ref spec = m_utils.con_join(constraints);
+        /*
+                // [+] INITIALIZE
+                m_current_slv_for_coeff = 0;
+                params_ref params;
+                expr_ref spec = m_utils.con_join(constraints);
 
-        m_slv_for_coeff = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
+                m_slv_for_coeff = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
 
-        for (unsigned int i = 0; i < synth_funs.get(0)->get_arity() + 1; ++i)
-        {
-            m_slv_for_coeff_vec.push_back(m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null));
-        }
-
-        // [-] INITIALIZE
-
-
-        m_synth_fun_args_decl = synth_fun_args_decl; // COPY
-        collect_invocation_operands(spec, synth_funs, m_ops);
-
-        //std::cout << "m_ops size: " << m_ops.size() << std::endl;
-        if (prove_unrealizability(spec))
-        {
-            std::cout << "Unrealizability!!! Specification is unsat \n. " << std::endl;
-            return false;
-        }
-
-        init_used_variables(synth_funs, spec);
-
-        generate_coeff_decl(synth_funs);
-        /*expr_ref spec_with_coeff(m);
-        invocations_rewriter inv_rwr(m_cmd, m);
-        inv_rwr.rewriter_functions_to_linear_term(m_coeff_decl_vec, synth_funs, spec, spec_with_coeff);
-        if (VERBOSE)
-        {
-            std::cout << "spec_with_coeff: " << mk_ismt2_pp(spec_with_coeff, m, 3) << std::endl;
-        }*/
-
-
-        //params_ref params;
-        ref<solver> slv_for_prec = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
-        ref<solver> slv_for_coeff = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
-
-        m_slv_for_prec_completing_cond = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
-
-        expr_ref last_precond(0, m);
-
-        //func_decl *fd  = m.mk_const_decl("x", m_arith.mk_int());
-        //precond = m_arith.mk_lt(m.mk_const(fd), m_arith.mk_int(0));
-
-        //precond = spec_with_coeff;
-        args_t *args_decl = get_args_decl_for_synth_fun(synth_funs.get(0));
-
-
-        const unsigned int MAX_ITERATION = UINT_MAX;
-
-        unsigned int current_assumption_idx = 0;
-        unsigned int attempt_number_current_assumption = 0;
-        bool pushed_assumption = false;
-
-
-        bool is_added_heuristic = false;
-
-        unsigned int  current_iter_model_x = UINT_MAX - 1;
-        unsigned int  current_iter_trivial_model_x = 0;
-
-        expr_ref spec_for_concrete_x(m);
-        model_ref mdl_for_x;
-
-        expr_ref  heuristic_constaraint_coeff(generate_heuristic_constaraint_coeff(spec, m_coeff_decl_vec));
-
-        std::cout << "generated heuristic: " << mk_ismt2_pp(heuristic_constaraint_coeff, m, 0) << std::endl;
-
-        args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
-
-
-
-        expr_ref_vector all_precs_for_ops(m);
-        slv_for_prec->push();
-        slv_for_prec->assert_expr(m.mk_true());
-
-        for (unsigned int i = 0; i < MAX_ITERATION ; ++i)
-        {
-            iters_main_alg++;
-            if (DEBUG_MODE)
-                std::cout << "====  Itreration #" << i << "  ====" << std::endl;
-
-            if (last_precond.get()) // non first iteration
-            {
-
-                all_precs_for_ops.reset();
-                for (unsigned int i = 0; i < m_ops.size(); ++i)
+                for (unsigned int i = 0; i < synth_funs.get(0)->get_arity() + 1; ++i)
                 {
-                    expr_ref_vector precs_for_one_op(m);
-                    invocation_operands &op = m_ops.get(i);
-                    for (unsigned int j = 0; j < fn.get_precs().size(); ++j)
+                    m_slv_for_coeff_vec.push_back(m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null));
+                }
+
+                // [-] INITIALIZE
+
+
+                m_synth_fun_args_decl = synth_fun_args_decl; // COPY
+                collect_invocation_operands(spec, synth_funs, m_ops);
+
+                //std::cout << "m_ops size: " << m_ops.size() << std::endl;
+                if (prove_unrealizability(spec))
+                {
+                    std::cout << "Unrealizability!!! Specification is unsat \n. " << std::endl;
+                    return false;
+                }
+
+                init_used_variables(synth_funs, spec);
+
+                generate_coeff_decl(synth_funs);
+
+
+                //params_ref params;
+                ref<solver> slv_for_prec = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
+                ref<solver> slv_for_coeff = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
+
+                m_slv_for_prec_completing_cond = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
+
+                expr_ref last_precond(0, m);
+
+                //func_decl *fd  = m.mk_const_decl("x", m_arith.mk_int());
+                //precond = m_arith.mk_lt(m.mk_const(fd), m_arith.mk_int(0));
+
+                //precond = spec_with_coeff;
+                args_t *args_decl = get_args_decl_for_synth_fun(synth_funs.get(0));
+
+
+                const unsigned int MAX_ITERATION = UINT_MAX;
+
+                unsigned int current_assumption_idx = 0;
+                unsigned int attempt_number_current_assumption = 0;
+                bool pushed_assumption = false;
+
+
+                bool is_added_heuristic = false;
+
+                unsigned int  current_iter_model_x = UINT_MAX - 1;
+                unsigned int  current_iter_trivial_model_x = 0;
+
+                expr_ref spec_for_concrete_x(m);
+                model_ref mdl_for_x;
+
+                expr_ref  heuristic_constaraint_coeff(generate_heuristic_constaraint_coeff(spec, m_coeff_decl_vec));
+
+                std::cout << "generated heuristic: " << mk_ismt2_pp(heuristic_constaraint_coeff, m, 0) << std::endl;
+
+                args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
+
+
+
+                expr_ref_vector all_precs_for_ops(m);
+                slv_for_prec->push();
+                slv_for_prec->assert_expr(m.mk_true());
+
+                for (unsigned int i = 0; i < MAX_ITERATION ; ++i)
+                {
+                    iters_main_alg++;
+                    if (DEBUG_MODE)
+                        std::cout << "====  Itreration #" << i << "  ====" << std::endl;
+
+                    if (last_precond.get()) // non first iteration
                     {
-                        expr_ref called_prec = m_utils.replace_vars_decl(fn.get_precs().get(j), *args_decl, op);
-                        precs_for_one_op.push_back(m.mk_not(called_prec));
+
+                        all_precs_for_ops.reset();
+                        for (unsigned int i = 0; i < m_ops.size(); ++i)
+                        {
+                            expr_ref_vector precs_for_one_op(m);
+                            invocation_operands &op = m_ops.get(i);
+                            for (unsigned int j = 0; j < fn.get_precs().size(); ++j)
+                            {
+                                expr_ref called_prec = m_utils.replace_vars_decl(fn.get_precs().get(j), *args_decl, op);
+                                precs_for_one_op.push_back(m.mk_not(called_prec));
+
+                            }
+
+                            all_precs_for_ops.push_back(m_utils.con_join(precs_for_one_op));
+
+                            if (DEBUG_MODE)
+                            {
+                                //std::cout << "add to solver called precondition: " << mk_ismt2_pp(slv_for_prec->get_assertion(slv_for_prec->get_num_assertions() - 1), m, 0) << std::endl;
+                            }
+                        }
+
+
+
+                        slv_for_prec->pop(1);// pop previos precs
+                        slv_for_prec->push();
+                        slv_for_prec->assert_expr(m_utils.dis_join(all_precs_for_ops));
+                        std::cout << "Current precs: " << mk_ismt2_pp(slv_for_prec->get_assertion(slv_for_prec->get_num_assertions() - 1), m, 0) << std::endl;
+
+                        last_precond = 0;
+                    }
+                    if (current_iter_model_x++ >= (m_params.attempts_per_one_model_x() + m_params.trivial_attempts_per_one_model_x()))
+                    {
+                        current_iter_model_x = 0;
+                        current_iter_trivial_model_x = 0;
+                        if (attempt_number_current_assumption >= m_params.attempts_per_one_assumption())
+                        {
+                            ++current_assumption_idx;
+                            attempt_number_current_assumption = 0;
+                        }
+                        if (current_assumption_idx < m_assumptions.size())
+                        {
+                            pushed_assumption = true;
+                            slv_for_prec->push();
+                            slv_for_prec->assert_expr(m_assumptions.get(current_assumption_idx));
+                            std::cout << "pushed assumption " << mk_ismt2_pp(m_assumptions.get(current_assumption_idx), m, 0) << std::endl;
+
+                            ++attempt_number_current_assumption;
+                        }
+
+                        lbool r = slv_for_prec->check_sat();
+                        if (pushed_assumption)
+                        {
+                            slv_for_prec->pop(1); //remove assumption
+                            pushed_assumption = false;
+                        }
+                        if (r != lbool::l_true)//without assumption
+                        {
+                            current_assumption_idx++;
+                            r = slv_for_prec->check_sat();
+                        }
+
+
+
+
+                        if (r == lbool::l_true)
+                        {
+
+                            slv_for_prec->get_model(mdl_for_x);
+                            std::cout << "SAT Precond!! "  << std::endl;
+
+                            if (prove_unrealizability_with_mdl(spec, mdl_for_x))
+                            {
+                                return false;
+                            }
+                        }
+                        else
+                        {
+                            std::cout << "!!! UNSAT of precs with replaced operands"  << std::endl;
+                            //model_ref mdl = m_utils.get_model(spec_with_coeff);
+                            if (try_find_simultaneously_branches(synth_funs, constraints, 0, true))
+                                return true;
+                            continue;
+
+                            // completed_solving(synth_funs, constraints);
+                            //return true;
+                        }
+
+
+                        spec_for_concrete_x = m_utils.replace_vars_according_to_model(spec, mdl_for_x, m_used_vars, true);
+                    }
+                    else// simply check sat of prec
+                    {
+                        lbool r = slv_for_prec->check_sat();
+                        if (r == lbool::l_false)
+                        {
+                            std::cout << "!!! UNSAT of precs with replaced operands"  << std::endl;
+                            std::cout << "ERROR!!!! TODO: simply check sat of prec" << r << std::endl;
+                            //completed_solving(synth_funs, constraints);
+
+                            //model_ref mdl = m_utils.get_model(spec_with_coeff);
+                            if (try_find_simultaneously_branches(synth_funs, constraints, 0, true))
+                                return true;
+                            continue;
+
+                        }
 
                     }
+                    if (DEBUG_MODE)
+                    {
+                        //std::cout << "spec_with_coeff " << mk_ismt2_pp(spec_with_coeff, m, 3) << std::endl;
+                        std::cout << "spec_for_concrete_x " << mk_ismt2_pp(spec_for_concrete_x, m, 3) << std::endl;
+                    }
 
-                    all_precs_for_ops.push_back(m_utils.con_join(precs_for_one_op));
+
+
+                    // [+] getting model for coefficients
+
+                    if (current_iter_trivial_model_x++ < m_params.trivial_attempts_per_one_model_x())
+                    {
+                        std::cout << "pushed heuristic constaraint for coeff" << std::endl;
+                        is_added_heuristic = true;
+                    }
+
+                    ++current_iter_trivial_model_x;
+
+
+
+                    //
+
+                    expr_ref spec_with_coeff_and_x(m);
+                    invocations_rewriter inv_rwr(m_cmd, m);
+                    if (m_params.reused_brances())
+                    {
+                        inv_rwr.rewriter_functions_to_linear_term_with_prec(m_coeff_decl_vec, synth_funs, spec_for_concrete_x, spec_with_coeff_and_x, *synth_fun_args, fn.get_precs(), fn.get_branches());
+                    }
+                    else
+                    {
+                        inv_rwr.rewriter_functions_to_linear_term(m_coeff_decl_vec, synth_funs, spec_for_concrete_x, spec_with_coeff_and_x);
+                    }
+
 
                     if (DEBUG_MODE)
                     {
-                        //std::cout << "add to solver called precondition: " << mk_ismt2_pp(slv_for_prec->get_assertion(slv_for_prec->get_num_assertions() - 1), m, 0) << std::endl;
+                        std::cout << "spec_with_coeff " << mk_ismt2_pp(spec_with_coeff_and_x, m) << std::endl;
+                        //std::cout << "spec_for_concrete_x " << mk_ismt2_pp(spec_for_concrete_x, m, 3) << std::endl;
                     }
-                }
+                    //
+                    model_ref mdl_for_coeff = get_coeff_model(spec_with_coeff_and_x, is_added_heuristic ? heuristic_constaraint_coeff : expr_ref(m));
+                    is_added_heuristic = false;
 
-
-
-                slv_for_prec->pop(1);// pop previos precs
-                slv_for_prec->push();
-                slv_for_prec->assert_expr(m_utils.dis_join(all_precs_for_ops));
-                std::cout << "Current precs: " << mk_ismt2_pp(slv_for_prec->get_assertion(slv_for_prec->get_num_assertions() - 1), m, 0) << std::endl;
-
-                last_precond = 0;
-            }
-            if (current_iter_model_x++ >= (m_params.attempts_per_one_model_x() + m_params.trivial_attempts_per_one_model_x()))
-            {
-                current_iter_model_x = 0;
-                current_iter_trivial_model_x = 0;
-                if (attempt_number_current_assumption >= m_params.attempts_per_one_assumption())
-                {
-                    ++current_assumption_idx;
-                    attempt_number_current_assumption = 0;
-                }
-                if (current_assumption_idx < m_assumptions.size())
-                {
-                    pushed_assumption = true;
-                    slv_for_prec->push();
-                    slv_for_prec->assert_expr(m_assumptions.get(current_assumption_idx));
-                    std::cout << "pushed assumption " << mk_ismt2_pp(m_assumptions.get(current_assumption_idx), m, 0) << std::endl;
-
-                    ++attempt_number_current_assumption;
-                }
-
-                lbool r = slv_for_prec->check_sat();
-                if (pushed_assumption)
-                {
-                    slv_for_prec->pop(1); //remove assumption
-                    pushed_assumption = false;
-                }
-                if (r != lbool::l_true)//without assumption
-                {
-                    current_assumption_idx++;
-                    r = slv_for_prec->check_sat();
-                }
-
-
-
-
-                if (r == lbool::l_true)
-                {
-
-                    slv_for_prec->get_model(mdl_for_x);
-                    std::cout << "SAT Precond!! "  << std::endl;
-
-                    if (prove_unrealizability_with_mdl(spec, mdl_for_x))
+                    if (!mdl_for_coeff)
                     {
-                        return false;
+                        std::cout << "WARNING!!! There are several branches. " << std::endl;
+
+                        if (try_find_simultaneously_branches(synth_funs, constraints, mdl_for_x))
+                            return true;
+
+                        // TODO:???
+
+                    }
+                    std::cout << "SAT res_spec_for_x!! " << *mdl_for_coeff << std::endl;
+                    //simplify spec for concrete coef
+
+                    expr_ref branch = m_futils.generate_branch(m_coeff_decl_vec, *synth_fun_args, synth_funs, mdl_for_coeff);
+
+
+
+                    //[+] Find a precondition
+                    bool prec_res = find_precondition(synth_funs, spec, mdl_for_coeff, last_precond);
+                    std::cout << " prec_res " << prec_res << std::endl;
+                    if (!prec_res)
+                    {
+                        if (try_find_simultaneously_branches(synth_funs, constraints, mdl_for_x, true))
+                            return true;
                     }
 
-                    //push to blacklist
-                    //slv_for_prec->push();
-                    //slv_for_prec->assert_expr(m.mk_not(m_utils.get_logic_model_with_default_value(mdl_for_x, m_used_vars)));
-
-                    // slv->pop(1);
-                    /*std::cout << "SAT Precond!! " << *mdl << std::endl;
-                    for (func_decl *fd : m_used_vars)
+                    if (m_utils.is_unsat(last_precond))
                     {
-                        expr_ref e( to_expr(m.mk_const(fd)), m) ;
-                        std::cout << fd->get_name() << " " <<  mk_ismt2_pp((*mdl)(e), m, 3) << std::endl;
-                    }*/
-                }
-                else
-                {
-                    std::cout << "!!! UNSAT of precs with replaced operands"  << std::endl;
-                    //model_ref mdl = m_utils.get_model(spec_with_coeff);
-                    if (try_find_simultaneously_branches(synth_funs, constraints, 0, true))
+                        last_precond = 0;
+                        std::cout << "!!! Precond is unsat" << std::endl;
+                        continue;
+                    }
+
+
+
+                    if (m_utils.is_unsat(m.mk_not(last_precond)))
+                        //if(m.is_true(last_precond))
+                    {
+                        fn.clear();
+                        fn.add_branch(m.mk_true(), branch);
+                        completed_solving(synth_funs, constraints);
                         return true;
-                    continue;
-
-                    // completed_solving(synth_funs, constraints);
-                    //return true;
-                }
+                    }
 
 
-                spec_for_concrete_x = m_utils.replace_vars_according_to_model(spec, mdl_for_x, m_used_vars, true);
-            }
-            else// simply check sat of prec
-            {
-                lbool r = slv_for_prec->check_sat();
-                if (r == lbool::l_false)
-                {
-                    std::cout << "!!! UNSAT of precs with replaced operands"  << std::endl;
-                    std::cout << "ERROR!!!! TODO: simply check sat of prec" << r << std::endl;
-                    //completed_solving(synth_funs, constraints);
+                    fn.add_branch(last_precond, branch);
 
-                    //model_ref mdl = m_utils.get_model(spec_with_coeff);
-                    if (try_find_simultaneously_branches(synth_funs, constraints, 0, true))
-                        return true;
-                    continue;
+                    //[-]
+                    if (DEBUG_MODE)
+                    {
+                        std::cout << "-------------------" << std::endl;
+                        std::cout << mk_ismt2_pp(last_precond, m, 0) << "  ==> " << mk_ismt2_pp(fn.get_branches().back(), m, 0) << std::endl;
+                    }
+                    //if (fn.is_completed())
+                    {
+                        if (try_find_simultaneously_branches(synth_funs, constraints, 0))
+                            return true;
+                    }
+                    std::cout << "-------------------" << std::endl;
+
 
                 }
 
-            }
-            if (DEBUG_MODE)
-            {
-                //std::cout << "spec_with_coeff " << mk_ismt2_pp(spec_with_coeff, m, 3) << std::endl;
-                std::cout << "spec_for_concrete_x " << mk_ismt2_pp(spec_for_concrete_x, m, 3) << std::endl;
-            }
-
-
-            /*
-             * [+] getting model for coefficients
-             * */
-            if (current_iter_trivial_model_x++ < m_params.trivial_attempts_per_one_model_x())
-            {
-                std::cout << "pushed heuristic constaraint for coeff" << std::endl;
-                is_added_heuristic = true;
-            }
-
-            ++current_iter_trivial_model_x;
-
-
-
-            //
-
-            expr_ref spec_with_coeff_and_x(m);
-            invocations_rewriter inv_rwr(m_cmd, m);
-            if (m_params.reused_brances())
-            {
-                inv_rwr.rewriter_functions_to_linear_term_with_prec(m_coeff_decl_vec, synth_funs, spec_for_concrete_x, spec_with_coeff_and_x, *synth_fun_args, fn.get_precs(), fn.get_branches());
-            }
-            else
-            {
-                inv_rwr.rewriter_functions_to_linear_term(m_coeff_decl_vec, synth_funs, spec_for_concrete_x, spec_with_coeff_and_x);
-            }
-
-
-            if (DEBUG_MODE)
-            {
-                std::cout << "spec_with_coeff " << mk_ismt2_pp(spec_with_coeff_and_x, m) << std::endl;
-                //std::cout << "spec_for_concrete_x " << mk_ismt2_pp(spec_for_concrete_x, m, 3) << std::endl;
-            }
-            //
-            model_ref mdl_for_coeff = get_coeff_model(spec_with_coeff_and_x, is_added_heuristic ? heuristic_constaraint_coeff : expr_ref(m));
-            is_added_heuristic = false;
-
-            if (!mdl_for_coeff)
-            {
-                std::cout << "WARNING!!! There are several branches. " << std::endl;
-
-                if (try_find_simultaneously_branches(synth_funs, constraints, mdl_for_x))
-                    return true;
-
-                // TODO:???
-
-            }
-            std::cout << "SAT res_spec_for_x!! " << *mdl_for_coeff << std::endl;
-            //simplify spec for concrete coef
-
-            expr_ref branch = m_futils.generate_branch(m_coeff_decl_vec, *synth_fun_args, synth_funs, mdl_for_coeff);
-
-            /*expr_ref additional_cond = generate_fun_macros(branch, synth_funs, *synth_fun_args);
-            expr_ref simplified_spec = m_utils.simplify_context_cond(spec, additional_cond);
-            std::cout << "simplified_spec for concrete coeff " << mk_ismt2_pp(simplified_spec, m, 3) << std::endl;*/
-
-
-            /*[+] Find a precondition*/
-            bool prec_res = find_precondition(synth_funs, spec, mdl_for_coeff, last_precond);
-            std::cout << " prec_res " << prec_res << std::endl;
-            if (!prec_res)
-            {
-                if (try_find_simultaneously_branches(synth_funs, constraints, mdl_for_x, true))
-                    return true;
-            }
-
-            if (m_utils.is_unsat(last_precond))
-            {
-                last_precond = 0;
-                std::cout << "!!! Precond is unsat" << std::endl;
-                continue;
-            }
-
-
-
-            if (m_utils.is_unsat(m.mk_not(last_precond)))
-                //if(m.is_true(last_precond))
-            {
-                fn.clear();
-                fn.add_branch(m.mk_true(), branch);
-                completed_solving(synth_funs, constraints);
-                return true;
-            }
-
-
-            fn.add_branch(last_precond, branch);
-
-            /*[-] */
-            if (DEBUG_MODE)
-            {
-                std::cout << "-------------------" << std::endl;
-                std::cout << mk_ismt2_pp(last_precond, m, 0) << "  ==> " << mk_ismt2_pp(fn.get_branches().back(), m, 0) << std::endl;
-            }
-            //if (fn.is_completed())
-            {
-                if (try_find_simultaneously_branches(synth_funs, constraints, 0))
-                    return true;
-            }
-            std::cout << "-------------------" << std::endl;
-
-
-        }
-
-        return false;
+                return false;
+                */
     }
 
     bool misynth_solver::solve(func_decl_ref_vector & synth_funs, expr_ref_vector & constraints,  obj_map<func_decl, args_t *> &synth_fun_args_decl)
@@ -555,6 +536,8 @@ namespace misynth
         // [-] INITIALIZE
 
 
+
+
         m_synth_fun_args_decl = synth_fun_args_decl; // COPY
         collect_invocation_operands(spec, synth_funs, m_ops);
         if (prove_unrealizability(spec))
@@ -565,6 +548,19 @@ namespace misynth
 
         init_used_variables(synth_funs, spec);
         generate_coeff_decl(synth_funs);
+
+        std::vector<model_ref> models_vec;
+        collect_coeff_from_lits(m_cmd, m, m_arith, m_utils,
+                                spec, synth_funs, m_coeff_decl_vec, m_used_vars, models_vec);
+        expr_ref_vector mdls(m);
+        for (model_ref& mdl : models_vec)
+        {
+            mdls.push_back(m_utils.get_logic_model_with_default_value(mdl, m_coeff_decl_vec));
+        }
+        expr_ref heuristic_concrete_coef_from_literals = m_utils.dis_join(mdls);
+        std::cout << "heuristic_concrete_coef_from_literals: " << mk_ismt2_pp(heuristic_concrete_coef_from_literals, m, 0) << std::endl;
+
+
         args_t *args_decl = get_args_decl_for_synth_fun(synth_funs.get(0));
 
         //params_ref params;
@@ -598,11 +594,12 @@ namespace misynth
         invocations_rewriter inv_rwr(m_cmd, m);
         app2expr_map map;
         func_decl_ref_vector fresh_vars(m);
+        expr_ref_vector inv_replaced(m);
         app_ref_vector fresh_vars_app(m);
 
 
         expr_ref spec_with_inv_vars(m);
-        inv_rwr.rewriter_fun_inv_to_var(spec, synth_funs, map, fresh_vars, spec_with_inv_vars);
+        inv_rwr.rewriter_fun_inv_to_var(spec, synth_funs, map, fresh_vars, inv_replaced, spec_with_inv_vars);
 
         for (func_decl * fd : fresh_vars)
             fresh_vars_app.push_back(m.mk_const(fd));
@@ -674,7 +671,7 @@ namespace misynth
             init_coeff_solver(synth_funs);
 
             //[-]mbp
-
+            bool is_add_literals_heuristic = true;
             for (unsigned int i = 0; i < MAX_ITERATION ; ++i)
             {
                 iters_main_alg++;
@@ -843,9 +840,23 @@ namespace misynth
                 }
 
 
+                //model_ref mdl_for_coeff = get_coeff_model(spec_with_coeff_and_x, is_added_heuristic ? heuristic_constaraint_coeff : expr_ref(m));
 
+                model_ref mdl_for_coeff;
+                if (is_add_literals_heuristic)
+                {
 
-                model_ref mdl_for_coeff = get_coeff_model(spec_with_coeff_and_x, is_added_heuristic ? heuristic_constaraint_coeff : expr_ref(m));
+                    mdl_for_coeff = get_coeff_model(expr_ref(m.mk_and(spec_with_coeff_and_x, heuristic_concrete_coef_from_literals), m),  is_added_heuristic ? heuristic_constaraint_coeff : expr_ref(m));
+                    if (!mdl_for_coeff)
+                    {
+                        is_add_literals_heuristic = false;
+                        mdl_for_coeff = get_coeff_model(spec_with_coeff_and_x, is_added_heuristic ? heuristic_constaraint_coeff : expr_ref(m));
+                    }
+                }
+                else
+                {
+                    mdl_for_coeff = get_coeff_model(spec_with_coeff_and_x, is_added_heuristic ? heuristic_constaraint_coeff : expr_ref(m));
+                }
                 is_added_heuristic = false;
 
                 if (!mdl_for_coeff)
@@ -996,11 +1007,12 @@ namespace misynth
         invocations_rewriter inv_rwr(m_cmd, m);
         app2expr_map map;
         func_decl_ref_vector fresh_vars(m);
+        expr_ref_vector inv_replaced(m);
         app_ref_vector fresh_vars_app(m);
 
 
         expr_ref spec_with_inv_vars(m);
-        inv_rwr.rewriter_fun_inv_to_var(spec, synth_funs, map, fresh_vars, spec_with_inv_vars);
+        inv_rwr.rewriter_fun_inv_to_var(spec, synth_funs, map, fresh_vars, inv_replaced, spec_with_inv_vars);
 
         for (func_decl * fd : fresh_vars)
         {
@@ -1057,6 +1069,8 @@ namespace misynth
             {
                 slv_for_prec->push();
                 slv_for_prec->assert_expr(result_mbp);
+
+
             }
             else
             {
@@ -1064,6 +1078,8 @@ namespace misynth
                 slv_for_mbp->assert_expr(m.mk_false());//for unsat of slv_for_mbp
 
             }
+            current_iter_model_x = UINT_MAX - 1; // reset model X
+            current_iter_trivial_model_x = 0;
             slv_for_prec->push();
             slv_for_prec->assert_expr(m.mk_true());
 
@@ -1073,7 +1089,7 @@ namespace misynth
             //[-]mbp
             //disj of prec => mbp
             // disj prec /\ \not(mbp) = unsat
-
+            bool is_add_literals_heuristic = true;
             for (unsigned int i = 0; i < MAX_ITERATION ; ++i)
             {
                 iters_main_alg++;
@@ -1148,7 +1164,17 @@ namespace misynth
                         r = slv_for_prec->check_sat();
                     }
 
+                    expr_ref coeff_spec(spec, m);
+                    //
+                    if (m_params.mbp())
+                    {
 
+                        expr_ref lits = m_utils.pick_literals(spec_with_inv_vars, mdl_for_mbp);
+                        std::cout << "spec_with_inv_vars " << mk_ismt2_pp(spec_with_inv_vars, m, 0) << std::endl;
+                        coeff_spec = m_utils.replace_vars_decl(lits, fresh_vars, inv_replaced);
+                        std::cout << "pick_literals mdl x " << mk_ismt2_pp(coeff_spec, m, 0) << std::endl;
+
+                    }
 
                     expr_ref_vector spec_for_concrete_x_vec(m);
                     if (r == lbool::l_true)
@@ -1174,7 +1200,7 @@ namespace misynth
                             {
                                 return false;
                             }
-                            spec_for_concrete_x_vec.push_back(m_utils.replace_vars_according_to_model(spec, mdl_for_x, m_used_vars, true));
+                            spec_for_concrete_x_vec.push_back(m_utils.replace_vars_according_to_model(coeff_spec, mdl_for_x, m_used_vars, true));
                         }
                         m_utils.print_slv(std::cout, slv_for_prec);
                         //push to blacklist
@@ -1459,7 +1485,7 @@ namespace misynth
         return false;
     }
 
-
+    double all_time_simplify = 0;
     void misynth_solver::completed_solving(func_decl_ref_vector & synth_funs, expr_ref_vector & constraints)
     {
         std::cout << "###Complete "  << std::endl;
@@ -1479,6 +1505,7 @@ namespace misynth
         std::cout << "Sanity Checker Result: " << sanity_res << std::endl;
         std::cout << iters_main_alg << " " << max_iter_iso_mor << " " << fn.get_incompact_depth()  << std::endl;
         std::cout  << " alg3_run: " << alg3_run << std::endl;
+        std::cout  << " all_time_simplify: " << all_time_simplify << std::endl;
     }
 
     bool misynth_solver::find_precondition(func_decl_ref_vector & synth_funs, expr_ref & spec, model_ref mdl_for_coeff, expr_ref &res)
@@ -1495,8 +1522,10 @@ namespace misynth
 
         expr_ref spec_for_concrete_coeff = m_utils.replace_vars_according_to_model(spec_with_coeff, mdl_for_coeff, m_coeff_decl_vec, true);
         std::cout << "spec_for_concrete_coeff " << mk_ismt2_pp(spec_for_concrete_coeff, m, 3) << std::endl;
-
+        clock_t start = clock();
         expr_ref th_res = m_utils.simplify_context(spec_for_concrete_coeff);
+        std::cout << "time : " << ((double)(clock() - start) / CLOCKS_PER_SEC) << std::endl;;
+        all_time_simplify += ((double)(clock() - start) / CLOCKS_PER_SEC);
         std::cout << "Simplified precondition candidate: " << mk_ismt2_pp(th_res, m, 3) << std::endl;
         //
 

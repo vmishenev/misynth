@@ -6,6 +6,7 @@
 #include <ast/rewriter/th_rewriter.h>
 #include "tactic/tactic.h"
 #include "smt/tactic/ctx_solver_simplify_tactic.h"
+#include "qe/qe_mbp.h"
 
 namespace misynth
 {
@@ -402,6 +403,17 @@ namespace misynth
                 std::cout << "Assert: " << mk_ismt2_pp(slv->get_assertion(i), m, 0) << std::endl;
 
             }
+        }
+
+        expr_ref pick_literals(expr_ref e, model_ref mdl)
+        {
+            //todo
+            qe::mbp mbp(m);
+            expr_ref_vector res_v(m);
+            res_v.push_back(e);
+            app_ref_vector ap(m);
+            mbp(false,  ap, *mdl, res_v);
+            return con_join(res_v);
         }
     }; // smt_utils
 } // misynth

@@ -185,7 +185,7 @@ namespace misynth
 
             }
 
-            void rewriter_functions_to_linear_term(func_decl_ref_vector coeff_decl_vec, func_decl_ref_vector & synth_funs,
+            void rewriter_functions_to_linear_term(func_decl_ref_vector &coeff_decl_vec, func_decl_ref_vector & synth_funs,
                                                    expr_ref spec, expr_ref & new_spec)
             {
                 invocation_collector collector(synth_funs);
@@ -220,7 +220,7 @@ namespace misynth
             }
 
             void rewriter_fun_inv_to_var(expr_ref spec, func_decl_ref_vector & synth_funs,
-                                         app2expr_map &map, func_decl_ref_vector &fresh_vars, expr_ref & new_spec)
+                                         app2expr_map &map, func_decl_ref_vector &fresh_vars, expr_ref_vector& inv_replaced, expr_ref & new_spec)
             {
                 invocation_collector collector(synth_funs);
                 collector(spec);
@@ -239,6 +239,7 @@ namespace misynth
 
                     func_decl_ref fresh_var(m.mk_const_decl(prefix + std::to_string(i), m_arith.mk_int()), m);
                     fresh_vars.push_back(fresh_var);
+                    inv_replaced.push_back(ap_f);
                     expr *y = m.mk_const(fresh_var);
                     term_subst.insert(ap_f, y);
                     accumulator_terms.push_back(y);
