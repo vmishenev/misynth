@@ -147,14 +147,6 @@ namespace misynth
                 return false;
             }
 
-            void rewrite_expr(expr *f, expr_ref &res)
-            {
-                //invocations_rewriter_cfg inv_cfg(m, m_synth_fun_list, m_subs, m_synth_fun_sub_map);
-                //rewriter_tpl<invocations_rewriter_cfg> rwr(m, false, inv_cfg);
-                //rwr(f, res);
-            }
-
-
     };
 }
 

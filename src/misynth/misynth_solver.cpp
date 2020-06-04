@@ -37,7 +37,7 @@ namespace misynth
     unsigned int iters_main_alg = 0;
     unsigned int alg3_run = 0;
 
-    bool DEBUG_MODE = true;
+    bool DEBUG_MODE = false;
 
 
 
@@ -51,12 +51,11 @@ namespace misynth
         , m_coeff_decl_vec(m),
 
           m_used_vars(m),
-          //m_precs(m),
-          //m_branches(m),
           m_terms(m),
           m_assumptions(m),
           m_abducer(cmd_ctx, m),
-          fn(m_cmd, m)
+          fn(m_cmd, m),
+          task(m_cmd, m)
     {
     }
 
@@ -191,14 +190,6 @@ namespace misynth
         }
     }
 
-
-
-    /*void misynth_solver::rewrite_expr(expr *f, expr_ref &res, app2expr_map& subst)
-    {
-        invocations_rewriter_cfg inv_cfg(m, subst);
-        rewriter_tpl<invocations_rewriter_cfg> rwr(m, false, inv_cfg);
-        rwr(f, res);
-    }*/
     void misynth_solver::init_used_variables(func_decl_ref_vector & synth_funs, expr_ref spec)
     {
         decl_collector decls(m);
@@ -519,24 +510,100 @@ namespace misynth
                 return false;
                 */
     }
+    void misynth_solver::init_x_solver()
+    {
+        params_ref params;
+        m_slv_for_x_prec = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
+    }
 
+    model_ref misynth_solver::get_model_x(synth_task &task, expr_ref heuristic)
+    {
+        bool is_added_heuristic = heuristic.get();
+
+        args_t &args_decl = task.get_args_decl_for_synth_fun(task.synth_funs().get(0));
+        expr_ref_vector all_precs_for_ops(m);
+        all_precs_for_ops.reset();
+        for (unsigned int i = 0; i < m_ops.size(); ++i)
+        {
+            expr_ref_vector precs_for_one_op(m);
+            invocation_operands &op = m_ops.get(i);
+            for (unsigned int j = 0; j < fn.get_precs().size(); ++j)
+            {
+                expr_ref called_prec = m_utils.replace_vars_decl(fn.get_precs().get(j), args_decl, op);
+                precs_for_one_op.push_back(m.mk_not(called_prec));
+
+            }
+
+            all_precs_for_ops.push_back(m_utils.con_join(precs_for_one_op));
+
+            if (DEBUG_MODE)
+            {
+                //std::cout << "add to solver called precondition: " << mk_ismt2_pp(slv_for_prec->get_assertion(slv_for_prec->get_num_assertions() - 1), m, 0) << std::endl;
+            }
+        }
+
+
+
+        m_slv_for_x_prec->pop(1);// pop previos precs
+        m_slv_for_x_prec->push();
+        m_slv_for_x_prec->assert_expr(m_utils.dis_join(all_precs_for_ops));
+        if (is_added_heuristic)
+        {
+            m_slv_for_x_prec->push();
+            m_slv_for_x_prec->assert_expr(heuristic);
+        }
+        lbool res_spec_for_x = m_slv_for_x_prec->check_sat();
+
+        model_ref mdl_for_precs;
+
+        if (res_spec_for_x != lbool::l_true)
+        {
+            //TODO: take into account a heuristic
+            if (is_added_heuristic)
+            {
+                std::cout << "WARNING!!! Heuristic for precs x is unsat. " << std::endl;
+                is_added_heuristic = false;
+                m_slv_for_x_prec->pop(1); // remove a heuristic
+                lbool res_spec_for_x = m_slv_for_x_prec->check_sat();
+                if (res_spec_for_x != lbool::l_true)
+                {
+                    m_slv_for_x_prec->pop(1);//remove spec
+                    return mdl_for_precs;//not found
+                }
+            }
+            else
+            {
+                return mdl_for_precs;//not found
+            }
+
+        }
+        if (is_added_heuristic)
+        {
+            m_slv_for_x_prec->pop(1);
+            is_added_heuristic = false;
+        }
+
+        m_slv_for_x_prec->get_model(mdl_for_precs);
+        m_slv_for_x_prec->pop(1);
+        return mdl_for_precs;
+
+    }
+    double all_time_coeff_model = 0;
     bool misynth_solver::solve(func_decl_ref_vector & synth_funs, expr_ref_vector & constraints,  obj_map<func_decl, args_t *> &synth_fun_args_decl)
     {
         if (m_params.simult_model_x())
         {
             return solve_simult_model_x(synth_funs, constraints, synth_fun_args_decl);
         }
+
         // [+] INITIALIZE
         m_current_slv_for_coeff = 0;
         params_ref params;
         expr_ref spec = m_utils.con_join(constraints);
-
-
-
+        std::cout << "INIT 1 " << std::endl;
+        task = synth_task(m_cmd, m,  constraints, synth_funs, synth_fun_args_decl);
+        //m_slv_for_x_prec = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
         // [-] INITIALIZE
-
-
-
 
         m_synth_fun_args_decl = synth_fun_args_decl; // COPY
         collect_invocation_operands(spec, synth_funs, m_ops);
@@ -548,16 +615,21 @@ namespace misynth
 
         init_used_variables(synth_funs, spec);
         generate_coeff_decl(synth_funs);
-
-        std::vector<model_ref> models_vec;
-        collect_coeff_from_lits(m_cmd, m, m_arith, m_utils,
-                                spec, synth_funs, m_coeff_decl_vec, m_used_vars, models_vec);
-        expr_ref_vector mdls(m);
-        for (model_ref& mdl : models_vec)
+        std::cout << "INIT 4 " << std::endl;
+        expr_ref heuristic_concrete_coef_from_literals(m.mk_true(), m);
+        if (m_params.add_literals_heuristic())
         {
-            mdls.push_back(m_utils.get_logic_model_with_default_value(mdl, m_coeff_decl_vec));
+            std::vector<model_ref> models_vec;
+            collect_coeff_from_lits(m_cmd, m, m_arith, m_utils,
+                                    spec, synth_funs, m_coeff_decl_vec, m_used_vars, models_vec);
+            expr_ref_vector mdls(m);
+            for (model_ref& mdl : models_vec)
+            {
+                mdls.push_back(m_utils.get_logic_model_with_default_value(mdl, m_coeff_decl_vec));
+            }
+            heuristic_concrete_coef_from_literals = m_utils.dis_join(mdls);
         }
-        expr_ref heuristic_concrete_coef_from_literals = m_utils.dis_join(mdls);
+
         std::cout << "heuristic_concrete_coef_from_literals: " << mk_ismt2_pp(heuristic_concrete_coef_from_literals, m, 0) << std::endl;
 
 
@@ -565,7 +637,7 @@ namespace misynth
 
         //params_ref params;
         ref<solver> slv_for_prec = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
-        ref<solver> slv_for_coeff = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
+
         ref<solver> slv_for_mbp = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
         expr_ref last_precond(0, m);
 
@@ -615,6 +687,9 @@ namespace misynth
         for (unsigned int k = 0; k < MAX_ITERATION ; ++k)
         {
             //[+]mbp
+            //reset coeff solver (blacklist model)
+            init_coeff_solver(synth_funs);
+            init_x_solver();
             expr_ref result_mbp(m.mk_true(), m) ;
             model_ref mdl_for_mbp;
             if (m_params.mbp())
@@ -654,8 +729,8 @@ namespace misynth
 
                 slv_for_prec->pop(slv_for_prec->get_num_assertions());
 
-                slv_for_prec->push();
-                slv_for_prec->assert_expr(result_mbp);
+                m_slv_for_x_prec->push();
+                m_slv_for_x_prec->assert_expr(result_mbp);
 
 
                 // {
@@ -663,15 +738,13 @@ namespace misynth
                 //slv_for_mbp->assert_expr(m.mk_false());//for unsat of slv_for_mbp
 
                 // }
-                slv_for_prec->push();
-                slv_for_prec->assert_expr(m.mk_true());
+                m_slv_for_x_prec->push();
+                m_slv_for_x_prec->assert_expr(m.mk_true());
 
             }
-            //reset coeff solver (blacklist model)
-            init_coeff_solver(synth_funs);
 
             //[-]mbp
-            bool is_add_literals_heuristic = true;
+            bool is_add_literals_heuristic = m_params.add_literals_heuristic();
             for (unsigned int i = 0; i < MAX_ITERATION ; ++i)
             {
                 iters_main_alg++;
@@ -710,6 +783,7 @@ namespace misynth
 
                     last_precond = 0;
                 }
+                clock_t start = clock();
                 if (i != 0 || !m_params.mbp())
                 {
                     if (++current_iter_model_x >= (m_params.attempts_per_one_model_x() + m_params.trivial_attempts_per_one_model_x()))
@@ -799,6 +873,7 @@ namespace misynth
                     spec_for_concrete_x = m_utils.replace_vars_according_to_model(spec, mdl_for_mbp, m_used_vars, true);
 
                 }
+                all_time_coeff_model += ((double)(clock() - start) / CLOCKS_PER_SEC);
                 if (DEBUG_MODE)
                 {
                     //std::cout << "spec_with_coeff " << mk_ismt2_pp(spec_with_coeff, m, 3) << std::endl;
@@ -859,6 +934,9 @@ namespace misynth
                 }
                 is_added_heuristic = false;
 
+
+
+
                 if (!mdl_for_coeff)
                 {
                     std::cout << "WARNING!!! There are several branches. " << std::endl;
@@ -902,7 +980,7 @@ namespace misynth
                 {
                     fn.clear();
                     fn.add_branch(m.mk_true(), branch);
-                    completed_solving(synth_funs, constraints);
+                    completed_solving(synth_funs, constraints, fn.generate_clia_fun_body(false));
                     return true;
                 }
 
@@ -971,7 +1049,7 @@ namespace misynth
 
         ref<solver> slv_for_mbp = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
 
-        m_slv_for_prec_completing_cond = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
+        //m_slv_for_prec_completing_cond = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
 
         expr_ref last_precond(0, m);
 
@@ -1354,7 +1432,7 @@ namespace misynth
                 {
                     fn.clear();
                     fn.add_branch(m.mk_true(), branch);
-                    completed_solving(synth_funs, constraints);
+                    completed_solving(synth_funs, constraints, fn.generate_clia_fun_body(false));
                     return true;
                 }
 
@@ -1388,11 +1466,6 @@ namespace misynth
 
         search_simultaneously_branches search(m_cmd, m);
         int is_added_heuristic = m_params.type_heuristic_branches();
-
-        //params_ref params_slv;
-        //slv_for_x_prec = m_cmd.get_solver_factory()(m, params_slv, false, true, false, symbol::null);
-
-
 
         unsigned int iter = 0;
 
@@ -1444,18 +1517,14 @@ namespace misynth
             // else ++is_added_heuristic;
 
             std::cout << "Completing condition is sat!  "  << std::endl;
-            expr_ref fun_body = result_fn.generate_clia_fun_body(true);
+            expr_ref fun_body = result_fn.generate_clia_fun_body(m_params.compact());
             std::cout << "###current result_fn:  " <<  mk_ismt2_pp(fun_body, m, 3) << std::endl;
             bool sanity_res = sanity.check(constraints, m_used_vars, fun_body, synth_funs, *synth_fun_args, mdl_for_x);
             if (sanity_res)
             {
-                /*m_precs.reset();
-                m_precs.append(local_precs);
-                m_branches.reset();
-                m_branches.append(local_branches);*/
 
                 fn = result_fn;
-                completed_solving(synth_funs, constraints);
+                completed_solving(synth_funs, constraints, fun_body);
                 return true;
             }
             else
@@ -1486,26 +1555,28 @@ namespace misynth
     }
 
     double all_time_simplify = 0;
-    void misynth_solver::completed_solving(func_decl_ref_vector & synth_funs, expr_ref_vector & constraints)
+    void misynth_solver::completed_solving(func_decl_ref_vector & synth_funs, expr_ref_vector & constraints, expr_ref fun_body)
     {
         std::cout << "###Complete "  << std::endl;
 
         args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
 
         //std::cout << "Incompact solution: ";
-        //print_def_fun(std::cout, synth_funs.get(0), *synth_fun_args, generate_clia_fun_body(m_precs, m_branches));
-
-        //expr_ref fun_body = generate_clia_fun_body(m_precs, m_branches, true);
-        expr_ref fun_body = fn.generate_clia_fun_body(true);
+        clock_t start = clock();
         print_def_fun(std::cout, synth_funs.get(0), *synth_fun_args, fun_body);
 
 
-        sanity_checker sanity(m_cmd, m);
-        bool sanity_res = sanity.check(constraints, fun_body, synth_funs, *synth_fun_args);
-        std::cout << "Sanity Checker Result: " << sanity_res << std::endl;
+        //sanity_checker sanity(m_cmd, m);
+        //bool sanity_res = sanity.check(constraints, fun_body, synth_funs, *synth_fun_args);
+        //std::cout << "Sanity Checker Result: " << sanity_res << std::endl;
         std::cout << iters_main_alg << " " << max_iter_iso_mor << " " << fn.get_incompact_depth()  << std::endl;
         std::cout  << " alg3_run: " << alg3_run << std::endl;
-        std::cout  << " all_time_simplify: " << all_time_simplify << std::endl;
+
+        std::cout  << " all_time_coeff_model: " << all_time_coeff_model << std::endl;
+
+        std::cout << "time sanity.check : " << ((double)(clock() - start) / CLOCKS_PER_SEC) << std::endl;;
+
+        // std::cout  << " all_time_simplify: " << all_time_sanity_ck << std::endl;
     }
 
     bool misynth_solver::find_precondition(func_decl_ref_vector & synth_funs, expr_ref & spec, model_ref mdl_for_coeff, expr_ref &res)
@@ -1518,12 +1589,21 @@ namespace misynth
         expr_ref spec_with_coeff(m);
         invocations_rewriter inv_rwr(m_cmd, m);
 
-        inv_rwr.rewriter_functions_to_linear_term(m_coeff_decl_vec, synth_funs, spec, spec_with_coeff);
+        expr_ref spec_for_concrete_coeff(m);
+        expr_ref_vector concrete_coeff =  m_utils.get_vars_according_to_model(mdl_for_coeff, m_coeff_decl_vec, true);
+        inv_rwr.rewriter_functions_to_linear_term(concrete_coeff, synth_funs, spec, spec_for_concrete_coeff);
 
-        expr_ref spec_for_concrete_coeff = m_utils.replace_vars_according_to_model(spec_with_coeff, mdl_for_coeff, m_coeff_decl_vec, true);
+        //inv_rwr.rewriter_functions_to_linear_term(m_coeff_decl_vec, synth_funs, spec, spec_with_coeff);
+
+        //expr_ref spec_for_concrete_coeff = m_utils.replace_vars_according_to_model(spec_with_coeff, mdl_for_coeff, m_coeff_decl_vec, true);
         std::cout << "spec_for_concrete_coeff " << mk_ismt2_pp(spec_for_concrete_coeff, m, 3) << std::endl;
         clock_t start = clock();
-        expr_ref th_res = m_utils.simplify_context(spec_for_concrete_coeff);
+        expr_ref th_res = m_utils.simplify(spec_for_concrete_coeff);
+        //std::cout << "spec_for_concrete_coeff2 " << mk_ismt2_pp(th_res2, m, 3) << std::endl;
+        if (m_params.simplify_prec())
+        {
+            th_res = m_utils.simplify_context(th_res);
+        }
         std::cout << "time : " << ((double)(clock() - start) / CLOCKS_PER_SEC) << std::endl;;
         all_time_simplify += ((double)(clock() - start) / CLOCKS_PER_SEC);
         std::cout << "Simplified precondition candidate: " << mk_ismt2_pp(th_res, m, 3) << std::endl;
@@ -1809,75 +1889,6 @@ namespace misynth
         out << ") " << std::endl;
     }
 
-    expr_ref misynth_solver::generate_clia_fun_body(expr_ref_vector &precs, expr_ref_vector &branches, bool is_compact)
-    {
-        SASSERT(precs.size() == branches.size());
-        expr_ref res(m);
-        if (precs.size() == 0) return res;
-
-        std::set<unsigned int> todo_remove;
-        //[+] compaction
-        if (is_compact)
-        {
-
-
-            for (unsigned int i = 0 ; i < precs.size() - 1; ++i)
-            {
-                if (todo_remove.find(i) != todo_remove.end())
-                {
-                    continue;
-                }
-                for (unsigned int j = 0 ; j < precs.size(); ++j)
-                {
-                    if (i != j)
-                    {
-                        if (todo_remove.find(j) != todo_remove.end())
-                        {
-                            continue;
-                        }
-                        if (m_utils.implies(precs.get(i), precs.get(j)))
-                        {
-                            //std::cout << "remove " <<  mk_ismt2_pp(m_precs.get(j), m, 0)
-                            //          << " ===> " << mk_ismt2_pp(m_precs.get(i), m, 0) << std::endl;
-                            todo_remove.insert(i);
-                            break;
-                        }
-                        else if (m_utils.implies(precs.get(j), precs.get(i)))
-                        {
-                            todo_remove.insert(j);
-                            //std::cout << "remove " <<  mk_ismt2_pp(m_precs.get(i), m, 0)
-                            //         << " ===> " << mk_ismt2_pp(m_precs.get(j), m, 0) << std::endl;
-
-                        }
-
-                    }
-                }
-            }
-        }
-        //[-] compaction
-
-        for (unsigned int i = precs.size() - 1 ; i < precs.size(); --i)
-        {
-            if (todo_remove.find(i) != todo_remove.end())
-            {
-                continue;
-            }
-            res = branches.get(i);
-            break;
-        }
-
-        expr_ref_vector v(m);
-
-        for (unsigned int i = 0 ; i < precs.size() - 1; ++i)
-        {
-            if (todo_remove.find(i) != todo_remove.end())
-            {
-                continue;
-            }
-            res = m.mk_ite(precs.get(i), branches.get(i), res);
-        }
-        return res;
-    }
 
     expr_ref misynth_solver::generate_heuristic_constaraint_coeff(expr_ref spec, func_decl_ref_vector & coeff_decls)
     {
@@ -1944,24 +1955,6 @@ namespace misynth
     }
 
 
-    expr_ref misynth_solver::generate_fun_macros(expr_ref body_fun, func_decl_ref_vector & synth_funs, func_decl_ref_vector args)
-    {
-        func_decl *fd = synth_funs.get(0);
-
-        expr_ref_vector args_app(m);
-        for (auto &fd : args)
-        {
-            args_app.push_back(m.mk_const(fd));
-        }
-        expr_ref fd_eq_body_fun(m.mk_eq(m.mk_app(fd, args_app.size(), args_app.c_ptr()), body_fun), m);
-        expr_ref macros(m_utils.universal_quantified(fd_eq_body_fun, args));
-
-        return macros;
-    }
-
-
-
-
 
     result_incremental_abd misynth_solver::check_all_abductions(func_decl_ref_vector & synth_funs, expr_ref & spec, app_ref_vector &invocations, expr_ref & new_prec, expr_ref & new_branch)
     {
@@ -1972,7 +1965,7 @@ namespace misynth
 
 
 
-        for (int i = 1; i <= k; ++i)
+        for (unsigned int i = 1; i <= k; ++i)
         {
             generator_combination_with_repetiton comb(k - i, n);
             while (comb.do_next())

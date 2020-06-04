@@ -196,8 +196,6 @@ namespace misynth
                     break;
                 }
 
-                //expr_ref_vector v(m);
-
                 for (unsigned int i = 0 ; i < m_precs.size() - 1; ++i)
                 {
                     if (todo_remove.find(i) != todo_remove.end())

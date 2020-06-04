@@ -179,6 +179,29 @@ namespace misynth
 
             return con_join(vec_of_equals);
         }
+        expr_ref_vector  get_vars_according_to_model(model_ref mdl, func_decl_ref_vector &vars, bool used_default_value = false)
+        {
+            expr_ref_vector result(m);
+
+            for (func_decl *fd : vars)
+            {
+                expr_ref e(to_expr(m.mk_const(fd)), m);
+                expr_ref substitute = (*mdl)(e);
+
+                if (DEBUG_MODE)
+                {
+                    std::cout << "replace " << mk_ismt2_pp((e), m, 3) << " to " << mk_ismt2_pp(substitute, m, 3) << std::endl;
+                }
+
+                if (used_default_value && e == substitute)
+                    result.push_back(m_arith.is_real(e) ? m_arith.mk_real(0) : m_arith.mk_int(0));
+                else
+                    result.push_back(substitute);
+            }
+
+
+            return result;
+        }
 
         expr_ref  replace_vars_according_to_model(expr *e, model_ref mdl, func_decl_ref_vector &vars, bool used_default_value = false)
         {

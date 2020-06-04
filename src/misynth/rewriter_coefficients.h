@@ -218,7 +218,41 @@ namespace misynth
                 rewrite_expr(spec, new_spec, term_subst);
 
             }
+            void rewriter_functions_to_linear_term(expr_ref_vector &coeff_vec, func_decl_ref_vector & synth_funs,
+                                                   expr_ref spec, expr_ref & new_spec)
+            {
+                invocation_collector collector(synth_funs);
+                collector(spec);
 
+
+                obj_hashtable<app > set = collector.get_invocation();
+
+                app2expr_map  term_subst;
+                expr_ref_vector accumulator_terms(m);
+                for (auto it = set.begin(); it != set.end(); it++)
+                {
+                    app *ap_f = (*it);
+                    expr_ref_vector mult_terms(m);
+                    mult_terms.push_back(coeff_vec.get(0));//C0
+
+
+                    for (unsigned i = 0; i < ap_f->get_num_args(); ++i)
+                    {
+                        if (m_arith.is_zero(coeff_vec.get(1 + i)))
+                            continue;
+                        expr *term = m_arith.mk_mul(coeff_vec.get(1 + i), ap_f->get_arg(i));
+                        mult_terms.push_back(term);
+                    }
+
+                    expr_ref linear_term = m_arith.mk_add_simplify(mult_terms);
+                    term_subst.insert(ap_f, linear_term);
+                    accumulator_terms.push_back(linear_term);
+                    //m_terms.push_back(linear_term);
+                }
+
+                rewrite_expr(spec, new_spec, term_subst);
+
+            }
             void rewriter_fun_inv_to_var(expr_ref spec, func_decl_ref_vector & synth_funs,
                                          app2expr_map &map, func_decl_ref_vector &fresh_vars, expr_ref_vector& inv_replaced, expr_ref & new_spec)
             {
