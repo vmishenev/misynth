@@ -37,7 +37,7 @@ namespace misynth
     unsigned int iters_main_alg = 0;
     unsigned int alg3_run = 0;
 
-    bool DEBUG_MODE = false;
+    bool DEBUG_MODE = true;
 
 
 
@@ -58,7 +58,6 @@ namespace misynth
           task(m_cmd, m)
     {
     }
-
 
     model_ref misynth_solver::get_coeff_model_from_slv(ref<solver> &slv, expr_ref spec_for_concrete_x, expr_ref heuristic)
     {
@@ -1609,7 +1608,11 @@ namespace misynth
         std::cout << "Simplified precondition candidate: " << mk_ismt2_pp(th_res, m, 3) << std::endl;
         //
 
-
+        if (m_utils.is_unsat(th_res))
+        {
+            res = th_res;
+            return true;
+        }
 
         decl_collector decls(m);
         decls.visit(th_res);
