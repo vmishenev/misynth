@@ -302,7 +302,7 @@ namespace misynth
     expr_ref multi_abducer::nonlinear_abduce(vector<expr_ref_vector> &inv_args, expr_ref premise, expr_ref conclusion, func_decl_ref_vector & pattern)
     {
         //[+] debug output
-        std::cout << "Abduction ";
+        std::cout << "Abduction (nonlinear_abduce) ";
         expr_ref_vector unknown_pred(m);
 
         sort_ref_vector parameters(m);

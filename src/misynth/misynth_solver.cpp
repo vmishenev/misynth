@@ -1565,9 +1565,9 @@ namespace misynth
         print_def_fun(std::cout, synth_funs.get(0), *synth_fun_args, fun_body);
 
 
-        //sanity_checker sanity(m_cmd, m);
-        //bool sanity_res = sanity.check(constraints, fun_body, synth_funs, *synth_fun_args);
-        //std::cout << "Sanity Checker Result: " << sanity_res << std::endl;
+        sanity_checker sanity(m_cmd, m);
+        bool sanity_res = sanity.check(constraints, fun_body, synth_funs, *synth_fun_args);
+        std::cout << "Sanity Checker Result: " << sanity_res << std::endl;
         std::cout << iters_main_alg << " " << max_iter_iso_mor << " " << fn.get_incompact_depth()  << std::endl;
         std::cout  << " alg3_run: " << alg3_run << std::endl;
 
@@ -1581,6 +1581,13 @@ namespace misynth
     bool misynth_solver::find_precondition(func_decl_ref_vector & synth_funs, expr_ref & spec, model_ref mdl_for_coeff, expr_ref &res)
     {
         args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
+        //[+]simplifying
+        expr_ref branch = m_futils.generate_branch(m_coeff_decl_vec, *synth_fun_args, synth_funs, mdl_for_coeff);
+
+        expr_ref additional_cond = m_futils.generate_fun_macros(branch, synth_funs, *synth_fun_args);
+        spec = m_utils.simplify_context_cond(spec, additional_cond);
+        //[-]simplifying
+
 
         vector<invocation_operands> current_ops;
         collect_invocation_operands(spec, synth_funs, current_ops);
@@ -1691,10 +1698,14 @@ namespace misynth
 
                 for (unsigned int i = 0; i < to_app(th_res)->get_num_args(); ++i)
                 {
-                    th_res = to_app(th_res)->get_arg(i);
-                    res = m_abducer.nonlinear_abduce(current_ops, expr_ref(m.mk_true(), m), th_res, *synth_fun_args);
+                    expr_ref  arg(to_app(th_res)->get_arg(i), m);
+                    res = m_abducer.nonlinear_abduce(current_ops, expr_ref(m.mk_true(), m), arg, *synth_fun_args);
                     if (!m_utils.is_unsat(res))
                         return true;
+                    else
+                    {
+                        std::cout << "unsat candidate" << std::endl;
+                    }
                 }
                 // we take first argument
 
