@@ -202,11 +202,24 @@ namespace misynth
                                  func_decl_ref_vector&   fun_list, func_decl_ref_vector &coeff_decl_vec,
                                  func_decl_ref_vector &used_vars, std::vector<model_ref> &models)
     {
+
+
+
         params_ref m_params;
+
+        expr_ref res_n(m);
+        proof_ref pr2(m);
+
+        th_rewriter s(m, m_params);
+        th_solver solver(cmd_ctx);
+        s.set_solver(alloc(th_solver, cmd_ctx));
+        s(n, res_n, pr2);
+
         literals_collector collector(fun_list);
-        collector(n);
+        collector(res_n);
         obj_hashtable<app > set = collector.get_literals();
         std::cout << "collect_coeff_from_lits size  " << set.size() << std::endl;
+        std::cout << "res_n" << mk_smt_pp(res_n, m) << std::endl;
         for (auto it = set.begin(); it != set.end(); it++)
         {
             app * ap_f = (*it);

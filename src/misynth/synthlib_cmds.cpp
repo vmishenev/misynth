@@ -39,6 +39,7 @@ Notes:
 #include <iostream>
 #include <set>
 #include <string>
+#include <vector>
 
 #define VERBOSE true
 #define DEBUG true
@@ -55,10 +56,10 @@ namespace misynth
 
             obj_map<func_decl, func_decl *> m_synth_fun_sub_map;
             obj_map<func_decl, args_t *> m_synth_fun_args_decl;
-
+            //obj_map<func_decl, args_t > m_synth_fun_args_decl2;
             params_ref m_params;
             ref<solver> m_solver;
-            vector<args_t> args_vector;
+            std::vector<args_t> args_vector;
             func_decl_ref_vector all_args_garbage_collection;
             synth_params m_synth_params;
         public:
@@ -67,6 +68,7 @@ namespace misynth
                 , m(cmd_ctx.m())
                 , m_constraints_list(m)
                 , m_synth_fun_list(m),
+                  m_synth_fun_args_decl(),
                   all_args_garbage_collection(m)
 
             {
@@ -91,7 +93,8 @@ namespace misynth
                 }
 
                 args_vector.push_back(args_decl);
-                m_synth_fun_args_decl.insert_if_not_there(pred, args_vector.c_ptr() + args_vector.size() - 1);
+                // m_synth_fun_args_decl.insert_if_not_there(pred, &args_vector[args_vector.size() - 1]);
+                // m_synth_fun_args_decl2.insert_if_not_there(pred, args_decl);
                 m_synth_fun_list.push_back(pred);
             }
 
@@ -131,20 +134,28 @@ namespace misynth
                     std::cerr << "None synth_fun is appeared " << std::endl;
                     return false;
                 }
-                if (m_synth_fun_list.size() > 1)
+
+                //fill m_synth_fun_args_decl
+                for (unsigned i = 0; i < m_synth_fun_list.size(); ++i)
                 {
-                    std::cerr << "Only one synth_fun is expected " << std::endl;
-                    return false;
+                    m_synth_fun_args_decl.insert_if_not_there(m_synth_fun_list.get(i), &args_vector[i]);
                 }
                 if (!m_solver)
                 {
                     m_solver = m_cmd.get_solver_factory()(m, m_params, false, true, false, symbol::null);
                 }
-
                 misynth_solver tool(m_cmd, m, m_solver.get());
-
-                tool.solve(m_synth_fun_list, m_constraints_list, m_synth_fun_args_decl);
-                return false;
+                if (m_synth_fun_list.size() > 1)
+                {
+                    //std::cerr << "Only one synth_fun is expected " << std::endl;
+                    tool.multi_solve(m_synth_fun_list, m_constraints_list, m_synth_fun_args_decl);
+                    return false;
+                }
+                else
+                {
+                    tool.solve(m_synth_fun_list, m_constraints_list, m_synth_fun_args_decl);
+                    return false;
+                }
             }
 
     };

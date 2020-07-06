@@ -46,9 +46,7 @@ namespace misynth
 
             func_decl_ref_vector m_coeff_decl_vec;
             func_decl_ref_vector m_used_vars;
-            expr_ref_vector m_terms, m_assumptions;
-            app2expr_map m_term_subst;
-
+            expr_ref_vector m_assumptions;
 
             vector<invocation_operands> m_ops;
             obj_map<func_decl, args_t *> m_synth_fun_args_decl;
@@ -56,7 +54,7 @@ namespace misynth
 
             vector<model_ref> m_models_from_assumptions;
             ref<solver> m_slv_for_x_prec;
-            ref<solver> m_slv_for_prec_ting_cond, m_slv_for_coeff;
+            ref<solver> m_slv_for_coeff;
 
             vector<ref<solver> > m_slv_for_coeff_vec;
             unsigned int m_current_slv_for_coeff;
@@ -91,7 +89,9 @@ namespace misynth
             bool try_find_simultaneously_branches(func_decl_ref_vector &synth_funs, expr_ref_vector &constraints, model_ref mdl, bool is_infinity_loop = false);
             void print_def_fun(std::ostream &out, func_decl * f, func_decl_ref_vector &args, expr_ref body);
 
-
+            bool multi_solve(func_decl_ref_vector & synth_funs, expr_ref_vector & constraints,
+                             obj_map<func_decl, args_t *> &synth_fun_args_decl);
+            expr_ref_vector collect_constraints(func_decl_ref target, func_decl_ref_vector & synth_funs, expr_ref_vector & constraints);
             bool solve(func_decl_ref_vector &synth_funs, expr_ref_vector &constraints,  obj_map<func_decl, args_t *> &synth_fun_args_decl);
             //for test
             bool solve2(func_decl_ref_vector &synth_funs, expr_ref_vector &constraints,  obj_map<func_decl, args_t *> &synth_fun_args_decl);

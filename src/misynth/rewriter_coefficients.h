@@ -92,6 +92,30 @@ namespace misynth
                 expr_ref linear_term = m_arith.mk_add_simplify(mult_terms);
                 return linear_term;
             }
+
+            void rewrite_app_with_fun(expr_ref e,  func_decl_ref synth_fun,
+                                      expr_ref fun, func_decl_ref_vector & pattern, expr_ref & res)
+            {
+                func_decl_ref_vector synth_funs(m);
+                synth_funs.push_back(synth_fun);
+                invocation_collector collector(synth_funs);
+                collector(e);
+                obj_hashtable<app > set = collector.get_invocation();
+
+                app2expr_map  term_subst;
+                expr_ref_vector substs(m);
+                for (auto it = set.begin(); it != set.end(); it++)
+                {
+                    app *ap_f = (*it);
+                    expr_ref_vector op(m, ap_f->get_num_args(), ap_f->get_args());
+                    expr_ref called_fun = m_utils.replace_vars_decl(fun, pattern, op);
+                    substs.push_back(called_fun);
+                    term_subst.insert(ap_f, called_fun);
+                }
+                rewrite_expr(e, res, term_subst);
+            }
+
+
             void rewrite_app_with_branch(expr_ref e,  func_decl_ref_vector &synth_funs, expr_ref_vector & precs,   expr_ref_vector & branches, func_decl_ref_vector & pattern, expr_ref & res, model_ref mdl_for_x, vector<unsigned int> &used_branches)
             {
                 invocation_collector collector(synth_funs);

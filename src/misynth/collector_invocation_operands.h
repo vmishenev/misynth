@@ -101,6 +101,7 @@ class invocation_collector
 
 void collect_invocation_operands(expr * n, func_decl_ref_vector&   fun_list, vector<invocation_operands> &l)
 {
+    l.reset();
     invocation_collector collector(fun_list);
     std::cout << "collect_invocation_operands: " << std::endl;
     collector(n);

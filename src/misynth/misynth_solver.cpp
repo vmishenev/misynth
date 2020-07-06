@@ -51,7 +51,6 @@ namespace misynth
         , m_coeff_decl_vec(m),
 
           m_used_vars(m),
-          m_terms(m),
           m_assumptions(m),
           m_abducer(cmd_ctx, m),
           fn(m_cmd, m),
@@ -191,6 +190,7 @@ namespace misynth
 
     void misynth_solver::init_used_variables(func_decl_ref_vector & synth_funs, expr_ref spec)
     {
+        m_used_vars.reset();
         decl_collector decls(m);
         decls.visit(spec);
 
@@ -209,6 +209,117 @@ namespace misynth
 
 
     }
+
+    expr_ref_vector  misynth_solver::collect_constraints(func_decl_ref target, func_decl_ref_vector & synth_funs, expr_ref_vector & constraints)
+    {
+        expr_ref_vector res(m);
+
+        for (auto &c : constraints)
+        {
+            app_ref_vector invocations(m);
+            collect_invocation(c, synth_funs, invocations);
+            bool is_only_target = true;
+            //only target symbols
+            for (app *a : invocations)
+            {
+                if (a->get_decl() != target)
+                {
+                    is_only_target = false;
+                    break;
+                }
+            }
+            if (is_only_target)
+                res.push_back(c);
+        }
+        return res;
+
+    }
+
+    bool misynth_solver::multi_solve(func_decl_ref_vector & synth_funs, expr_ref_vector & constraints,
+                                     obj_map<func_decl, args_t *> &synth_fun_args_decl)
+    {
+
+        std::cout << "synth_fun_args_decl: " << synth_fun_args_decl.size() << std::endl;
+        // [+] INITIALIZE
+        m_current_slv_for_coeff = 0;
+        params_ref params;
+        expr_ref spec = m_utils.con_join(constraints);
+        task = synth_task(m_cmd, m,  constraints, synth_funs, synth_fun_args_decl);
+        // [-] INITIALIZE
+
+        m_synth_fun_args_decl = synth_fun_args_decl; // COPY
+
+
+        //collect_invocation_operands(spec, synth_funs, m_ops);
+        std::cout << "multi_solve " << synth_funs.size() << std::endl;
+        if (prove_unrealizability(spec))
+        {
+            std::cout << "Unrealizability!!! Specification is unsat \n. " << std::endl;
+            return false;
+        }
+        std::cout << "Realizability!!" << std::endl;
+        expr_ref_vector fun_bodies(m);
+        for (unsigned i = 0; i < synth_funs.size(); ++i)
+        {
+            func_decl_ref current_fun(synth_funs.get(i), m);
+
+            expr_ref_vector collected_constraints = collect_constraints(current_fun, synth_funs, constraints);
+            args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(i));
+            invocations_rewriter inv_rwr(m_cmd, m);
+            if (collected_constraints.size() == 0)
+            {
+
+                //default
+                expr_ref fun_body(m_arith.mk_int(0), m);
+
+                for (unsigned i = 0; i < constraints.size(); ++i)
+                {
+                    expr_ref res(m);
+                    inv_rwr.rewrite_app_with_fun(expr_ref(constraints.get(i), m), current_fun, fun_body, *synth_fun_args, res);
+                    constraints[i] = res;
+                }
+                fun_bodies.push_back(fun_body);
+                std::cout << "--------NEW CONSTRAINTS----------" << std::endl;
+                for (auto &c : constraints)
+                    std::cout << mk_smt_pp(c, m) << std::endl;
+                std::cout << "------------------" << std::endl;
+            }
+            else
+            {
+                //non-zero
+                std::cout << "non_zero" << std::endl;
+                std::cout << "------------------" << std::endl;
+                for (auto &c : collected_constraints)
+                    std::cout << mk_smt_pp(c, m) << std::endl;
+                std::cout << "------------------" << std::endl;
+                fn.clear();
+                func_decl_ref_vector one_synth_funs(m);
+                one_synth_funs.push_back(current_fun);
+                solve(one_synth_funs, collected_constraints, synth_fun_args_decl);
+                expr_ref fun_body(fn.generate_clia_fun_body(true), m);
+                fun_bodies.push_back(fun_body);
+                std::cout << "--------NEW CONSTRAINTS2----------" << std::endl;
+                for (unsigned i = 0; i < constraints.size(); ++i)
+                {
+                    expr_ref res(m);
+                    inv_rwr.rewrite_app_with_fun(expr_ref(constraints.get(i), m), current_fun, fun_body, *synth_fun_args, res);
+                    std::cout << mk_smt_pp(res, m) << std::endl;
+                    constraints[i] = res;
+
+                }
+                std::cout << "------------------" << std::endl;
+            }
+        }
+        //print
+        for (unsigned i = 0; i < synth_funs.size(); ++i)
+        {
+            args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(i));
+            print_def_fun(std::cout, synth_funs.get(i), *synth_fun_args, expr_ref(fun_bodies.get(i), m));
+        }
+        return false;
+    }
+
+
 
     bool misynth_solver::solve2(func_decl_ref_vector & synth_funs, expr_ref_vector & constraints,  obj_map<func_decl, args_t *> &synth_fun_args_decl)
     {
@@ -596,6 +707,7 @@ namespace misynth
         }
 
         // [+] INITIALIZE
+        m_ops.reset();
         m_current_slv_for_coeff = 0;
         params_ref params;
         expr_ref spec = m_utils.con_join(constraints);
