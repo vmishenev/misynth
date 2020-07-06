@@ -190,6 +190,7 @@ namespace misynth
 
     void misynth_solver::init_used_variables(func_decl_ref_vector & synth_funs, expr_ref spec)
     {
+
         m_used_vars.reset();
         decl_collector decls(m);
         decls.visit(spec);
@@ -198,7 +199,7 @@ namespace misynth
         {
             if (VERBOSE)
             {
-                //std::cout << "add used var: " << fd->get_name() << "  " << mk_ismt2_pp(fd, m, 3)  << std::endl;
+                std::cout << "add used var: " << fd->get_name() << "  " << mk_ismt2_pp(fd, m, 3)  << std::endl;
             }
 
             if (!synth_funs.contains(fd))
@@ -206,8 +207,6 @@ namespace misynth
                 m_used_vars.push_back(fd);
             }
         }
-
-
     }
 
     expr_ref_vector  misynth_solver::collect_constraints(func_decl_ref target, func_decl_ref_vector & synth_funs, expr_ref_vector & constraints)
@@ -710,7 +709,7 @@ namespace misynth
         m_ops.reset();
         m_current_slv_for_coeff = 0;
         params_ref params;
-        expr_ref spec = m_utils.con_join(constraints);
+        expr_ref spec = m_utils.simplify(m_utils.con_join(constraints));
         std::cout << "INIT 1 " << std::endl;
         task = synth_task(m_cmd, m,  constraints, synth_funs, synth_fun_args_decl);
         //m_slv_for_x_prec = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);

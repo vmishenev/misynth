@@ -66,20 +66,40 @@ namespace misynth
                                     //todo check f
                                     app *left = to_app(app_qe->get_arg(0));
                                     app *right = to_app(app_qe->get_arg(1));
-                                    if (m_fun_list.contains(left->get_decl()) || m_fun_list.contains(right->get_decl()))
+
+
+                                    decl_collector decls(m);
+                                    decls.visit(left);
+                                    decls.visit(right);
+
+                                    for (auto& c : m_fun_list)
                                     {
-                                        m_literals.insert(app_qe);
+                                        if (decls.get_func_decls().contains(c))
+                                        {
+                                            m_literals.insert(app_qe);
+                                            break;
+                                        }
                                     }
+
+                                    //if (m_fun_list.contains(left->get_decl()) || m_fun_list.contains(right->get_decl()))
+                                    //{
+                                    //  m_literals.insert(app_qe);
+                                    //}
+
                                 }
                                 else
                                 {
+
                                     j = to_app(n)->get_num_args();
                                     while (j > 0)
                                     {
                                         --j;
                                         visit(to_app(n)->get_arg(j));
                                     }
+
                                 }
+
+
                                 break;
                             }
                         case AST_QUANTIFIER:
@@ -122,7 +142,7 @@ namespace misynth
             obj_hashtable<expr>     m_visited;
             ptr_vector<expr>        m_todo;
             ast_manager             &m;
-
+            arith_util m_arith;
 
             void visit(expr * n)
             {
@@ -135,7 +155,7 @@ namespace misynth
 
         public:
             vars_collector_except_funs(func_decl_ref_vector&   fun_list):
-                m_fun_list(fun_list), m(fun_list.m())
+                m_fun_list(fun_list), m(fun_list.m()), m_arith(m)
             {
             }
 
@@ -157,6 +177,8 @@ namespace misynth
 
                                 app * ap =  to_app(n);
                                 if (m_fun_list.contains(ap->get_decl()))
+                                    break;
+                                if (m_arith.is_numeral(ap))
                                     break;
                                 j = ap->get_num_args();
                                 if (j == 0)
@@ -250,6 +272,16 @@ namespace misynth
                     models.push_back(mdl);
                     continue;
                 }
+                if (arith.is_numeral(left))
+                {
+                    model_ref mdl = utils.get_model(expr_ref(m.mk_eq(m.mk_const(coeff_decl_vec.get(0)), left), m));
+                    models.push_back(mdl);
+                    continue;
+                }
+
+
+
+
                 /*[+] collect all vars*/
                 vars_collector_except_funs collector_vars(fun_list);
                 collector_vars(ap_f);
@@ -276,8 +308,14 @@ namespace misynth
                         zeros.push_back(arith.mk_int(0));
                         std::cout << "add used var3: " << fd->get_name() << "  " << mk_ismt2_pp(fd, m, 3)  << std::endl;
 
+
+
                     }
                 }
+
+                //[+]ACCELERATE
+
+                //[-]ACCELERATE
 
                 std::cout << "model lit0 " << mk_smt_pp(lit, m) << std::endl;
                 //func_decl_ref_vector used_vars_right(m, decls.get_num_decls(), decls.get_func_decls().c_ptr());
