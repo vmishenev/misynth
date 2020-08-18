@@ -318,8 +318,14 @@ namespace misynth
                 //[-]ACCELERATE
 
                 std::cout << "model lit0 " << mk_smt_pp(lit, m) << std::endl;
+
+                expr_ref res_lit(utils.mk_eq(used_vars_right, zeros), m);
+                if (used_vars.size())
+                {
+                    res_lit = m.mk_and(utils.universal_quantified(lit, used_vars), res_lit);
+                }
                 //func_decl_ref_vector used_vars_right(m, decls.get_num_decls(), decls.get_func_decls().c_ptr());
-                expr_ref res_lit(m.mk_and(utils.universal_quantified(lit, used_vars), utils.mk_eq(used_vars_right, zeros)), m);
+
                 std::cout << "model lit2 " << mk_smt_pp(res_lit, m) << std::endl;
                 model_ref mdl = utils.get_model(res_lit);
                 if (mdl)

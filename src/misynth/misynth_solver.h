@@ -100,7 +100,7 @@ namespace misynth
 
             void generate_coeff_decl(func_decl_ref_vector &synth_funs);
             void init_used_variables(func_decl_ref_vector &synth_funs, expr_ref spec);
-            bool find_precondition(func_decl_ref_vector &synth_funs,  expr_ref &spec, model_ref mdl_for_coeff, expr_ref &result);
+            bool find_precondition(func_decl_ref_vector &synth_funs,  expr_ref &spec, model_ref mdl_for_coeff, expr_ref &result, model_ref mdl_for_x = 0);
             args_t *get_args_decl_for_synth_fun(func_decl *f);
 
             /* [+] Unrealizability Algorithm*/

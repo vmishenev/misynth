@@ -7,6 +7,8 @@
 #include "tactic/tactic.h"
 #include "smt/tactic/ctx_solver_simplify_tactic.h"
 #include "qe/qe_mbp.h"
+#include <iostream>
+#include "ast/ast_pp.h"
 
 namespace misynth
 {
@@ -378,6 +380,9 @@ namespace misynth
             goal *r = result[0];
             expr_ref_vector res_fmls(m);
             r->get_formulas(res_fmls);
+            std::cout << "cond" << mk_smt_pp(res_fmls.back(), m) << std::endl;
+            if (res_fmls.back() != condition)
+                return expr_ref(m.mk_false(), m);
             res_fmls.pop_back();//remove condition
             return expr_ref(con_join(res_fmls), m);
         }

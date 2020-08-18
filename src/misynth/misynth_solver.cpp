@@ -1068,7 +1068,7 @@ namespace misynth
                 //[+] add mbp
                 expr_ref spec_and_mbp(m_params.mbp() ? m.mk_and(spec, result_mbp) : spec, m);
                 //[-] mbp
-                bool prec_res = find_precondition(synth_funs, spec_and_mbp, mdl_for_coeff, last_precond);
+                bool prec_res = find_precondition(synth_funs, spec_and_mbp, mdl_for_coeff, last_precond, mdl_for_x);
                 std::cout << " prec_res " << prec_res << std::endl;
                 if (!prec_res)
                 {
@@ -1514,7 +1514,7 @@ namespace misynth
                 //[+] add mbp
                 expr_ref spec_and_mbp(m.mk_and(spec, result_mbp), m);
                 //[-] mbp
-                bool prec_res = find_precondition(synth_funs, spec_and_mbp, mdl_for_coeff, last_precond);
+                bool prec_res = find_precondition(synth_funs, spec_and_mbp, mdl_for_coeff, last_precond, mdl_for_x);
                 std::cout << " prec_res " << prec_res << std::endl;
                 if (!prec_res)
                 {
@@ -1614,9 +1614,11 @@ namespace misynth
              }*/
         }
 
+
+        bool is_incorrect_partial_prorgram = true;
         std::cout << "start main while loop for search sumult. "  << std::endl;
         sanity_checker sanity(m_cmd, m);
-        while (is_infinity_loop || result_fn.is_empty() || result_fn.is_completed())
+        while (is_infinity_loop || result_fn.is_empty() || result_fn.is_completed() || is_incorrect_partial_prorgram)
         {
 
             std::cout << "###source_fn:  " <<  mk_ismt2_pp(source_fn.generate_clia_fun_body(true), m, 3) << std::endl;
@@ -1632,13 +1634,20 @@ namespace misynth
             bool sanity_res = sanity.check(constraints, m_used_vars, fun_body, synth_funs, *synth_fun_args, mdl_for_x);
             if (sanity_res)
             {
-
-                fn = result_fn;
-                completed_solving(synth_funs, constraints, fun_body);
-                return true;
+                if (!result_fn.is_completed())
+                {
+                    is_incorrect_partial_prorgram = false;
+                }
+                else
+                {
+                    fn = result_fn;
+                    completed_solving(synth_funs, constraints, fun_body);
+                    return true;
+                }
             }
             else
             {
+                //if (is_incorrect_partial_prorgram)
                 std::cout << "Sanity failed, start   search_simultaneously_branches"  << *mdl_for_x << std::endl;
 
                 /*local_fn.clear();
@@ -1689,14 +1698,21 @@ namespace misynth
         // std::cout  << " all_time_simplify: " << all_time_sanity_ck << std::endl;
     }
 
-    bool misynth_solver::find_precondition(func_decl_ref_vector & synth_funs, expr_ref & spec, model_ref mdl_for_coeff, expr_ref &res)
+    bool misynth_solver::find_precondition(func_decl_ref_vector & synth_funs, expr_ref & spec, model_ref mdl_for_coeff, expr_ref &res,  model_ref mdl_for_x)
     {
         args_t *synth_fun_args = get_args_decl_for_synth_fun(synth_funs.get(0));
         //[+]simplifying
         expr_ref branch = m_futils.generate_branch(m_coeff_decl_vec, *synth_fun_args, synth_funs, mdl_for_coeff);
 
         expr_ref additional_cond = m_futils.generate_fun_macros(branch, synth_funs, *synth_fun_args);
+
+        //expr_ref additional_cond2 = m_utils.get_logic_model_with_default_value(mdl_for_x, m_used_vars);
+        //spec = m_utils.simplify_context_cond(spec, additional_cond2);
+        std::cout << "Before spec: " << mk_smt_pp(spec, m) << std::endl;
         spec = m_utils.simplify_context_cond(spec, additional_cond);
+
+        std::cout << "additional_cond: " << mk_smt_pp(additional_cond, m) << std::endl;
+        std::cout << "After spec: " << mk_smt_pp(spec, m) << std::endl;
         //[-]simplifying
 
 
