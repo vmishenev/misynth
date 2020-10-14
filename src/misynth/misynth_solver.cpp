@@ -234,6 +234,48 @@ namespace misynth
 
     }
 
+    expr_ref_vector encode_asserts(func_decl_ref_vector & synth_funs, expr_ref_vector & constraints,  func_decl_ref_vector & args) {
+      expr_ref_vector encoded_asserts(m);
+
+      expr_ref spec = m_utils.simplify(m_utils.con_join(constraints));
+      app_ref_vector apps(m);
+      collect_invocation(spec, synth_funs, apps);
+
+      expr_ref_vector out(m);
+      expr_substitution sub(m); //out2vars;
+
+      int i_app = 0;
+      for( auto& it : apps) {
+          i_app++;
+          expr_ref e(m.mk_const(m.mk_const_decl(std::string("fx")<< i_app, m_arith.mk_int())), m );
+          //out2vars.insert(it, e);
+          rp.insert(it, e);
+          out.push_back(e);
+      }
+
+      scoped_ptr<expr_replacer> rp = mk_default_expr_replacer(m);
+      rp->set_substitution(&sub);
+
+
+        for(expr_ref & it : constraints ) {
+            vector<invocation_operands> m_ops;
+            app_ref_vector apps_constraint(m);
+            collect_invocation(it, synth_funs, apps_constraint);
+
+            //replace out var
+            expr_ref result(m);
+            (*rp)(it, result);
+
+
+            encoded_asserts.push_back(result);
+        }
+
+
+
+
+      return encoded_asserts;
+    }
+
     bool misynth_solver::multi_solve(func_decl_ref_vector & synth_funs, expr_ref_vector & constraints,
                                      obj_map<func_decl, args_t *> &synth_fun_args_decl)
     {
