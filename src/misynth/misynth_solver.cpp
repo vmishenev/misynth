@@ -188,28 +188,27 @@ namespace misynth
         }
     }
 
-    void misynth_solver::init_used_variables(func_decl_ref_vector & synth_funs, expr_ref spec)
+    void misynth_solver::init_used_variables(func_decl_ref_vector const& synth_funs, expr_ref spec, func_decl_ref_vector &out)
     {
 
-        m_used_vars.reset();
+        out.reset();
         decl_collector decls(m);
         decls.visit(spec);
 
         for (func_decl *fd :  decls.get_func_decls())
         {
-            if (VERBOSE)
-            {
-                std::cout << "add used var: " << fd->get_name() << "  " << mk_ismt2_pp(fd, m, 3)  << std::endl;
-            }
-
             if (!synth_funs.contains(fd))
             {
-                m_used_vars.push_back(fd);
+                out.push_back(fd);
+                if (VERBOSE)
+                {
+                    std::cout << "add used var: " << fd->get_name() << "  " << mk_ismt2_pp(fd, m, 3)  << std::endl;
+                }
             }
         }
     }
 
-    expr_ref_vector  misynth_solver::collect_constraints(func_decl_ref target, func_decl_ref_vector & synth_funs, expr_ref_vector & constraints)
+    expr_ref_vector misynth_solver::collect_constraints(func_decl_ref target, func_decl_ref_vector & synth_funs, expr_ref_vector & constraints)
     {
         expr_ref_vector res(m);
 
@@ -234,41 +233,155 @@ namespace misynth
 
     }
 
-    expr_ref_vector encode_asserts(func_decl_ref_vector & synth_funs, expr_ref_vector & constraints,  func_decl_ref_vector & args) {
+    expr_ref misynth_solver::normalize(expr *e, func_decl_ref_vector &vars,
+                                       func_decl_ref_vector &eliminate, expr_ref_vector &exprs)
+    {
+      expr_ref_vector eqs(m);
+
+      for (unsigned int i = 0; i < vars.size(); ++i) {
+        eqs.push_back(m.mk_eq(m.mk_const(vars.get(i)), exprs.get(i)));
+      }
+      expr_ref all_eq = m_utils.con_join(eqs);
+      expr_ref res( m.mk_and(all_eq, e), m);
+
+      res = m_utils.exist_quantified(res, eliminate);
+      smt_params params;
+      expr_ref result(m);
+      qe::expr_quant_elim      expr_qe(m, params);
+      expr_qe(m.mk_true(), res, result);
+      return result;
+    }
+
+    expr_ref_vector misynth_solver::encode_asserts(func_decl_ref_vector & synth_funs, expr_ref_vector & constraints) {
       expr_ref_vector encoded_asserts(m);
+      expr_ref_vector assert_zero_conj(m);
+
 
       expr_ref spec = m_utils.simplify(m_utils.con_join(constraints));
       app_ref_vector apps(m);
       collect_invocation(spec, synth_funs, apps);
 
-      expr_ref_vector out(m);
+      expr_ref_vector all_out_vars(m);
       expr_substitution sub(m); //out2vars;
 
+      func_decl_ref_vector all_fresh_var(m);
+      //obj_map<app, obj_map<func_decl, func_decl*> > app2map_vars;
+      obj_map<app, ptr_vector<func_decl> > app2vars;
+      obj_map<app, expr* > app2fresh;
+
       int i_app = 0;
-      for( auto& it : apps) {
+      for( app* it : apps) {
           i_app++;
-          expr_ref e(m.mk_const(m.mk_const_decl(std::string("fx")<< i_app, m_arith.mk_int())), m );
+          expr_ref e(m.mk_const(m.mk_const_decl(std::string("fo") + std::to_string((i_app)), m_arith.mk_int())), m );
           //out2vars.insert(it, e);
-          rp.insert(it, e);
-          out.push_back(e);
+          app2fresh.insert(it, e);
+          sub.insert(it, e);
+          all_out_vars.push_back(e);
+
+          assert_zero_conj.push_back(m.mk_eq(e, it));
+
+          //////////
+          //func_decl_ref_vector used_vars(m);
+          //init_used_variables(synth_funs, spec, used_vars);
+          ptr_vector<func_decl> current;
+          //for(func_decl *fd: used_vars) {
+          for(int i=0; i< it->get_num_args(); ++i) {
+            obj_map<func_decl, func_decl*> map;
+
+            func_decl_ref fresh(m.mk_const_decl(std::string("xi") + std::to_string((i_app)) + "_" + std::to_string((i)), m_arith.mk_int()), m);
+            all_fresh_var.push_back(fresh);
+            current.push_back(fresh);
+            assert_zero_conj.push_back(m.mk_eq(m.mk_const(fresh), it->get_arg(i)));
+            //app2map_vars.insert(fd, fresh);
+
+          }
+          //app2map_vars.insert(app, std::move(map));
+          app2vars.insert(it,     std::move(current));
       }
 
       scoped_ptr<expr_replacer> rp = mk_default_expr_replacer(m);
       rp->set_substitution(&sub);
 
+      expr_ref assert_zero = m_utils.con_join(assert_zero_conj);
+      std::cout << "# Encoded zero-assert: "<< mk_smt_pp(assert_zero, m) << std::endl;
 
-        for(expr_ref & it : constraints ) {
-            vector<invocation_operands> m_ops;
+
+      encoded_asserts.push_back(assert_zero);
+
+      int i_constraint = 0;
+
+      for(expr * it : constraints ) {
+            i_constraint++;
+            func_decl_ref_vector universal_vars(m);
+
             app_ref_vector apps_constraint(m);
             collect_invocation(it, synth_funs, apps_constraint);
 
+
+            expr_ref_vector aps_expr(m);
+            expr_ref_vector aps_fresh(m);
+
+            func_decl_ref_vector var_decl(m);
+            expr_ref_vector      exprs(m);
+
+            expr_ref_vector disjuncts(m);
+
+            obj_map<app, ptr_vector<func_decl> > app2vars_constraint;
+            int i_ap = 0;
+            for( app *ap : apps_constraint ) {
+              i_ap++;
+              aps_expr.push_back(ap);
+              func_decl_ref fresh_ap(m.mk_const_decl(std::string("freshout_") +  std::to_string((i_constraint)) + "_" +  std::to_string((i_ap)), m_arith.mk_int()), m);
+              aps_fresh.push_back(m.mk_const(fresh_ap.get()));
+              universal_vars.push_back(fresh_ap);
+              ptr_vector<func_decl> vec;
+              for(int i =0; i < ap->get_num_args(); ++i) {
+                  func_decl_ref fresh_ap(m.mk_const_decl(std::string("xx") + std::to_string((i_constraint))+ "_"+std::to_string((i_ap))+"_"+ std::to_string((i)), m_arith.mk_int()), m);
+
+                  universal_vars.push_back(fresh_ap);
+                  vec.push_back(fresh_ap);
+
+                  var_decl.push_back(vec.get(i));
+                  exprs.push_back(ap->get_arg(i));
+              }
+              app2vars_constraint.insert(ap, std::move(vec));
+              for( app *ap2 : apps )  {
+                expr_ref conj(m.mk_eq(m.mk_const(fresh_ap), app2fresh[ap2]), m);
+                for(int i =0; i<ap2->get_num_args(); ++i) {
+                    conj = m.mk_and(conj, m.mk_eq(m.mk_const(app2vars_constraint[ap].get(i)), m.mk_const(app2vars[ap2].get(i))));
+                }
+                disjuncts.push_back(conj);
+              }
+            }
+
+            expr_ref premise = m_utils.dis_join(disjuncts);
+            //std::cout << "premise: "<< mk_smt_pp(premise, m) << std::endl;
+
+
+            func_decl_ref_vector used_vars(m);
+            init_used_variables(synth_funs, spec, used_vars);
+
+            expr_ref res = m_utils.replace_expr(it, aps_expr, aps_fresh);
+            //std::cout << "replace outs "<< mk_smt_pp(res, m) << std::endl;
+
+            res = normalize(res, var_decl, used_vars, exprs);
+            //std::cout << "normalize "<< mk_smt_pp(res, m) << std::endl;
+
+
+            res = m.mk_implies(premise, res);
+            res = m_utils.universal_quantified(res, universal_vars);
+            std::cout << "# Encoded assert "<< mk_smt_pp(res, m) << std::endl;
+
+            // premise
+
+
             //replace out var
-            expr_ref result(m);
-            (*rp)(it, result);
+           // expr_ref result(m);
+           // (*rp)(it, result);
 
 
-            encoded_asserts.push_back(result);
-        }
+        encoded_asserts.push_back(res);
+      }
 
 
 
@@ -757,7 +870,13 @@ namespace misynth
         //m_slv_for_x_prec = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
         // [-] INITIALIZE
 
+
+
         m_synth_fun_args_decl = synth_fun_args_decl; // COPY
+
+        expr_ref_vector encoded_asserts = encode_asserts(synth_funs, constraints);
+        expr_ref zero_encoded_assert_x(m);
+
         collect_invocation_operands(spec, synth_funs, m_ops);
         if (prove_unrealizability(spec))
         {
@@ -765,7 +884,7 @@ namespace misynth
             return false;
         }
 
-        init_used_variables(synth_funs, spec);
+        init_used_variables(synth_funs, spec, m_used_vars);
         generate_coeff_decl(synth_funs);
         std::cout << "INIT 4 " << std::endl;
         expr_ref heuristic_concrete_coef_from_literals(m.mk_true(), m);
@@ -994,7 +1113,7 @@ namespace misynth
 
                         }
 
-
+                        zero_encoded_assert_x = m_utils.replace_vars_according_to_model(encoded_asserts[0].get(), mdl_for_x, m_used_vars, true);
                         spec_for_concrete_x = m_utils.replace_vars_according_to_model(spec, mdl_for_x, m_used_vars, true);
                         if (prove_unrealizability_simple(spec_for_concrete_x))
                         {
@@ -1049,40 +1168,50 @@ namespace misynth
                 //
 
                 expr_ref spec_with_coeff_and_x(m);
+                expr_ref zero_encoded_assert_x_and_coeff(m);
                 invocations_rewriter inv_rwr(m_cmd, m);
                 if (m_params.reused_brances())
                 {
-                    inv_rwr.rewriter_functions_to_linear_term_with_prec(m_coeff_decl_vec, synth_funs, spec_for_concrete_x, spec_with_coeff_and_x, *synth_fun_args, fn.get_precs(), fn.get_branches());
+                     inv_rwr.rewriter_functions_to_linear_term_with_prec(m_coeff_decl_vec, synth_funs, zero_encoded_assert_x, zero_encoded_assert_x_and_coeff, *synth_fun_args, fn.get_precs(), fn.get_branches());
                 }
                 else
                 {
-                    inv_rwr.rewriter_functions_to_linear_term(m_coeff_decl_vec, synth_funs, spec_for_concrete_x, spec_with_coeff_and_x);
+                    inv_rwr.rewriter_functions_to_linear_term(m_coeff_decl_vec, synth_funs, zero_encoded_assert_x, zero_encoded_assert_x_and_coeff);
                 }
 
 
                 if (DEBUG_MODE)
                 {
                     std::cout << "spec_with_coeff " << mk_ismt2_pp(spec_with_coeff_and_x, m) << std::endl;
-                    //std::cout << "spec_for_concrete_x " << mk_ismt2_pp(spec_for_concrete_x, m, 3) << std::endl;
+                    std::cout << "zero_encoded_assert_x_and_coeff " << mk_ismt2_pp(zero_encoded_assert_x_and_coeff, m) << std::endl;
                 }
 
 
+                // [+] union assets
+                expr_ref_vector asserts2(m);
+                asserts2.push_back(zero_encoded_assert_x_and_coeff);
+                for(unsigned i = 1; i < encoded_asserts.size(); ++i) {
+                    asserts2.push_back(encoded_asserts[i].get());
+                }
+                expr_ref constraint_for_coeff = m_utils.con_join(asserts2);
+                std::cout << "constraint_for_coeff " << mk_ismt2_pp(constraint_for_coeff, m) << std::endl;
+                // [-]
                 //model_ref mdl_for_coeff = get_coeff_model(spec_with_coeff_and_x, is_added_heuristic ? heuristic_constaraint_coeff : expr_ref(m));
 
                 model_ref mdl_for_coeff;
                 if (is_add_literals_heuristic)
                 {
 
-                    mdl_for_coeff = get_coeff_model(expr_ref(m.mk_and(spec_with_coeff_and_x, heuristic_concrete_coef_from_literals), m),  is_added_heuristic ? heuristic_constaraint_coeff : expr_ref(m));
+                    mdl_for_coeff = get_coeff_model(expr_ref(m.mk_and(constraint_for_coeff, heuristic_concrete_coef_from_literals), m),  is_added_heuristic ? heuristic_constaraint_coeff : expr_ref(m));
                     if (!mdl_for_coeff)
                     {
                         is_add_literals_heuristic = false;
-                        mdl_for_coeff = get_coeff_model(spec_with_coeff_and_x, is_added_heuristic ? heuristic_constaraint_coeff : expr_ref(m));
+                        mdl_for_coeff = get_coeff_model(constraint_for_coeff, is_added_heuristic ? heuristic_constaraint_coeff : expr_ref(m));
                     }
                 }
                 else
                 {
-                    mdl_for_coeff = get_coeff_model(spec_with_coeff_and_x, is_added_heuristic ? heuristic_constaraint_coeff : expr_ref(m));
+                    mdl_for_coeff = get_coeff_model(constraint_for_coeff, is_added_heuristic ? heuristic_constaraint_coeff : expr_ref(m));
                 }
                 is_added_heuristic = false;
 
@@ -1182,7 +1311,7 @@ namespace misynth
             return false;
         }
 
-        init_used_variables(synth_funs, spec);
+        init_used_variables(synth_funs, spec, m_used_vars);
 
         generate_coeff_decl(synth_funs);
         /*expr_ref spec_with_coeff(m);

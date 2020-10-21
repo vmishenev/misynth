@@ -99,7 +99,7 @@ namespace misynth
             bool solve_simult_model_x(func_decl_ref_vector &synth_funs, expr_ref_vector &constraints,  obj_map<func_decl, args_t *> &synth_fun_args_decl);
 
             void generate_coeff_decl(func_decl_ref_vector &synth_funs);
-            void init_used_variables(func_decl_ref_vector &synth_funs, expr_ref spec);
+            void init_used_variables(func_decl_ref_vector const& synth_funs, expr_ref spec, func_decl_ref_vector &out);
             bool find_precondition(func_decl_ref_vector &synth_funs,  expr_ref &spec, model_ref mdl_for_coeff, expr_ref &result, model_ref mdl_for_x = 0);
             args_t *get_args_decl_for_synth_fun(func_decl *f);
 
@@ -119,8 +119,14 @@ namespace misynth
                                       solver *slv, unsigned int index);
             void generate_assumptions_from_operands(expr_ref_vector &assumptions);
             /* [-] Unrealizability Algorithm*/
+
+
+            expr_ref_vector encode_asserts(func_decl_ref_vector & synth_funs, expr_ref_vector & constraints);
+            expr_ref normalize(expr *e, func_decl_ref_vector &vars,  func_decl_ref_vector &eliminate, expr_ref_vector &exprs);
+
         private:
             void completed_solving(func_decl_ref_vector &synth_funs, expr_ref_vector &constraints, expr_ref fun_body);
+
     };
 }
 
