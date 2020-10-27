@@ -91,7 +91,7 @@ namespace misynth
         DEBUG("MULTI ABDUCE" << mk_ismt2_pp(m_utils.con_join(unknown_preds), m) << "; " << mk_ismt2_pp(premise, m) << " ==> " << mk_ismt2_pp(conclusion, m))
         vector<vector<expr_ref_vector>> inv_args_vec; // for storing all inv arguments for each a predicator
         func_decl_ref_vector preds(m);
-        obj_map<func_decl, vector<expr_ref_vector> *>  preds2arguments;//maps preds to invocation arguments
+        obj_map<func_decl, unsigned>  preds2arguments;//maps preds to invocation arguments
 
 
         for (expr *e : unknown_preds)
@@ -101,18 +101,29 @@ namespace misynth
                 app* a = to_app(e);
                 expr_ref_vector ops(m);
                 ops.append(a->get_num_args(), a->get_args());
+                //***OUTPUT***
+                if (DEBUG_ABDUCE) {
+                    std::cout<< "fill "<<  mk_ismt2_pp(a, m) << std::endl;
+                  for(expr * e: ops) {
+                      std::cout<< mk_ismt2_pp(e, m) << std::endl;
+
+                    }
+                }
+                //***end***
+
                 auto it = preds2arguments.find_iterator(a->get_decl());
                 if (it == preds2arguments.end())
                 {
                     vector<expr_ref_vector> v;
                     v.push_back(ops);
                     inv_args_vec.push_back(v);
-                    preds2arguments.insert(a->get_decl(), &(inv_args_vec.back()));
+
+                    preds2arguments.insert(a->get_decl(), inv_args_vec.size() - 1);
                     preds.push_back(a->get_decl());
                 }
                 else
                 {
-                    it->m_value->push_back(ops);
+                    inv_args_vec[it->m_value].push_back(ops);
                 }
             }
             else
@@ -133,6 +144,7 @@ namespace misynth
 
         vector<vector<func_decl_ref_vector>> decl_args;
         expr_ref flat_premise = to_flat_multi(preds, inv_args_vec, decl_args);
+
         func_decl_ref_vector all_vars(m);
         for (auto &a : decl_args)
             for (auto &aa : a)
@@ -421,7 +433,6 @@ namespace misynth
         func_decl_ref_vector m_coeff_decl_vec(m);
         for (unsigned pred_ind = 0; pred_ind < inv_args_all.size(); ++pred_ind)
         {
-
             const vector<expr_ref_vector> &inv_args = inv_args_all.get(pred_ind);
 
             new_decl_args_all.push_back(vector<func_decl_ref_vector>());
