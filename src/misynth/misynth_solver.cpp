@@ -1786,7 +1786,7 @@ namespace misynth
         }
 
 
-        bool is_incorrect_partial_prorgram = true;
+        bool is_incorrect_partial_prorgram = false;
         std::cout << "start main while loop for search sumult. "  << std::endl;
         sanity_checker sanity(m_cmd, m);
         while (is_infinity_loop || result_fn.is_empty() || result_fn.is_completed() || is_incorrect_partial_prorgram)
@@ -1934,6 +1934,13 @@ namespace misynth
 
         expr_ref new_branch = m_futils.generate_branch(m_coeff_decl_vec, *synth_fun_args, synth_funs, mdl_for_coeff);
         // expr_ref res(m);
+        if (current_ops.size() == 0)
+        {
+            std::cout << "PREC has no invocation" << std::endl;
+            res = th_res;
+
+            return true;
+        }
 
         // some optimization for si
         if (current_ops.size() == 1)
@@ -2374,10 +2381,11 @@ namespace misynth
 
         vector<invocation_operands> unknown_pred;
         unsigned int n = fn.get_incompact_depth();
+        std::cout << " n " << n << std::endl;
         expr_ref_vector known_pred(m), temp(m);
         for (unsigned int i = 0; i < invocations.size(); ++i)
         {
-            //std::cout << "comb[i] " << comb[i] << std::endl;
+            std::cout << "comb[i] " << comb[i] << std::endl;
             //std::cout << "inv[i] " << mk_ismt2_pp(invocations[i].get(), m)  << std::endl;
             if (comb[i] == n)
             {

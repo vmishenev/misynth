@@ -313,8 +313,10 @@ namespace misynth
     }
     expr_ref multi_abducer::nonlinear_abduce(vector<expr_ref_vector> &inv_args, expr_ref premise, expr_ref conclusion, func_decl_ref_vector & pattern)
     {
+        SASSERT(inv_args.size( ) > 0);
         //[+] debug output
         std::cout << "Abduction (nonlinear_abduce) ";
+        std::cout << mk_ismt2_pp(premise, m, 3) << " ==>"  << mk_ismt2_pp(conclusion, m, 3) << std::endl;
         expr_ref_vector unknown_pred(m);
 
         sort_ref_vector parameters(m);
@@ -329,7 +331,7 @@ namespace misynth
 
         }
         std::cout << mk_ismt2_pp(m_utils.con_join(unknown_pred), m, 3);
-        std::cout << mk_ismt2_pp(premise, m, 3) << " ==>"  << mk_ismt2_pp(conclusion, m, 3) << std::endl;
+
         //[-] debug output
 
         //TODO: check inv_args.size>1
