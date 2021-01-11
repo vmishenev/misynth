@@ -103,18 +103,19 @@ void collect_invocation_operands(expr * n, func_decl_ref_vector&   fun_list, vec
 {
     l.reset();
     invocation_collector collector(fun_list);
-    std::cout << "collect_invocation_operands: " << std::endl;
+    std::cout << "------ [+] Collect invocation operands: -----"<< std::endl;
     collector(n);
     obj_hashtable<app > set = collector.get_invocation();
     for (auto it = set.begin(); it != set.end(); it++)
     {
         app * ap_f = (*it);
-        std::cout << "operands: " << mk_ismt2_pp(ap_f, fun_list.get_manager(), 3) << std::endl;
+        std::cout << "invocation: " << mk_ismt2_pp(ap_f, fun_list.get_manager(), 3) << std::endl;
 
         invocation_operands ops(fun_list.get_manager());
         ops.append(ap_f->get_num_args(), ap_f->get_args());
         l.insert(ops);
     }
+    std::cout << "------ [-] Collect invocation operands: -----"<< std::endl;
 }
 
 

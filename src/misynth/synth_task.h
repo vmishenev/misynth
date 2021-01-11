@@ -54,8 +54,6 @@ namespace misynth
                 m_constraints(constraints)
             {
                 smt_utils utils(cmd_ctx, m);
-                std::cout << "constraints " << constraints.size() << std::endl;
-                std::cout << "constraints " << m_constraints.size() << std::endl;
                 m_spec = utils.con_join(m_constraints);
                 init_used_variables(m, m_synth_funs, m_spec);
             }

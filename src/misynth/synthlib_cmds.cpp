@@ -153,8 +153,8 @@ namespace misynth
                 }
                 else
                 {
-                    tool.solve(m_synth_fun_list, m_constraints_list, m_synth_fun_args_decl);
-                    return false;
+                  tool.solve(m_synth_fun_list, m_constraints_list, m_synth_fun_args_decl);
+                  return false;
                 }
             }
 

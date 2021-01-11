@@ -1,5 +1,6 @@
 z3_add_component(misynth
   SOURCES
+    human_print.cpp
     synthlib_cmds.cpp
     multi_abducer.cpp
     misynth_solver.cpp

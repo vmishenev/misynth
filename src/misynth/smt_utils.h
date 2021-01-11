@@ -217,7 +217,11 @@ namespace misynth
 
                 if (DEBUG_MODE)
                 {
-                    std::cout << "replace " << mk_ismt2_pp((e), m, 3) << " to " << mk_ismt2_pp(substitute, m, 3) << std::endl;
+                    std::cout << "replace " << mk_ismt2_pp((e), m, 3) << " to ";
+                    if(used_default_value && e == substitute)
+                        std::cout << "0"<< std::endl;
+                    else
+                      std::cout << mk_ismt2_pp(substitute, m, 3) << std::endl;
                 }
 
                 if (used_default_value && e == substitute)
