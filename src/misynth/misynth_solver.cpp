@@ -900,11 +900,15 @@ namespace misynth
                 // [+] union assets
                 expr_ref_vector asserts2(m);
                 asserts2.push_back(zero_encoded_assert_x_and_coeff);
+                std::cout << "==== [+] Constraint_for_coeff ===" << std::endl;
+                std::cout << "assert #0: " << mk_ismt2_pp(zero_encoded_assert_x_and_coeff, m) << std::endl;
                 for(unsigned i = 1; i < encoded_asserts.size(); ++i) {
                     asserts2.push_back(encoded_asserts[i].get());
+                    std::cout << "assert #"<< i << ": " << mk_ismt2_pp(encoded_asserts[i].get(), m) << std::endl;
                 }
                 expr_ref constraint_for_coeff = m_utils.con_join(asserts2);
-                std::cout << "constraint_for_coeff " << human_print(constraint_for_coeff, m) << std::endl;
+
+                std::cout << "=== [-] Constraint_for_coeff ===" << std::endl;
                 // [-]
                 //model_ref mdl_for_coeff = get_coeff_model(spec_with_coeff_and_x, is_added_heuristic ? heuristic_constaraint_coeff : expr_ref(m));
 
