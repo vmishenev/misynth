@@ -18,7 +18,7 @@ def_module_params(module_name='misynth',
                           ('debug_abduction', BOOL, False, 'debug_abduction'),
                           ('mbp', BOOL, False, 'mbp'),
                           ('simplify_prec', BOOL, False, 'simplify_prec'),
-                          ('add_literals_heuristic', BOOL, True, 'compact'),
+                          ('add_literals_heuristic', BOOL, False, 'compact'),
                           ('compact', BOOL, False, 'compact'),
                           ('simult_model_x', UINT, 0, 'mbp')))
 

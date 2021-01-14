@@ -61,6 +61,8 @@ namespace misynth
 
     model_ref misynth_solver::get_coeff_model_from_slv(ref<solver> &slv, expr_ref spec_for_concrete_x, expr_ref heuristic)
     {
+
+                  m_utils.print_slv(std::cout, m_slv_for_coeff);
         bool is_added_heuristic = heuristic.get();
         slv->push();
         slv->assert_expr(spec_for_concrete_x);
@@ -74,7 +76,6 @@ namespace misynth
         lbool res_spec_for_x = slv->check_sat();
 
         model_ref mdl_for_coeff;
-
         if (res_spec_for_x != lbool::l_true)
         {
             //TODO: take into account a heuristic
@@ -246,10 +247,13 @@ namespace misynth
       expr_ref res( m.mk_and(all_eq, e), m);
 
       res = m_utils.exist_quantified(res, eliminate);
+
+      std::cout<< "Normalize for asserts: " << mk_smt_pp(res, m) << std::endl;
       smt_params params;
       expr_ref result(m);
       qe::expr_quant_elim      expr_qe(m, params);
       expr_qe(m.mk_true(), res, result);
+      std::cout<< "Result of normalizing for asserts: " << mk_smt_pp(result, m) << std::endl;
       return result;
     }
 
@@ -330,6 +334,8 @@ namespace misynth
 
             obj_map<app, ptr_vector<func_decl> > app2vars_constraint;
             int i_ap = 0;
+
+
             for( app *ap : apps_constraint ) {
               i_ap++;
               aps_expr.push_back(ap);
@@ -347,13 +353,28 @@ namespace misynth
                   exprs.push_back(ap->get_arg(i));
               }
               app2vars_constraint.insert(ap, std::move(vec));
-              for( app *ap2 : apps )  {
-                expr_ref conj(m.mk_eq(m.mk_const(fresh_ap), app2fresh[ap2]), m);
-                for(int i =0; i<ap2->get_num_args(); ++i) {
-                    conj = m.mk_and(conj, m.mk_eq(m.mk_const(app2vars_constraint[ap].get(i)), m.mk_const(app2vars[ap2].get(i))));
-                }
-                disjuncts.push_back(conj);
-              }
+            }
+            int slots = apps_constraint.size();
+            int values = app2fresh.size();
+            generator_permutation_with_repetitions comb(slots, values);
+            while (comb.do_next())
+            {
+                expr_ref_vector conjuncts(m);
+                vector<unsigned int> v = comb.get_next();
+                int num_app_constraint = 0;
+                for( unsigned ind : v )  {
+                    --ind;
+                    app *ap = apps_constraint.get( num_app_constraint );
+                    app *ap2 = apps.get( ind );
+                    expr_ref conj(m.mk_eq(aps_fresh.get( num_app_constraint ), app2fresh[ap2]), m);
+                    for(int i =0; i<ap2->get_num_args(); ++i) {
+                        conj = m.mk_and(conj, m.mk_eq(m.mk_const(app2vars_constraint[ap].get(i)), m.mk_const(app2vars[ap2].get(i))));
+                    }
+
+                    conjuncts.push_back(conj);
+                    num_app_constraint++;
+                 }
+                 disjuncts.push_back(m_utils.con_join(conjuncts));
             }
 
             expr_ref premise = m_utils.dis_join(disjuncts);
@@ -364,9 +385,10 @@ namespace misynth
             init_used_variables(synth_funs, spec, used_vars);
 
             expr_ref res = m_utils.replace_expr(it, aps_expr, aps_fresh);
-            //std::cout << "replace outs "<< mk_smt_pp(res, m) << std::endl;
+            std::cout << "After replacing of outs "<< mk_smt_pp(res, m) << std::endl;
 
-            res = normalize(res, var_decl, used_vars, exprs);
+            //res = normalize(res, var_decl, used_vars, exprs);
+           // res = ;
             //std::cout << "normalize "<< mk_smt_pp(res, m) << std::endl;
 
 
