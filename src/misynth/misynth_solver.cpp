@@ -925,8 +925,9 @@ namespace misynth
                 std::cout << "==== [+] Constraint_for_coeff ===" << std::endl;
                 std::cout << "assert #0: " << mk_ismt2_pp(zero_encoded_assert_x_and_coeff, m) << std::endl;
                 for(unsigned i = 1; i < encoded_asserts.size(); ++i) {
-                    asserts2.push_back(encoded_asserts[i].get());
-                    std::cout << "assert #"<< i << ": " << mk_ismt2_pp(encoded_asserts[i].get(), m) << std::endl;
+                    expr_ref encoded_assert_x = m_utils.replace_vars_according_to_model(encoded_asserts[i].get(), mdl_for_x, m_used_vars, true);
+                    asserts2.push_back(encoded_assert_x);
+                    std::cout << "assert #"<< i << ": " << mk_ismt2_pp(encoded_assert_x, m) << std::endl;
                 }
                 expr_ref constraint_for_coeff = m_utils.con_join(asserts2);
 
