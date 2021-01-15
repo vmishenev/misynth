@@ -293,7 +293,7 @@ namespace misynth
           for(int i=0; i< it->get_num_args(); ++i) {
             obj_map<func_decl, func_decl*> map;
 
-            func_decl_ref fresh(m.mk_const_decl(std::string("xi") + std::to_string((i_app)) + "_" + std::to_string((i)), m_arith.mk_int()), m);
+            func_decl_ref fresh(m.mk_const_decl(std::string("fi") + std::to_string((i_app)) + "_" + std::to_string((i)), m_arith.mk_int()), m);
             all_fresh_var.push_back(fresh);
             current.push_back(fresh);
             assert_zero_conj.push_back(m.mk_eq(m.mk_const(fresh), it->get_arg(i)));
@@ -335,6 +335,7 @@ namespace misynth
             obj_map<app, ptr_vector<func_decl> > app2vars_constraint;
             int i_ap = 0;
 
+            expr_ref_vector premise_premise_conjs(m);
 
             for( app *ap : apps_constraint ) {
               i_ap++;
@@ -344,9 +345,10 @@ namespace misynth
               universal_vars.push_back(fresh_ap);
               ptr_vector<func_decl> vec;
               for(int i =0; i < ap->get_num_args(); ++i) {
-                  func_decl_ref fresh_ap(m.mk_const_decl(std::string("xx") + std::to_string((i_constraint))+ "_"+std::to_string((i_ap))+"_"+ std::to_string((i)), m_arith.mk_int()), m);
+                  func_decl_ref fresh_ap(m.mk_const_decl(std::string("freshin_") + std::to_string((i_constraint))+ "_"+std::to_string((i_ap))+"_"+ std::to_string((i)), m_arith.mk_int()), m);
 
                   universal_vars.push_back(fresh_ap);
+                  premise_premise_conjs.push_back(m.mk_eq(m.mk_const(fresh_ap), ap->get_arg(i)));
                   vec.push_back(fresh_ap);
 
                   var_decl.push_back(vec.get(i));
@@ -384,9 +386,17 @@ namespace misynth
             func_decl_ref_vector used_vars(m);
             init_used_variables(synth_funs, spec, used_vars);
 
-            expr_ref res = m_utils.replace_expr(it, aps_expr, aps_fresh);
-            std::cout << "After replacing of outs "<< mk_smt_pp(res, m) << std::endl;
 
+            expr_ref res = m_utils.replace_expr(it, aps_expr, aps_fresh);
+
+            //std::cout << "After replacing of outs "<< mk_smt_pp(res, m) << std::endl;
+            res = m.mk_implies(m_utils.con_join(premise_premise_conjs), res);
+
+
+            //std::cout << "After replacing of outs with a premise: "<< mk_smt_pp(res, m) << std::endl;
+            func_decl_ref_vector used_vars2(m);
+            init_used_variables(universal_vars, res, used_vars2);
+            universal_vars.append(used_vars2);
             //res = normalize(res, var_decl, used_vars, exprs);
            // res = ;
             //std::cout << "normalize "<< mk_smt_pp(res, m) << std::endl;
