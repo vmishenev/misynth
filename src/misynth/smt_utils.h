@@ -190,10 +190,10 @@ namespace misynth
                 expr_ref e(to_expr(m.mk_const(fd)), m);
                 expr_ref substitute = (*mdl)(e);
 
-                if (DEBUG_MODE)
-                {
-                    std::cout << "replace " << mk_ismt2_pp((e), m, 3) << " to " << mk_ismt2_pp(substitute, m, 3) << std::endl;
-                }
+//                if (DEBUG_MODE)
+//                {
+//                    std::cout << "replace " << mk_ismt2_pp((e), m, 3) << " to " << mk_ismt2_pp(substitute, m, 3) << std::endl;
+//                }
 
                 if (used_default_value && e == substitute)
                     result.push_back(m_arith.is_real(e) ? m_arith.mk_real(0) : m_arith.mk_int(0));
@@ -215,14 +215,14 @@ namespace misynth
                 expr_ref e(to_expr(m.mk_const(fd)), m);
                 expr_ref substitute = (*mdl)(e);
 
-                if (DEBUG_MODE)
-                {
-                    std::cout << "replace " << mk_ismt2_pp((e), m, 3) << " to ";
-                    if(used_default_value && e == substitute)
-                        std::cout << "0"<< std::endl;
-                    else
-                      std::cout << mk_ismt2_pp(substitute, m, 3) << std::endl;
-                }
+//                if (DEBUG_MODE)
+//                {
+//                    std::cout << "replace " << mk_ismt2_pp((e), m, 3) << " to ";
+//                    if(used_default_value && e == substitute)
+//                        std::cout << "0"<< std::endl;
+//                    else
+//                      std::cout << mk_ismt2_pp(substitute, m, 3) << std::endl;
+//                }
 
                 if (used_default_value && e == substitute)
                     sub.insert(e, (m_arith.is_real(e) ? m_arith.mk_real(0) : m_arith.mk_int(0)));
@@ -280,7 +280,6 @@ namespace misynth
 
         expr_ref  replace_expr(expr *e, expr_ref_vector &src_expr, expr_ref_vector &dest_expr)
         {
-
             SASSERT(src_expr.size() <= dest_expr.size());
             scoped_ptr<expr_replacer> rp = mk_default_expr_replacer(m);
             expr_substitution sub(m);
@@ -295,6 +294,18 @@ namespace misynth
             (*rp)(e, result);
             return result;
         }
+
+        expr_ref replace_expr(expr *e, expr_ref src_expr, expr_ref dest_expr)
+        {
+            scoped_ptr<expr_replacer> rp = mk_default_expr_replacer(m);
+            expr_substitution sub(m);
+            sub.insert(src_expr, dest_expr);
+            rp->set_substitution(&sub);
+            expr_ref result(m);
+            (*rp)(e, result);
+            return result;
+        }
+
         /*
          *
          * Return \not \exists quantifier_vars \not   e

@@ -65,7 +65,7 @@ namespace misynth
 
                 expr_ref new_spec = m_utils.replace_expr(spec, invocations_expr, new_vars);
                 //expr_ref sanity_check_formula(m.mk_implies(m_utils.con_join(enviroment), new_spec), m);
-                std::cout << "Sanity checker: " << mk_ismt2_pp(m_utils.con_join(enviroment), m, 3) << " ==> " << mk_ismt2_pp(new_spec, m, 3) << std::endl;
+ //               std::cout << "Sanity checker: " << mk_ismt2_pp(m_utils.con_join(enviroment), m, 3) << " ==> " << mk_ismt2_pp(new_spec, m, 3) << std::endl;
 
                 return m_utils.implies(m_utils.con_join(enviroment), new_spec);
             }
@@ -81,7 +81,7 @@ namespace misynth
                 }
                 expr_ref fd_eq_body_fun(m.mk_eq(m.mk_app(fd, args_app.size(), args_app.c_ptr()), body_fun), m);
                 expr_ref macros(m_utils.universal_quantified(fd_eq_body_fun, args));
-                std::cout << "Sanity checker:: macros: " << mk_ismt2_pp(macros, m, 3) << std::endl;
+//                std::cout << "Sanity checker:: macros: " << mk_ismt2_pp(macros, m, 3) << std::endl;
 
                 params_ref params;
                 ref<solver> slv = m_cmd.get_solver_factory()(m, params, false, true, false, symbol::null);
@@ -95,10 +95,10 @@ namespace misynth
                     lbool r = slv->check_sat();
                     if (r != lbool::l_false)
                     {
-                        std::cout << "!!!Sanity checker:: constraint is failed: " <<  mk_ismt2_pp(constraints.get(i), m, 3) <<  std::endl;
+    //                    std::cout << "!!!Sanity checker:: constraint is failed: " <<  mk_ismt2_pp(constraints.get(i), m, 3) <<  std::endl;
                         model_ref mdl;
                         slv->get_model(mdl);
-                        std::cout << *mdl << std::endl;
+    //                    std::cout << *mdl << std::endl;
                         return false;
                     }
                     slv->pop(1);
@@ -133,17 +133,17 @@ namespace misynth
                 }
                 expr_ref fd_eq_body_fun(m.mk_eq(m.mk_app(fd, args_app.size(), args_app.c_ptr()), body_fun), m);
                 expr_ref macros(m_utils.universal_quantified(fd_eq_body_fun, args));
-                std::cout << "Sanity checker:: macros: " << mk_ismt2_pp(macros, m, 3) << std::endl;
+//                std::cout << "Sanity checker:: macros: " << mk_ismt2_pp(macros, m, 3) << std::endl;
 
 
 
 
                 m_solver->push();
                 m_solver->assert_expr(macros);
-                for (unsigned int i = 0; i < m_solver->get_num_assertions(); ++i)
-                {
-                    std::cout << "Sanity checker:: assert: " << mk_ismt2_pp(m_solver->get_assertion(i), m, 3) << std::endl;
-                }
+//                for (unsigned int i = 0; i < m_solver->get_num_assertions(); ++i)
+//                {
+//                    std::cout << "Sanity checker:: assert: " << mk_ismt2_pp(m_solver->get_assertion(i), m, 3) << std::endl;
+//                }
                 for (unsigned int i = 0; i < constraints.size(); ++i)
                 {
                     m_solver->push();
@@ -151,10 +151,10 @@ namespace misynth
                     lbool r = m_solver->check_sat();
                     if (r != lbool::l_false)
                     {
-                        std::cout << "!!!Sanity checker:: constraint is failed: " <<  mk_ismt2_pp(constraints.get(i), m, 3) <<  std::endl;
+//                        std::cout << "!!!Sanity checker:: constraint is failed: " <<  mk_ismt2_pp(constraints.get(i), m, 3) <<  std::endl;
 
                         m_solver->get_model(mdl);
-                        std::cout << *mdl << std::endl;
+//                        std::cout << *mdl << std::endl;
 
                         m_solver->pop(2); // remove macros and constraint
                         add_blacklist(mdl, used_vars);

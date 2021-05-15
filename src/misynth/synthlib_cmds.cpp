@@ -148,12 +148,14 @@ namespace misynth
                 if (m_synth_fun_list.size() > 1)
                 {
                     //std::cerr << "Only one synth_fun is expected " << std::endl;
-                    tool.multi_solve(m_synth_fun_list, m_constraints_list, m_synth_fun_args_decl);
+                    if (tool.multi_solve(m_synth_fun_list, m_constraints_list, m_synth_fun_args_decl))
+                      std::cout << "###Complete "  << std::endl;
                     return false;
                 }
                 else
                 {
-                  tool.solve(m_synth_fun_list, m_constraints_list, m_synth_fun_args_decl);
+                  if (tool.solve(m_synth_fun_list, m_constraints_list, m_synth_fun_args_decl))
+                    std::cout << "###Complete "  << std::endl;
                   return false;
                 }
             }

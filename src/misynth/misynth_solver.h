@@ -47,6 +47,8 @@ namespace misynth
             func_decl_ref_vector m_coeff_decl_vec;
             func_decl_ref_vector m_used_vars;
             expr_ref_vector m_assumptions;
+            expr_ref_vector assms;
+            expr_ref_vector assms2;
 
             vector<invocation_operands> m_ops;
             obj_map<func_decl, args_t *> m_synth_fun_args_decl;
@@ -78,7 +80,7 @@ namespace misynth
 
 
             /* [+] incremental multiabduction*/
-            result_incremental_abd incremental_multiabduction(func_decl_ref_vector & synth_funs, expr_ref & simplified_spec, expr_ref & new_branch, expr_ref &result);
+            result_incremental_abd incremental_multiabduction(func_decl_ref_vector & synth_funs, expr_ref & simplified_spec, expr_ref & new_branch, app_ref_vector &invocations, expr_ref &result);
             expr_ref solve_abduction_for_comb(vector<unsigned int> &comb, func_decl_ref_vector & synth_funs, expr_ref & spec, app_ref_vector &invocations, expr_ref & new_branch);
 
             result_incremental_abd check_all_abductions(func_decl_ref_vector & synth_funs, expr_ref & spec, app_ref_vector &invocations, expr_ref & new_prec, expr_ref & new_branch);
@@ -124,7 +126,7 @@ namespace misynth
             expr_ref normalize(expr *e, func_decl_ref_vector &vars,  func_decl_ref_vector &eliminate, expr_ref_vector &exprs);
 
         private:
-            void completed_solving(func_decl_ref_vector &synth_funs, expr_ref_vector &constraints, expr_ref fun_body);
+            bool completed_solving(func_decl_ref_vector &synth_funs, expr_ref_vector &constraints, expr_ref fun_body);
 
     };
 }

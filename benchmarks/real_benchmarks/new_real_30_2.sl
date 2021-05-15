@@ -8,7 +8,7 @@
 (synth-fun f ((x Int) (y Int) (z Int)) Int)
 
 
-(constraint (= (f x1 x2 x3) (f x1 x2 x3)))
+;(constraint (= (f x1 x2 x3) (f x1 x2 x3)))
 (constraint (> (f (* 2 x1) (* 3 x2) (* 4 x3)) (+ x1 x2 x3)))
 
 (check-synth)

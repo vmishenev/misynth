@@ -14,9 +14,9 @@
 #include <ctime>
 #include <iostream>
 
-#define DEBUG_ABDUCE m_params.debug_abduce()
-#define VERBOSE_ABDUCE true
-#define DEBUG(x) std::cout<< x << std::endl;
+#define DEBUG_ABDUCE false // m_params.debug_abduce()
+#define VERBOSE_ABDUCE false
+#define DEBUG(x) //std::cout<< x << std::endl;
 
 namespace misynth
 {
@@ -90,7 +90,7 @@ namespace misynth
                                      expr_ref conclusion, func_decl_ref_vector &pattern,
                                      expr_ref_vector &res,  decl2expr_map &res_map)
     {
-        DEBUG("MULTI ABDUCE" << mk_ismt2_pp(m_utils.con_join(unknown_preds), m) << "; " << mk_ismt2_pp(premise, m) << " ==> " << mk_ismt2_pp(conclusion, m))
+        DEBUG("MULTI ABDUCE: " << mk_ismt2_pp(m_utils.con_join(unknown_preds), m) << "; " << mk_ismt2_pp(premise, m) << " ==> " << mk_ismt2_pp(conclusion, m))
         vector<vector<expr_ref_vector>> inv_args_vec; // for storing all inv arguments for each a predicator
         func_decl_ref_vector preds(m);
         obj_map<func_decl, unsigned>  preds2arguments;//maps preds to invocation arguments
@@ -151,19 +151,16 @@ namespace misynth
         for (auto &a : decl_args)
             for (auto &aa : a)
             {
-
                 all_vars.append(aa);
             }
 
-        expr_ref flat_conclusion(m.mk_implies(flat_premise, conclusion), m);
-        //expr_ref flat_conclusion(m.mk_and(flat_premise, conclusion), m);
+        expr_ref flat_conclusion(m.mk_implies(flat_premise, m.mk_implies(premise, conclusion)), m);
         if (DEBUG_ABDUCE)
-            std::cout << "Abduction flat_conclusion formula: " << mk_ismt2_pp(flat_conclusion, m, 3) << std::endl;
+            std::cout << "Abduction flat_conclusion formula:\n   " << mk_ismt2_pp(flat_conclusion, m, 3) << std::endl;
 
-        expr_ref abduce_conclusion = simple_abduce(premise, flat_conclusion, all_vars);
-        abduce_conclusion = m_utils.simplify_context(abduce_conclusion);
-        //if (DEBUG_ABDUCE)
-        std::cout << "Abduced flat_conclusion formula: " << mk_ismt2_pp(abduce_conclusion, m, 3) << std::endl;
+        expr_ref abduce_conclusion = simple_abduce_exist(flat_conclusion, all_vars);
+        if (DEBUG_ABDUCE)
+            std::cout << "Abduced flat_conclusion formula: " << mk_ismt2_pp(abduce_conclusion, m, 3) << std::endl;
 
         /// generate fresh constant \/ m_ki=xx_ij, k=0.. invocation number, i - component index
         ///
@@ -209,8 +206,8 @@ namespace misynth
         */
         expr_ref implic(m_utils.universal_quantified(expr_ref(m.mk_implies(fresh_consts_equals_inv_args, abduce_conclusion), m), all_vars), m);
 
-        //if (DEBUG_ABDUCE)
-        std::cout << "INIT SOLN  abduction formula: " << mk_ismt2_pp(implic, m, 3) << std::endl;
+        if (DEBUG_ABDUCE)
+            std::cout << "INIT SOLN abduction formula: " << mk_ismt2_pp(implic, m, 3) << std::endl;
 
         /// [-] quantifier vars
         ///
@@ -297,9 +294,9 @@ namespace misynth
             for (auto&& it : occurrencies)
             {
                 all_vars_pred_ind.append(it);
-                m_utils.print_sorted_var_list(std::cout, it);
+//                m_utils.print_sorted_var_list(std::cout, it);
             }
-            std::cout << std::endl;
+//            std::cout << std::endl;
             DEBUG("Abduction problem for cart. decomp: "   << mk_ismt2_pp(m.mk_implies(conj_all_preds, conclusion), m))
             expr_ref phi_i = simple_abduce(conj_all_preds, conclusion, all_vars_pred_ind);
             phi_i = m_utils.simplify_context(phi_i);
@@ -310,16 +307,33 @@ namespace misynth
             expr_ref res_pred = iso_decomp(implic, init_soln, phi_i, fresh_constant.get(pred_ind), pattern, decl_args.get(pred_ind));
             res.push_back(res_pred);
             soln.insert(preds.get(pred_ind), res_pred);
-            DEBUG(preds.get(pred_ind)->get_name()  << " := "  << mk_ismt2_pp(res_pred, m))
+//          std::cout << preds.get(pred_ind)->get_name()  << " := "  << mk_ismt2_pp(res_pred, m) << "\n";
         }
     }
-    expr_ref multi_abducer::nonlinear_abduce(vector<expr_ref_vector> &inv_args, expr_ref premise, expr_ref conclusion, func_decl_ref_vector & pattern)
+
+    // copy-pasted from search_simultaneously_branches.h
+    void multi_abducer::collect_used_variables(expr_ref spec,  func_decl_ref_vector &exclude, func_decl_ref_vector &res)
+    {
+      decl_collector decls(m);
+      decls.visit(spec);
+
+      for (func_decl *fd :  decls.get_func_decls())
+        if (!exclude.contains(fd))
+          res.push_back(fd);
+    }
+  
+    expr_ref multi_abducer::nonlinear_abduce(vector<expr_ref_vector>& inv_args, expr_ref premise, expr_ref conclusion, func_decl_ref_vector & pattern)
     {
         SASSERT(inv_args.size( ) > 0);
+        vector<expr_ref_vector> inv_args2;
         //[+] debug output
-        std::cout << "Abduction (nonlinear_abduce) ";
-        std::cout << mk_ismt2_pp(premise, m, 3) << " ==>"  << mk_ismt2_pp(conclusion, m, 3) << std::endl;
-        expr_ref_vector unknown_pred(m);
+//        std::cout << "Abduction (nonlinear_abduce): \n        ";
+//        std::cout << mk_ismt2_pp(premise, m, 3) << " ==>"  << mk_ismt2_pp(conclusion, m, 3) << std::endl;
+//        std::cout << "inv_args.size = " << inv_args.size( )  << "\n";
+
+        func_decl_ref_vector used_vars(m), exclude(m);
+        collect_used_variables(expr_ref(m.mk_implies(premise, conclusion), m), exclude, used_vars);
+//        for (auto v : used_vars) std::cout << "  used var: "<< mk_ismt2_pp(v, m, 3) << "\n";
 
         sort_ref_vector parameters(m);
         for (unsigned int i = 0; i < inv_args.get(0).size(); ++i)
@@ -327,32 +341,52 @@ namespace misynth
             parameters.push_back(m_arith.mk_int());
         }
         func_decl_ref pred(m.mk_func_decl(symbol("R"), parameters.size(), parameters.c_ptr(), m.mk_bool_sort()),  m);
-        for (expr_ref_vector &a : inv_args)
+        for (auto & a : inv_args)
         {
-            unknown_pred.push_back(m.mk_app(pred, a.size(), a.c_ptr()));
-
+//          std::cout  << "params: " << mk_ismt2_pp(m.mk_app(pred, a.size(), a.c_ptr()), m, 3) << "\n";
+          bool found = false;
+          for (auto & b : a)
+          {
+            func_decl_ref_vector used_vars2(m);
+            collect_used_variables(expr_ref(b, m), exclude, used_vars2);
+            for (auto v : used_vars2)
+              for (auto w : used_vars)
+                if (v == w)
+                  found = true;
+          }
+          if (found)
+            inv_args2.push_back(a);
+//          else
+//            std::cout << "   >> skipping\n";
         }
-        std::cout << mk_ismt2_pp(m_utils.con_join(unknown_pred), m, 3);
 
         //[-] debug output
 
         //TODO: check inv_args.size>1
         vector<func_decl_ref_vector> decl_args;
-        expr_ref flat_premise = to_flat(inv_args, decl_args);
+        expr_ref flat_premise = to_flat(inv_args2, decl_args);
         func_decl_ref_vector all_vars(m);
         for (auto &a : decl_args)
         {
             all_vars.append(a);
         }
-        expr_ref flat_conclusion(m.mk_and(flat_premise, conclusion), m);
-        //expr_ref flat_conclusion(m.mk_and(flat_premise, conclusion), m);
+        expr_ref flat_conclusion(m.mk_implies(flat_premise, m.mk_implies(premise, conclusion)), m);
         if (DEBUG_ABDUCE)
-            std::cout << "Abduction flat_conclusion formula: " << mk_ismt2_pp(flat_conclusion, m, 3) << std::endl;
+            std::cout << "Abduction flat_conclusion formula:\n   " << mk_ismt2_pp(flat_conclusion, m, 3) << std::endl;
 
-        expr_ref abduce_conclusion = simple_abduce_exist(premise, flat_conclusion, all_vars);
-        abduce_conclusion = m_utils.simplify_context(abduce_conclusion);
-        if (DEBUG_ABDUCE)
-            std::cout << "Abduced flat_conclusion formula: " << mk_ismt2_pp(abduce_conclusion, m, 3) << std::endl;
+        expr_ref abduce_conclusion = simple_abduce_exist(flat_conclusion, all_vars);
+//        abduce_conclusion = m_utils.simplify_context(abduce_conclusion);
+       if (DEBUG_ABDUCE)
+            std::cout << "Abduced flat_conclusion formula:\n   " << mk_ismt2_pp(abduce_conclusion, m, 3) << std::endl;
+
+      if (inv_args2.size() == 1)
+      {
+        for (unsigned i = 0; i < decl_args.size(); ++i)
+        {
+          abduce_conclusion = m_utils.replace_vars_decl(abduce_conclusion, decl_args.get(i), pattern);
+        }
+        return abduce_conclusion;
+      }
 
         /// generate fresh constant \/ m_ki=xx_ij, k=0.. invocation number, i - component index
         ///
@@ -386,12 +420,11 @@ namespace misynth
         */
         expr_ref implic(m_utils.universal_quantified(expr_ref(m.mk_implies(fresh_consts_equals_inv_args, abduce_conclusion), m), all_vars), m);
 
-        //if (DEBUG_ABDUCE)
-        std::cout << "INIT SOLN  abduction formula: " << mk_ismt2_pp(implic, m, 3) << std::endl;
+        if (DEBUG_ABDUCE)
+        std::cout << "INIT SOLN [2] abduction formula: " << mk_smt_pp(implic, m) << std::endl;
 
         /// [-] quantifier vars
         ///
-
 
 
         params_ref params;
@@ -399,23 +432,23 @@ namespace misynth
 
         slv->push();
         slv->assert_expr(implic);
-        slv->push();
-        slv->assert_expr(premise);
+//        slv->push();
+//        slv->assert_expr(premise);
         lbool r = slv->check_sat();
-        //std::cout << "INIT SOLN  abduction formula result : " << r << std::endl;
+//        std::cout << "INIT SOLN [2] abduction formula result : " << r << std::endl;
 
         if (r == lbool::l_true)
         {
             model_ref mdl;
             slv->get_model(mdl);
-            expr_ref init_soln(m);
+//            expr_ref init_soln(m);
             // estimate pattern
             if (DEBUG_ABDUCE)
-                std::cout << "INIT SOLN  result mdl: " << *mdl << std::endl;
+                std::cout << "INIT SOLN result mdl: " << *mdl << std::endl;
 
             expr_ref res = get_soln_according_to_model(mdl, fresh_constant, pattern);
             if (DEBUG_ABDUCE)
-                std::cout << "INIT SOLN  result formula: " << mk_ismt2_pp(res, m, 3) << std::endl;
+                std::cout << "INIT SOLN result formula: " << mk_ismt2_pp(res, m, 3) << std::endl;
 
             if (m_params.mbp_abduce())
                 return iso_decomp_mbp(implic, res, abduce_conclusion, fresh_constant, pattern, decl_args);
@@ -423,7 +456,7 @@ namespace misynth
                 return iso_decomp(implic, res, abduce_conclusion, fresh_constant, pattern, decl_args);
 
         }
-
+ 
         return expr_ref(m.mk_false(), m);
     }
 
@@ -499,7 +532,6 @@ namespace misynth
     {
 
         expr_ref_vector exprs(m);
-
         for (unsigned i = 0; i < fresh_constant.size(); ++i)
         {
             //expr_ref_vector &invocation = inv_args.get(i);
@@ -507,9 +539,12 @@ namespace misynth
             for (unsigned j = 0; j < pattern.size(); ++j)
             {
                 //expr_ref value((*mdl)(invocation.get(j)), m);
-                expr_ref value((*mdl)(m.mk_const(fresh_constant.get(i).get(j))), m);
-
-                crnt_expr = m.mk_and(crnt_expr, m.mk_eq(m.mk_const(pattern.get(j)), value));
+                expr_ref cnst(m.mk_const(fresh_constant.get(i).get(j)), m);
+                expr_ref value((*mdl)(cnst), m);
+//                              std::cout << "get_soln_according_to_model: " << mk_ismt2_pp(cnst, m, 3)
+//                << " |-> " << mk_ismt2_pp(value, m, 3)<< "\n";
+                if (value != cnst)
+                    crnt_expr = m.mk_and(crnt_expr, m.mk_eq(m.mk_const(pattern.get(j)), value));
             }
             exprs.push_back(crnt_expr);
         }
@@ -534,7 +569,6 @@ namespace misynth
             //
             for (unsigned j = 0; j < fresh_constant.size(); ++j)
             {
-
                 crnt_fresh_consts_equals_inv_args.push_back(m_utils.mk_eq(crnt_decl_args, fresh_constant.get(j)));
             }
             fresh_consts_equals_inv_args = m.mk_and(fresh_consts_equals_inv_args, m_utils.dis_join(crnt_fresh_consts_equals_inv_args));
@@ -547,7 +581,7 @@ namespace misynth
         return implic;
     }
 
-    expr_ref  multi_abducer::iso_decomp(expr_ref conclusion_model/*unused*/, expr_ref init_soln, expr_ref conclusion, vector<func_decl_ref_vector> &fresh_constant, func_decl_ref_vector & pattern, vector<func_decl_ref_vector> &decl_args)
+    expr_ref multi_abducer::iso_decomp(expr_ref conclusion_model/*unused*/, expr_ref init_soln, expr_ref conclusion, vector<func_decl_ref_vector> &fresh_constant, func_decl_ref_vector & pattern, vector<func_decl_ref_vector> &decl_args)
     {
         unsigned int num_iter = 0;
 
@@ -589,7 +623,7 @@ namespace misynth
             {
                 if (VERBOSE_ABDUCE)
                     std::cout << "!!! ISO_DECOMP_ITERS_TRESHOLD " << std::endl;
-                return expr_ref(m.mk_false(), m);
+              return phi; //expr_ref(m.mk_false(), m);
             }
             model_ref mdl;
             slv->get_model(mdl);
@@ -629,6 +663,7 @@ namespace misynth
             phi = m.mk_true();
             for (unsigned i = 0; i < decl_args.size(); ++i)
             {
+         //     std::cout <<  "   phi before repl [" << i << "]: "   << mk_ismt2_pp(phi_i[i].get(), m, 3) << std::endl;
                 phi = m.mk_and(phi, m_utils.replace_vars_decl(expr_ref(phi_i[i].get(), m), decl_args.get(i), pattern));
             }
 
@@ -644,6 +679,7 @@ namespace misynth
             }
             num_iter++;
         }
+
         return expr_ref(m.mk_false(), m);
     }
 
@@ -739,23 +775,23 @@ namespace misynth
             clock_t start = clock();
             if (VERBOSE_ABDUCE)
             {
-                std::cout << "crnt phi-simplified (line after 27) "   << mk_ismt2_pp(phi, m, 3) << std::endl;
+                std::cout << "crnt phi-simplified (line after 27) MBP: "   << mk_ismt2_pp(phi, m, 3) << std::endl;
                 std::cout << "time :" << ((double)(clock() - start) / CLOCKS_PER_SEC) << std::endl;;
             }
             num_iter++;
         }
         return expr_ref(m.mk_false(), m);
     }
-    expr_ref multi_abducer::simple_abduce_exist(expr_ref premise, expr_ref conclusion, func_decl_ref_vector vars)
+    expr_ref multi_abducer::simple_abduce_exist(/*expr_ref premise,*/ expr_ref implic, func_decl_ref_vector vars)
     {
-        expr_ref implic(m.mk_implies(premise, conclusion), m);
+//        expr_ref implic(m.mk_implies(premise, conclusion), m);
         decl_collector decls(m);
         decls.visit(implic.get());
         func_decl_ref_vector quantifier_vars(m);
 
         for (func_decl *fd :  decls.get_func_decls())
         {
-            if (!vars.contains(fd))
+            if (!vars.contains(fd) && fd->get_arity() == 0)
             {
                 quantifier_vars.push_back(fd);
             }
@@ -764,16 +800,16 @@ namespace misynth
         {
             return implic;
         }
-        implic = m_utils.exist_quantified(implic, quantifier_vars);
+        implic = m_utils.exist_quantified(expr_ref(m.mk_not(implic), m), quantifier_vars);
         if (DEBUG_ABDUCE)
-            std::cout << "Simple abduction : " << mk_ismt2_pp(implic, m, 3) << std::endl;
+            std::cout << "Simple abduction: " << mk_ismt2_pp(implic, m, 3) << std::endl;
 
         //std::cout << "Simple abduction implic2: " << mk_ismt2_pp(implic, m, 3) << std::endl;
         smt_params params;
         expr_ref result(m);
         qe::expr_quant_elim      expr_qe(m, params);
         expr_qe(m.mk_true(), implic, result);
-
+        result = expr_ref(m.mk_not(result), m);
         //through tactic qe
         /* tactic_ref tct = mk_qe_tactic(m);
         goal_ref g = alloc(goal, m);
@@ -799,7 +835,7 @@ namespace misynth
 
         for (func_decl *fd :  decls.get_func_decls())
         {
-            if (!vars.contains(fd))
+            if (!vars.contains(fd) && fd->get_arity() == 0)
             {
                 quantifier_vars.push_back(fd);
             }

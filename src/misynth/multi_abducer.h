@@ -47,7 +47,7 @@ namespace misynth
              * simple abduction problem R(x) ∧ χ ⇒ C
              * QE (∀x. χ ⇒ C)
              * */
-            expr_ref simple_abduce_exist(expr_ref premise, expr_ref conclusion, func_decl_ref_vector vars);
+            expr_ref simple_abduce_exist(/*expr_ref premise, */expr_ref conclusion, func_decl_ref_vector vars);
             expr_ref simple_abduce(expr_ref premise, expr_ref conclusion, func_decl_ref_vector vars);
             expr_ref simple_abduce_mbp(expr_ref premise, expr_ref conclusion, func_decl_ref_vector vars);
 
@@ -57,7 +57,7 @@ namespace misynth
              *
              * */
 
-            expr_ref nonlinear_abduce(vector<expr_ref_vector> &inv_args, expr_ref premise, expr_ref conclusion, func_decl_ref_vector &pattern);
+            expr_ref nonlinear_abduce(vector<expr_ref_vector>& inv_args, expr_ref premise, expr_ref conclusion, func_decl_ref_vector &pattern);
             expr_ref to_flat(vector<expr_ref_vector> &inv_args, vector<func_decl_ref_vector> &new_decl_args);
             bool multi_abduce(expr_ref_vector &unknown_preds, expr_ref premise, expr_ref conclusion,
                               func_decl_ref_vector &pattern, expr_ref_vector &res, decl2expr_map &res_map);
@@ -72,6 +72,7 @@ namespace misynth
                              func_decl_ref_vector &preds,
                              func_decl_ref_vector &pattern, expr_ref conclusion, expr_ref_vector &res, decl2expr_map &soln);
 
+            void collect_used_variables(expr_ref spec,  func_decl_ref_vector &exclude, func_decl_ref_vector &res);
             expr_ref  iso_decomp(expr_ref conclusion_model, expr_ref init_soln, expr_ref conclusion,
                                  vector<func_decl_ref_vector> &fresh_constant, func_decl_ref_vector &pattern, vector<func_decl_ref_vector> &decl_args);
             expr_ref  iso_decomp_mbp(expr_ref conclusion_model, expr_ref init_soln, expr_ref conclusion,

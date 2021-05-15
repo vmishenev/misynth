@@ -61,7 +61,8 @@ namespace misynth
 
             void add_branch(expr * prec, expr * br)
             {
-
+//              std::cout << "added branch: " <<  mk_ismt2_pp(prec, m, 0) << "\n          "
+//                                          <<  mk_ismt2_pp(br, m, 0) << std::endl;
 
                 slv_for_prec->push();
                 slv_for_prec->assert_expr(m.mk_not(prec));
@@ -114,7 +115,7 @@ namespace misynth
                 for (unsigned int i : idxs)
                 {
                     //m_precs[i] = m.mk_false();
-                    std::cout << "remove branche:" <<  mk_ismt2_pp(m_precs.get(i), m, 0) << std::endl;
+                    std::cout << "remove branch:" <<  mk_ismt2_pp(m_precs.get(i), m, 0) << std::endl;
                     m_precs.set(i, m.mk_false());
 
                 }
@@ -176,7 +177,7 @@ namespace misynth
                 }
                 //[-] compaction
 
-
+/*
                 for (unsigned int i = m_precs.size() - 1 ; i < m_precs.size(); --i)
                 {
                     if (todo_remove.find(i) != todo_remove.end())
@@ -194,14 +195,11 @@ namespace misynth
                         res = m_branches.get(i);
 
                     break;
-                }
+                }*/
 
+                res = m_branches.back();
                 for (unsigned int i = 0 ; i < m_precs.size() - 1; ++i)
                 {
-                    if (todo_remove.find(i) != todo_remove.end())
-                    {
-                        continue;
-                    }
                     res = m.mk_ite(m_precs.get(i), m_branches.get(i), res);
                 }
 
