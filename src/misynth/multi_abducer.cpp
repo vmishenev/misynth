@@ -204,7 +204,11 @@ namespace misynth
         func_decl_ref_vector quantifier_vars(m);
         quantifier_vars.append(decls.get_num_decls(), decls.get_func_decls().c_ptr());
         */
-        expr_ref implic(m_utils.universal_quantified(expr_ref(m.mk_implies(fresh_consts_equals_inv_args, abduce_conclusion), m), all_vars), m);
+
+        expr_ref implic(m.mk_implies(fresh_consts_equals_inv_args, abduce_conclusion), m);
+
+        if(all_vars.size() > 0)
+            implic =  m_utils.universal_quantified(implic, all_vars);
 
         if (DEBUG_ABDUCE)
             std::cout << "INIT SOLN abduction formula: " << mk_ismt2_pp(implic, m, 3) << std::endl;
@@ -327,9 +331,9 @@ namespace misynth
         SASSERT(inv_args.size( ) > 0);
         vector<expr_ref_vector> inv_args2;
         //[+] debug output
-//        std::cout << "Abduction (nonlinear_abduce): \n        ";
-//        std::cout << mk_ismt2_pp(premise, m, 3) << " ==>"  << mk_ismt2_pp(conclusion, m, 3) << std::endl;
-//        std::cout << "inv_args.size = " << inv_args.size( )  << "\n";
+          std::cout << "Abduction (nonlinear_abduce): \n        ";
+          std::cout << mk_ismt2_pp(premise, m, 3) << " ==>"  << mk_ismt2_pp(conclusion, m, 3) << std::endl;
+          std::cout << "inv_args.size = " << inv_args.size( )  << "\n";
 
         func_decl_ref_vector used_vars(m), exclude(m);
         collect_used_variables(expr_ref(m.mk_implies(premise, conclusion), m), exclude, used_vars);
@@ -343,7 +347,7 @@ namespace misynth
         func_decl_ref pred(m.mk_func_decl(symbol("R"), parameters.size(), parameters.c_ptr(), m.mk_bool_sort()),  m);
         for (auto & a : inv_args)
         {
-//          std::cout  << "params: " << mk_ismt2_pp(m.mk_app(pred, a.size(), a.c_ptr()), m, 3) << "\n";
+          std::cout  << "params: " << mk_ismt2_pp(m.mk_app(pred, a.size(), a.c_ptr()), m, 3) << "\n";
           bool found = false;
           for (auto & b : a)
           {
@@ -418,7 +422,9 @@ namespace misynth
         func_decl_ref_vector quantifier_vars(m);
         quantifier_vars.append(decls.get_num_decls(), decls.get_func_decls().c_ptr());
         */
-        expr_ref implic(m_utils.universal_quantified(expr_ref(m.mk_implies(fresh_consts_equals_inv_args, abduce_conclusion), m), all_vars), m);
+        expr_ref implic(m.mk_implies(fresh_consts_equals_inv_args, abduce_conclusion), m);
+        if(all_vars.size()>0)
+            implic = m_utils.universal_quantified(implic, all_vars);
 
         if (DEBUG_ABDUCE)
         std::cout << "INIT SOLN [2] abduction formula: " << mk_smt_pp(implic, m) << std::endl;
@@ -543,8 +549,13 @@ namespace misynth
                 expr_ref value((*mdl)(cnst), m);
 //                              std::cout << "get_soln_according_to_model: " << mk_ismt2_pp(cnst, m, 3)
 //                << " |-> " << mk_ismt2_pp(value, m, 3)<< "\n";
-                if (value != cnst)
-                    crnt_expr = m.mk_and(crnt_expr, m.mk_eq(m.mk_const(pattern.get(j)), value));
+                if (value != cnst) {
+                    if(pattern.size() == 1 && m_arith.is_zero( value )) { //special case
+                        crnt_expr = m_arith.mk_ge(m.mk_const(pattern.get(j)), m_arith.mk_int(0));
+                    } else {
+                         crnt_expr = m.mk_and(crnt_expr, m.mk_eq(m.mk_const(pattern.get(j)), value));
+                    }
+                }
             }
             exprs.push_back(crnt_expr);
         }
@@ -574,9 +585,11 @@ namespace misynth
             fresh_consts_equals_inv_args = m.mk_and(fresh_consts_equals_inv_args, m_utils.dis_join(crnt_fresh_consts_equals_inv_args));
         }
         /// [-] generate fresh constant
+        expr_ref implic(m.mk_implies(fresh_consts_equals_inv_args, abduce_conclusion), m);
+        if(all_vars.size() > 0) {
+             implic  = m_utils.universal_quantified(implic, all_vars);
+        }
 
-
-        expr_ref implic(m_utils.universal_quantified(expr_ref(m.mk_implies(fresh_consts_equals_inv_args, abduce_conclusion), m), all_vars), m);
 
         return implic;
     }
@@ -627,8 +640,17 @@ namespace misynth
             }
             model_ref mdl;
             slv->get_model(mdl);
+            if (VERBOSE_ABDUCE)
+                std::cout << "got model iso_decomp "  << *mdl << std::endl;
             slv->pop(1);
             expr_ref res = get_soln_according_to_model(mdl, fresh_constant, pattern);
+
+            // check res;
+
+            m_utils.is_true(m.mk_implies())
+                    
+                    
+            
             phi = m.mk_or(phi, res);
             if (DEBUG_ABDUCE)
                 std::cout << "new phi(line 23) "  << mk_ismt2_pp(phi, m, 3) << std::endl;
